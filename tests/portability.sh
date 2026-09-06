@@ -99,7 +99,7 @@ prepare_clean_git_fixture() {
 }
 
 rewrite_production_shebangs() {
-  for forgeflow_script in bootstrap doctor story-check handoff-check release-check
+  for forgeflow_script in bootstrap doctor story-check handoff-check release-check codex-activate
   do
     forgeflow_source="$forgeflow_repo/scripts/$forgeflow_script"
     forgeflow_copied="$forgeflow_copy/scripts/$forgeflow_script"
@@ -126,7 +126,7 @@ rewrite_production_shebangs() {
 }
 
 source_scripts_remain_unchanged() {
-  for forgeflow_script in bootstrap doctor story-check handoff-check release-check
+  for forgeflow_script in bootstrap doctor story-check handoff-check release-check codex-activate
   do
     cmp "$forgeflow_test_dir/$forgeflow_script.original" \
       "$forgeflow_repo/scripts/$forgeflow_script" >/dev/null ||
@@ -148,7 +148,7 @@ copied_scripts_use_selected_shell() {
 }
 
 selected_shell_runs_existing_behavior_suites() {
-  for forgeflow_suite in bootstrap doctor story-check handoff-check release-check
+  for forgeflow_suite in bootstrap doctor story-check handoff-check release-check codex-activation
   do
     "$forgeflow_portability_shell" "$forgeflow_copy/tests/$forgeflow_suite.sh"
   done

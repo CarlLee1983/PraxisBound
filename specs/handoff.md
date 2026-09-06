@@ -8,7 +8,7 @@ is context only.
 
 ```yaml
 workflow:
-  current_story: none
+  current_story: FF-223
   next_story: pending
   completed_stories:
     - FF-201
@@ -33,16 +33,34 @@ workflow:
     - FF-220
     - FF-221
     - FF-222
-  status: done
+  status: review
 
 baseline:
   repository: CarlLee1983/ForgeFlowV2
-  branch: main
-  commit: 998c63fd6b530b9b15ced35a4a118b41916c79fa
+  branch: docs/ff-222-release-completion
+  commit: 5947f846daf083f36a8a6e60cde11926cb5004b9
   dirty_worktree: true
   story_owned_paths:
+    - Makefile
+    - README.md
+    - VERSION
+    - docs/codex-activation.md
+    - docs/doctor.md
+    - docs/releases/0.4.1.md
+    - protocol/versioning.md
+    - scripts/codex-activate
+    - skills/forgeflow/SKILL.md
+    - skills/forgeflow/agents-block.md
     - specs/handoff.md
-    - specs/stories/FF-222-acceptance-evidence/task.md
+    - specs/stories/FF-223-codex-project-activation/story.md
+    - specs/stories/FF-223-codex-project-activation/acceptance.md
+    - specs/stories/FF-223-codex-project-activation/task.md
+    - specs/stories/FF-223-codex-project-activation/walkthrough-fixtures.sh
+    - specs/stories/FF-223-codex-project-activation/walkthrough-results.md
+    - tests/codex-activation.sh
+    - tests/human-review.sh
+    - tests/portability.sh
+    - tests/story-check.sh
   known_unrelated_paths: []
 
 verification:
@@ -52,24 +70,60 @@ verification:
 
 ## Notes
 
+* Carl authorized a local FF-223 commit and requested final acceptance checks
+  focused on ForgeFlow on 2026-09-06. Push, merge, release, and live-adopter
+  changes remain outside scope. Human-method ACs and repository merge policy
+  still require human completion; current Story remains REVIEW, next pending.
+  The baseline block records the parent and owned changes prepared for this
+  commit, not a claim that its future committed checkout is still dirty.
+  Full `make verify` reran with exit 0 before commit; log:
+  `/tmp/forgeflow-ff223-commit-verify.log`. AC-009 now records that command result.
+  The subsequent evidence-only updates passed Story/handoff and whitespace checks.
+
+* Carl requested the five FF-223 acceptance follow-ups on 2026-09-06: outside
+  symlink-target preservation assertions, wrong-type fixtures, accurate marker
+  drift documentation, a repository-owned walkthrough builder, and a complete
+  final-snapshot C1-C11 rerun. All five are complete. The final startup pointer
+  also resolves repository root before diagnosing a missing skill, correcting
+  the nested-directory warning found in the first follow-up run. All twelve
+  sessions were then rerun against one identical final snapshot; results and
+  a non-applied, invalid C8 repair suggestion are recorded in walkthrough-results.md.
+  Final `make verify`, local sh/dash portability, and independent Sol/high
+  re-review passed. The following evidence-only status updates were checked with
+  Story/handoff readers. FF-223 remains REVIEW for human acceptance, next pending.
+
+* Carl approved FF-223 implementation on 2026-09-06 after the specification and
+  grilling decisions. Optional Codex activation is implemented as Additive 0.4.1;
+  current state is REVIEW awaiting Human Review, next pending.
+  The pre-existing handoff and three Story planning files were preserved and
+  advanced within that authorization. All dirty paths are attributed above.
+  Installer safety and independent Sol/high review passed; fresh CLI observations
+  and initial behavior misses are recorded in FF-223 task.md. Final full
+  `make verify` and local `/bin/sh` and `/bin/dash` portability passed after the
+  relevant implementation/guidance edits. This final status-only update records
+  those results; its Story/handoff contracts are checked separately. CLI evidence
+  retains host/isolation limitations; human-method ACs await human acceptance.
+  That implementation authorization did not include live-adopter changes,
+  commits, pushes, or release; the later local-commit authorization is above.
+
 * Carl authorized commit and release on 2026-09-06. The release candidate
   includes FF-222 and the reviewed optional Agentic Discipline documentation.
   Acceptance review found trailing content accepted after the fifth evidence
   column and a test coupled to the live Story. Both are repaired; the new
   regression failed before the parser fix, and independent re-review confirmed
   both findings resolved. Full `make verify` passed after the fixes.
-* Carl merged PR #11 at the baseline above on 2026-09-06 (Asia/Taipei).
-  FF-222 is DONE; selection of the next Story is pending. The merged SHA passed
+* Carl merged PR #11 at `998c63fd6b530b9b15ced35a4a118b41916c79fa`
+  on 2026-09-06 (Asia/Taipei). FF-222 is DONE. The merged SHA passed
   full local `make release-check` before and after annotated-tag creation.
   Exact-SHA workflow 33980677522 passed Linux canonical verification, macOS
   `/bin/sh`, and Ubuntu `/bin/dash` portability.
 * v0.4.0 was published on 2026-09-06 (Asia/Taipei):
   https://github.com/CarlLee1983/ForgeFlowV2/releases/tag/v0.4.0.
   Post-publication inspection confirmed remote annotated tag
-  `9065cab4a06697ea63a353da966d3807cbf21bb2` peels to the baseline SHA, and the
+  `9065cab4a06697ea63a353da966d3807cbf21bb2` peels to that release SHA, and the
   Release is neither draft nor prerelease. These are historical observations.
-* This two-file documentation follow-up records completion after publication.
-  Its baseline is the released commit; it does not change the released tag.
+* The prior two-file documentation follow-up recorded completion after
+  publication and did not change the released tag.
 
 * Carl accepted FF-217 through FF-220 and explicitly authorized commit and full
   release on 2026-09-05. Carl then merged PR #9 at

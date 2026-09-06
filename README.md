@@ -117,6 +117,11 @@ Story templates is covered in
 
 ## Check Story and handoff contracts
 
+For Codex users who want project-local activation without a repeated source-path
+prompt, preview the optional integration with
+`./scripts/codex-activate /path/to/repository`. Review it before using `--apply`.
+See [Codex project activation](docs/codex-activation.md) for setup and updates.
+
 Two static, read-only checkers report contract gaps before an agent starts
 implementing:
 

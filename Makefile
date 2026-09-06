@@ -15,6 +15,9 @@ verify-protocol:
 verify-bootstrap:
 	sh -n scripts/bootstrap tests/bootstrap.sh
 	./tests/bootstrap.sh
+	sh -n scripts/codex-activate tests/codex-activation.sh
+	sh -n specs/stories/FF-223-codex-project-activation/walkthrough-fixtures.sh
+	./tests/codex-activation.sh
 
 verify-doctor:
 	sh -n scripts/doctor tests/doctor.sh

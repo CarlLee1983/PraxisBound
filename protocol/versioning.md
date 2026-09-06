@@ -196,6 +196,15 @@ adopted version drifted from this checkout, even though the exit status is
 unchanged at `0`. Match the exit status, or accept both values, when the
 distinction does not matter.
 
+FF-223 Codex project activation is **Additive** for `0.4.1`: an explicit opt-in
+installer adds a pinned repository-local skill and a bounded AGENTS.md startup
+section. Existing adoptions need no change. Plain bootstrap, `--upgrade`, the
+adoption marker format, Doctor results, and `make verify` semantics are unchanged.
+Only the new installer manages the opted-in section and skill snapshot; it
+previews changes and refuses local edits before writing. See
+[Codex activation](../docs/codex-activation.md) for installation, update, and
+rollback. Skills remain optional and do not enforce human approval mechanically.
+
 ## Repository release readiness
 
 ForgeFlow maintainers can run root `make release-check` on a clean committed

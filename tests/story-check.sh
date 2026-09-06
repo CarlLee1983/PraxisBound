@@ -1017,7 +1017,7 @@ acceptance_evidence_guidance_is_complete() {
     grep -Fq 'Acceptance Evidence' "$forgeflow_repo/$forgeflow_evidence_document" ||
       fail "$forgeflow_evidence_document omits Acceptance Evidence guidance"
   done
-  grep -Fqx '0.4.0' "$forgeflow_repo/VERSION" || fail 'VERSION is not 0.4.0'
+  grep -Fqx '0.4.1' "$forgeflow_repo/VERSION" || fail 'VERSION is not 0.4.1'
   grep -Fq 'Breaking' "$forgeflow_repo/protocol/versioning.md" ||
     fail 'versioning omits breaking classification'
   grep -Fq '../../protocol/versioning.md' "$forgeflow_repo/docs/releases/0.4.0.md" ||

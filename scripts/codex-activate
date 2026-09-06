@@ -1,0 +1,274 @@
+#!/bin/sh
+
+set -eu
+LC_ALL=C
+export LC_ALL
+
+usage() {
+  printf 'Usage: %s [--apply] repository-directory\n' "$0" >&2
+  printf 'Default: preview only. --apply explicitly installs or updates the local snapshot.\n' >&2
+}
+
+fail() { printf 'ERROR: %s\n' "$*" >&2; exit 1; }
+
+stage_path() {
+  destination="$target/$1"
+  stage="${destination%/*}/.forgeflow-activate.$$-${destination##*/}"
+}
+
+# Adapted from bootstrap: stage beside each leaf, track attempts before rename,
+# and keep original copies when any recovery fails. Bootstrap remains standalone.
+finish() {
+  finish_status=$?
+  trap - 0
+  trap '' HUP INT TERM
+  recovery_failed=0
+  if [ "$finish_status" -ne 0 ] && [ "$committed" -eq 0 ]; then
+    while IFS= read -r relative; do
+      [ -n "$relative" ] || continue
+      stage_path "$relative"
+      restored=0
+      if [ -f "$stage/original" ]; then
+        if cp -p "$stage/original" "$stage/restore" &&
+          mv -f "$stage/restore" "$destination"; then restored=1; fi
+      elif rm -f "$destination"; then restored=1; fi
+      if [ "$restored" -eq 0 ]; then
+        recovery_failed=1
+        printf 'UNRESTORED: %s\n' "$destination" >&2
+        if [ -f "$stage/original" ]; then
+          printf 'Restore using a temporary copy of %s/original beside the destination, then rename it.\n' "$stage" >&2
+        else
+          printf 'Restore original absence: remove only %s.\n' "$destination" >&2
+        fi
+      fi
+    done <<EOF
+$attempted
+EOF
+  fi
+  while IFS= read -r relative; do
+    [ -n "$relative" ] || continue
+    stage_path "$relative"
+    [ -d "$stage" ] || continue
+    if [ "$recovery_failed" -eq 1 ]; then
+      printf 'Recovery copies retained: %s\n' "$stage" >&2
+    elif ! { rm -f "$stage/new" "$stage/original" "$stage/restore" && rmdir "$stage"; }; then
+      printf 'Cleanup incomplete: %s\n' "$stage" >&2
+      finish_status=1
+    fi
+  done <<EOF
+$prepared
+EOF
+  if [ "$finish_status" -ne 0 ] && [ "$recovery_failed" -eq 0 ] && [ "$committed" -eq 0 ]; then
+    while IFS= read -r relative; do
+      [ -n "$relative" ] || continue
+      if [ -d "$target/$relative" ]; then
+        rmdir "$target/$relative" || printf 'Cleanup incomplete: %s\n' "$target/$relative" >&2
+      fi
+    done <<EOF
+$created
+EOF
+    printf 'Activation failed; original managed contents and existence restored.\n' >&2
+  fi
+  rm -f "$scratch/block" "$scratch/current-block" "$scratch/AGENTS.md" \
+    "$scratch/SKILL.md" "$scratch/story-development.md" "$scratch/.forgeflow-snapshot" \
+    "$scratch/expected-snapshot"
+  rmdir "$scratch" || finish_status=1
+  [ "$finish_status" -eq 0 ] || exit 1
+}
+
+apply=0
+case "${1-}" in
+  --help) usage; exit 0 ;;
+  --apply) apply=1; shift ;;
+esac
+[ "$#" -eq 1 ] || { usage; exit 2; }
+case "$1" in -*) usage; exit 2 ;; esac
+[ -d "$1" ] || fail 'Target is not a directory'
+target=$(CDPATH='' cd -P "$1" && pwd)
+root=$(CDPATH='' cd -P "$(dirname "$0")/.." && pwd)
+skill_relative=.agents/skills/forgeflow
+skill_dir="$target/$skill_relative"
+directories='specs specs/stories .agents .agents/skills .agents/skills/forgeflow'
+files="AGENTS.md
+$skill_relative/SKILL.md
+$skill_relative/story-development.md
+$skill_relative/.forgeflow-snapshot"
+
+for relative in $directories; do
+  path="$target/$relative"
+  [ ! -L "$path" ] || fail "Refusing directory symlink: $path"
+  if [ -e "$path" ] && [ ! -d "$path" ]; then fail "Not a directory: $path"; fi
+done
+while IFS= read -r relative; do
+  path="$target/$relative"
+  [ ! -L "$path" ] || fail "Refusing file symlink: $path"
+  if [ -e "$path" ] && { [ ! -f "$path" ] || [ ! -r "$path" ]; }; then
+    fail "Not a readable regular file: $path"
+  fi
+done <<EOF
+$files
+specs/.forgeflow-adoption
+EOF
+[ -s "$target/AGENTS.md" ] && [ -d "$target/specs/stories" ] ||
+  fail 'No existing adoption: require AGENTS.md and specs/stories; use bootstrap first'
+
+# Only these three files belong to this integration. An unknown file or missing
+# member requires reconciliation before any mkdir, stage, or target write.
+installed=0
+if [ -d "$skill_dir" ]; then
+  for path in "$skill_dir"/* "$skill_dir"/.[!.]* "$skill_dir"/..?*; do
+    [ -e "$path" ] || [ -L "$path" ] || continue
+    case "${path##*/}" in
+      SKILL.md|story-development.md|.forgeflow-snapshot) ;;
+      *) fail "Unknown integration content: $path" ;;
+    esac
+  done
+  for member in SKILL.md story-development.md .forgeflow-snapshot; do
+    [ -s "$skill_dir/$member" ] || fail "Incomplete or unowned integration: $skill_dir/$member"
+  done
+  installed=1
+fi
+
+begin='<!-- ForgeFlow Codex: begin -->'
+end='<!-- ForgeFlow Codex: end -->'
+bytes=$(wc -c <"$target/AGENTS.md" | tr -d '[:space:]')
+# Locate bytes only; dd copies the actual data so CRLF and a missing final LF
+# outside the block survive unchanged. Reject marker-like malformed lines too.
+offsets=$(awk -v total="$bytes" -v begin="$begin" -v end="$end" '
+  {
+    raw=$0; line=$0; sub(/\r$/, "", line)
+    width=length(raw); if (pos+width < total) width++
+    if (index(line, "<!-- ForgeFlow Codex:")) {
+      if (line==begin && count==0) {start=pos; count=1}
+      else if (line==end && count==1) {stop=pos+width; count=2}
+      else bad=1
+    }
+    pos+=width
+  }
+  END {if(bad || count==1) exit 1; print count+0, start+0, stop+0}
+' "$target/AGENTS.md") || fail 'Ambiguous or malformed ForgeFlow section; reconcile AGENTS.md'
+read -r block_count block_start block_stop <<EOF
+$offsets
+EOF
+[ "$block_count" -eq $((installed * 2)) ] || fail 'AGENTS section and installed snapshot ownership disagree'
+
+scratch=$(mktemp -d "${TMPDIR:-/tmp}/forgeflow-activate.XXXXXX")
+prepared= attempted= created= committed=0
+trap finish 0
+trap 'exit 1' HUP INT TERM
+dd if="$target/AGENTS.md" of="$scratch/current-block" bs=1 skip="$block_start" \
+  count="$((block_stop - block_start))" 2>/dev/null
+
+snapshot() {
+  skill_sum=$(cksum <"$1/SKILL.md") || return 1
+  workflow_sum=$(cksum <"$1/story-development.md") || return 1
+  block_sum=$(cksum <"$2") || return 1
+  printf 'format=1\nversion=%s\nrevision=%s\nadoption=%s\n' "$version" "$revision" "$adoption"
+  printf 'skill=%s\nworkflow=%s\nblock=%s\n' "$skill_sum" "$workflow_sum" "$block_sum"
+}
+
+if [ "$installed" -eq 1 ]; then
+  version=$(sed -n '2s/^version=//p' "$skill_dir/.forgeflow-snapshot")
+  revision=$(sed -n '3s/^revision=//p' "$skill_dir/.forgeflow-snapshot")
+  adoption=$(sed -n '4s/^adoption=//p' "$skill_dir/.forgeflow-snapshot")
+  snapshot "$skill_dir" "$scratch/current-block" >"$scratch/expected-snapshot"
+  cmp -s "$scratch/expected-snapshot" "$skill_dir/.forgeflow-snapshot" ||
+    fail 'Locally edited or malformed integration; restore the recorded snapshot before updating'
+  grep -Fqx "<!-- snapshot version=$version revision=$revision adoption=$adoption -->" \
+    "$scratch/current-block" || fail 'Snapshot identity and AGENTS section disagree'
+fi
+
+version=$(sed -n '1p' "$root/VERSION")
+printf '%s\n' "$version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$' || fail 'Invalid source VERSION'
+adoption=unknown
+if [ -f "$target/specs/.forgeflow-adoption" ]; then
+  [ "$(awk '/^version=/{n++} END{print n+0}' "$target/specs/.forgeflow-adoption")" -eq 1 ] ||
+    fail 'Invalid adoption marker version: require exactly one version line'
+  adoption=$(sed -n 's/^version=//p' "$target/specs/.forgeflow-adoption" | tr -d '\r')
+  case "$adoption" in
+    ''|*[!0-9.]*) fail 'Invalid adoption marker version: require one numeric version line' ;;
+  esac
+  printf '%s\n' "$adoption" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$' || fail 'Invalid adoption marker version'
+fi
+revision=unknown
+if command -v git >/dev/null 2>&1; then
+  revision=$(
+    unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_COMMON_DIR GIT_OBJECT_DIRECTORY GIT_CEILING_DIRECTORIES
+    [ "$(git -C "$root" rev-parse --show-toplevel 2>/dev/null)" = "$root" ] || exit 1
+    head=$(git -C "$root" rev-parse HEAD) || exit 1
+    changes=$(git -C "$root" status --porcelain) || exit 1
+    if [ -n "$changes" ]; then printf '%s-dirty\n' "$head"; else printf '%s\n' "$head"; fi
+  ) || revision=unknown
+fi
+sed 's|../story-development/SKILL.md|story-development.md|g' \
+  "$root/skills/forgeflow/SKILL.md" >"$scratch/SKILL.md"
+cp "$root/skills/story-development/SKILL.md" "$scratch/story-development.md"
+{
+  printf '%s\n' "$begin" "<!-- snapshot version=$version revision=$revision adoption=$adoption -->"
+  cat "$root/skills/forgeflow/agents-block.md"
+  printf '%s\n' "$end"
+} >"$scratch/block"
+{
+  dd if="$target/AGENTS.md" bs=1 count="$block_start" 2>/dev/null
+  cat "$scratch/block"
+  dd if="$target/AGENTS.md" bs=1 skip="$block_stop" 2>/dev/null
+} >"$scratch/AGENTS.md"
+snapshot "$scratch" "$scratch/block" >"$scratch/.forgeflow-snapshot"
+
+changed=0
+while IFS= read -r relative; do
+  if ! cmp -s "$scratch/${relative##*/}" "$target/$relative"; then
+    changed=1
+    printf 'Would write %s\n' "$target/$relative"
+  fi
+done <<EOF
+$files
+EOF
+if [ "$changed" -eq 0 ]; then printf 'Already installed: ForgeFlow %s (%s)\n' "$version" "$revision"; exit 0; fi
+diff_status=0
+diff -u "$target/AGENTS.md" "$scratch/AGENTS.md" || diff_status=$?
+[ "$diff_status" -le 1 ] || fail 'Could not preview AGENTS.md changes'
+if [ "$apply" -eq 0 ]; then
+  printf 'Preview only; review the changes, then authorize --apply.\n'
+  exit 0
+fi
+
+for relative in .agents .agents/skills .agents/skills/forgeflow; do
+  if [ ! -d "$target/$relative" ]; then
+    created="$relative
+$created"
+    mkdir "$target/$relative"
+  fi
+done
+while IFS= read -r relative; do
+  stage_path "$relative"
+  [ ! -e "$stage" ] && [ ! -L "$stage" ] || fail "Existing stage: $stage"
+  prepared="$relative
+$prepared"
+  (umask 077 && mkdir "$stage")
+  if [ -f "$destination" ]; then
+    cp -p "$destination" "$stage/original"
+    cp -p "$destination" "$stage/new"
+    # A readable, owner-read-only original can still be replaced in its directory.
+    mode=$(LC_ALL=C ls -ld "$stage/new")
+    case "$mode" in ??w*) readonly=0 ;; *) readonly=1; chmod u+w "$stage/new" ;; esac
+    cat "$scratch/${relative##*/}" >"$stage/new"
+    if [ "$readonly" -eq 1 ]; then chmod u-w "$stage/new"; fi
+  else
+    cp "$scratch/${relative##*/}" "$stage/new"
+  fi
+done <<EOF
+$files
+EOF
+while IFS= read -r relative; do
+  stage_path "$relative"
+  attempted="$relative
+$attempted"
+  mv -f "$stage/new" "$destination"
+done <<EOF
+$files
+EOF
+trap '' HUP INT TERM
+committed=1
+finish
+printf 'Installed ForgeFlow %s (%s) in %s\n' "$version" "$revision" "$target"
