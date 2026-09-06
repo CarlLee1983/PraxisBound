@@ -8,7 +8,7 @@ is context only.
 
 ```yaml
 workflow:
-  current_story: FF-223
+  current_story: FF-224
   next_story: pending
   completed_stories:
     - FF-201
@@ -38,29 +38,14 @@ workflow:
 baseline:
   repository: CarlLee1983/ForgeFlowV2
   branch: docs/ff-222-release-completion
-  commit: 5947f846daf083f36a8a6e60cde11926cb5004b9
+  commit: 672e69ccb51666fec234cf8dc38511379e05dadf
   dirty_worktree: true
   story_owned_paths:
-    - Makefile
-    - README.md
-    - VERSION
-    - docs/codex-activation.md
-    - docs/doctor.md
-    - docs/releases/0.4.1.md
-    - protocol/versioning.md
-    - scripts/codex-activate
-    - skills/forgeflow/SKILL.md
-    - skills/forgeflow/agents-block.md
+    - docs/human-review.md
+    - docs/agentic-discipline.md
     - specs/handoff.md
-    - specs/stories/FF-223-codex-project-activation/story.md
-    - specs/stories/FF-223-codex-project-activation/acceptance.md
-    - specs/stories/FF-223-codex-project-activation/task.md
-    - specs/stories/FF-223-codex-project-activation/walkthrough-fixtures.sh
-    - specs/stories/FF-223-codex-project-activation/walkthrough-results.md
-    - tests/codex-activation.sh
-    - tests/human-review.sh
-    - tests/portability.sh
-    - tests/story-check.sh
+    - specs/stories/FF-224-review-evidence-guidance/story.md
+    - specs/stories/FF-224-review-evidence-guidance/acceptance.md
   known_unrelated_paths: []
 
 verification:
@@ -69,6 +54,27 @@ verification:
 ```
 
 ## Notes
+
+* Carl accepted FF-224's delivered documentation and authorized a local commit
+  on 2026-09-06. All FF-224 ACs are checked. The Story remains REVIEW until the
+  repository merge policy is satisfied; next Story is pending. FF-223's human
+  acceptance remains separate. Push, merge, and release are outside this scope.
+  The baseline block describes the parent and owned paths prepared for this
+  commit, not the worktree state after committing. Complete `make verify`
+  passed again before commit (exit 0; `/tmp/forgeflow-ff224-commit-verify.log`).
+  The final evidence-only update passed Story/handoff and whitespace checks.
+
+* Carl approved the three documentation additions on 2026-09-06. FF-224 records
+  that scope: verification limits, failure detection/recovery, and an optional
+  delivery-cost experiment. The starting worktree was clean. FF-223 remains
+  awaiting human acceptance; it is not marked complete by this follow-up.
+  Next Story remains pending. No protocol/template changes or new tests are
+  needed; human-method ACs were initially left for human acceptance.
+  Complete `make verify` passed
+  with exit 0; log: `/tmp/forgeflow-ff224-verify.log`. Independent review found
+  an untracked-file inventory gap in AC-004's evidence command; it was corrected
+  before the gate finished. The subsequent Story/handoff evidence-only update
+  passed the readiness, handoff, and whitespace checks.
 
 * Carl authorized a local FF-223 commit and requested final acceptance checks
   focused on ForgeFlow on 2026-09-06. Push, merge, release, and live-adopter

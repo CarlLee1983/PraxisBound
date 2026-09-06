@@ -115,6 +115,20 @@ adopt the same class structure:
 * Are boundary inputs validated as the Story requires?
 * Can the change persist results that the Story or tests do not cover?
 
+### Failure detection and recovery
+
+For changes with operational effects, ask which existing log, metric, trace,
+exit result, or other observation would reveal a failure. Name the condition
+that calls for stopping execution or rollout, the recovery procedure, and the
+check that demonstrates recovery restored the required state. Distinguish a
+procedure that was exercised from one that is only documented; identify any
+irreversible effects or unverified recovery assumptions.
+
+Use the existing review report or link the repository's runbook. If operational
+recovery does not apply, explain why; a wording-only documentation change, for
+example, has no runtime state to restore. These prompts do not require a new
+monitoring system or authorize production execution.
+
 ### Tests
 
 * Do tests verify observable behavior instead of freezing private
@@ -126,6 +140,31 @@ adopt the same class structure:
 
 This is intentionally not a complete Test Quality Contract. Broader test
 quality policy belongs in a separate Story.
+
+### Verification limits
+
+In existing Verification Notes or the review report, name relevant cases that
+were not exercised, why they were omitted, what the available evidence can
+establish, and what remains uncertain. Consider external services, concurrent
+operations, data lifecycle, and partial failures when they affect this change.
+Point to the follow-up check or human decision needed. Explain non-applicability
+instead of supplying an empty checklist.
+
+An untested-case note does not waive required behavior or turn a missing
+acceptance result into PASS. Repair implementation or evidence gaps through the
+existing workflow; a missing or conflicting intent decision follows SPEC_BLOCKED.
+
+For example, suppose an approved CSV-import Story requires atomic publication:
+validation errors and interrupted writes must leave the previous output intact.
+The review report can link fixtures for empty input, missing columns, and a
+failure before publication. It can state that concurrent writers were not tested
+because the approved scope is a single writer, so those fixtures establish no
+concurrency guarantee. A nonzero exit and the import error log signal failure;
+stop the batch on that result, remove only the failed attempt's temporary output,
+and verify that the previous output is unchanged before retrying. Link the
+fixture result demonstrating that recovery. A crash after publication needs
+separate evidence if the Story covers it; these pre-publication tests do not
+prove that case.
 
 ### Scope and maintainability
 

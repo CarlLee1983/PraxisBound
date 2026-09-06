@@ -65,6 +65,39 @@ protocol fields just to imitate a six-agent diagram.
 This gives teams the useful part of the pattern—small sources and evidence
 gates—without requiring an agent swarm on every change.
 
+## Optional delivery-cost experiment
+
+To evaluate this pattern, choose one small, reversible Story and record the
+experiment in its existing task notes or review report. Define the task class,
+acceptance criteria, tool setup, and observation window before starting. Compare
+with a similar human-led change only when its scope, risk, and verification are
+comparable; if no baseline exists, collect one rather than inventing a saving.
+
+Record elapsed time from starting work to human acceptance, with waiting time
+identified separately. Record human effort separately for implementation,
+review, and rework; overlapping agent runs are not additive elapsed time.
+Include review rounds, repair loops, the final verification result, and any
+available tool cost with its unit. Keep the relevant Story and command-result
+references so the comparison can be checked.
+
+Choose a post-delivery window, such as seven days after deployment, and record
+escaped defects, rollback work, and recovery effort during that window. Until it
+ends, label those outcomes pending; for an undeployed change, mark deployment
+outcomes not observed. Compare accepted behavior and total effort alongside
+elapsed time. A faster first diff or one small comparison does not demonstrate a
+causal productivity improvement.
+
+For example, compare two similar import-validation fixes using the same gate.
+One may produce a diff sooner but require another review round and an interrupted
+write fixture. Count that review and repair work before judging the result.
+This example is a measurement procedure, not a reported benchmark.
+
+This optional experiment follows Carl's [engineering-fundamentals
+article](https://carlstack.gravito.dev/blog/agentic-coding-software-engineering-fundamentals/).
+For verification limits and recovery evidence, use [Human
+Review](human-review.md#verification-limits). It adds no required fields,
+productivity threshold, telemetry service, or completion gate.
+
 ## Boundaries and limitations
 
 Coverage, mutation scores, CRAP-style thresholds, and UI automation are
