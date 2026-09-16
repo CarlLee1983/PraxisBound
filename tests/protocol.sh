@@ -162,6 +162,7 @@ for forgeflow_required_file in \
   docs/releases/0.7.0.md \
   docs/releases/0.8.0.md \
   docs/releases/0.9.0.md \
+  docs/releases/0.10.0.md \
   docs/releasing.md \
   examples/typescript/Makefile \
   examples/typescript/scripts/check-traceability.sh \
@@ -919,6 +920,36 @@ risk_driven_readiness_is_additive_for_0_8_0() {
     fail 'contract-check docs omit the risk-inference boundary'
 }
 
+# The 0.10.0 release record. VERSION reached 0.10.0 with the PB-001 identity
+# migration, but no release note was written; this guards the record that now
+# closes that gap. The terms are the migration an adopter must act on, so a
+# note that names the release without them records nothing usable.
+identity_migration_is_recorded_for_0_10_0() {
+  forgeflow_release_note="$forgeflow_repo/docs/releases/0.10.0.md"
+
+  grep -Fqx '# PraxisBound 0.10.0' "$forgeflow_release_note" ||
+    fail 'docs/releases/0.10.0.md does not title the PraxisBound 0.10.0 release'
+
+  for forgeflow_migration_term in \
+    'Breaking' \
+    'specs/.praxisbound-adoption' \
+    'specs/.forgeflow-adoption' \
+    '--upgrade' \
+    'PRAXISBOUND_DECISIONS_ROOT' \
+    'FORGEFLOW_DECISIONS_ROOT' \
+    '.agents/skills/praxisbound' \
+    'docs/upgrading.md'
+  do
+    grep -Fq -- "$forgeflow_migration_term" "$forgeflow_release_note" ||
+      fail "docs/releases/0.10.0.md omits migration term: $forgeflow_migration_term"
+  done
+
+  # The record states Protocol changes only. Reference Tooling ships under its
+  # own version and must not be presented as part of the Protocol release.
+  grep -Fq 'Reference Tooling' "$forgeflow_release_note" ||
+    fail 'docs/releases/0.10.0.md does not separate Reference Tooling from the Protocol'
+}
+
 structural_contract_is_capability_based_for_0_9_0() {
   grep -Fq 'P1-003 is **Breaking** for `0.9.0`' \
     "$forgeflow_repo/protocol/versioning.md" ||
@@ -979,5 +1010,6 @@ run_case 'P0001-AC-005' mutable_lifecycle_state_is_removed_for_0_8_0
 run_case 'P0001-AC-007' mutable_lifecycle_state_is_removed_for_0_8_0
 run_case 'P0002-AC-009' risk_driven_readiness_is_additive_for_0_8_0
 run_case 'P1003-AC-008' structural_contract_is_capability_based_for_0_9_0
+run_case 'REL-0.10.0' identity_migration_is_recorded_for_0_10_0
 
 printf 'protocol tests passed\n'
