@@ -82,6 +82,12 @@ Because this is a scope boundary rather than a missing feature, a future request
 to implement these five checks is a request to change this decision, and should
 be answered by revisiting this record rather than by writing a checker.
 
+TST-018 revisited this decision before retiring the portable release-check
+implementation. The approved Node requirement is confined to PraxisBound's
+optional maintainer release tool; it adds no runtime, parser, or analysis
+requirement to an adopting repository. The files-and-Make adoption boundary and
+the decision not to supply architecture analysis therefore remain unchanged.
+
 ## Falsified if
 
 Adoption stops depending only on files, Make, and existing CI — for example if

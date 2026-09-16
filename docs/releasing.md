@@ -15,19 +15,28 @@ checker. It checks the local candidate's version, commit, strict worktree
 cleanliness, and local tag consistency. Its PASS is local-only evidence. It
 never fetches, pushes, changes tags, calls GitHub, or creates a release.
 
-During the TST-017 deprecation period, select the unchanged shell checker for
-an exact rollback of the inspection implementation:
+TST-018 ended the TST-017 deprecation period. `scripts/release-check` is now a
+thin POSIX wrapper around the TypeScript compatibility adapter, so direct use
+of the command also requires a supported Node.js runtime. The former selector
+and shell implementation are not fallback paths. A retired or unknown selector
+fails before inspection:
 
 ```sh
-make release-check RELEASE_CHECK_IMPLEMENTATION=legacy
+make release-check RELEASE_CHECK_IMPLEMENTATION=legacy # fails closed
 ```
 
-That selection still runs `make verify` first and requires no data migration.
-Direct `./scripts/release-check` remains the portable shell interface. An
-unknown implementation value fails without running an inspection. The default
-selection is a Corrective compatibility change; the `legacy` selector is
-Additive. Removing the shell checker requires a separately approved TST-018
-Legacy Removal Gate.
+Migrate callers by removing `RELEASE_CHECK_IMPLEMENTATION` and providing the
+same supported Node.js runtime used by the repository tooling. The command
+form, six success records, local-only checks, exits, and no-write behavior are
+unchanged. The runtime change is Breaking for maintainers who invoked the
+portable shell implementation or selected `legacy`; it is outside the adopter
+Protocol surface, so Protocol `VERSION` remains `0.10.0`.
+
+Rollback restores the complete pre-TST-018 revision
+`fcc5595d5c95a42a82e67bb6f82be7886fdfaa64`. Do not copy the old checker into a
+newer checkout: its Make wiring, selector, tests, and documentation form one
+compatibility set. Rollback changes no repository data, package, tag, GitHub
+Release, or npm dist-tag.
 
 Remote tag, Release, and CI state is time-sensitive evidence. Query it through
 this runbook when making a release or review decision; a handoff may preserve a

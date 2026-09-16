@@ -39,8 +39,8 @@ forgeflow_repo=$(CDPATH='' cd -P "$(dirname "$0")/.." >/dev/null 2>&1 && pwd)
 forgeflow_portability_shell=${PORTABILITY_SHELL:-}
 forgeflow_test_dir=$(mktemp -d "${TMPDIR:-/tmp}/forgeflow-portability.XXXXXX")
 forgeflow_copy="$forgeflow_test_dir/source"
-forgeflow_production_scripts='bootstrap doctor story-check handoff-check release-check release-check-select verification-check codex-activate'
-forgeflow_behavior_suites='bootstrap doctor story-check handoff-check release-check execution-governance codex-activation'
+forgeflow_production_scripts='bootstrap doctor story-check handoff-check release-check verification-check codex-activate'
+forgeflow_behavior_suites='bootstrap doctor story-check handoff-check execution-governance codex-activation'
 
 unset GIT_DIR GIT_WORK_TREE GIT_COMMON_DIR GIT_INDEX_FILE GIT_OBJECT_DIRECTORY
 unset GIT_ALTERNATE_OBJECT_DIRECTORIES GIT_CEILING_DIRECTORIES
@@ -82,6 +82,7 @@ copy_source_tree() {
   ) | while IFS= read -r forgeflow_path
   do
     [ -n "$forgeflow_path" ] || continue
+    [ -e "$forgeflow_repo/$forgeflow_path" ] || continue
     mkdir -p "$(dirname "$forgeflow_copy/$forgeflow_path")"
     cp -p "$forgeflow_repo/$forgeflow_path" "$forgeflow_copy/$forgeflow_path"
   done
@@ -157,6 +158,22 @@ selected_shell_runs_existing_behavior_suites() {
   source_scripts_remain_unchanged
 }
 
+release_wrapper_is_portable_without_node() {
+  forgeflow_stdout="$forgeflow_test_dir/release.stdout"
+  forgeflow_stderr="$forgeflow_test_dir/release.stderr"
+  mkdir "$forgeflow_test_dir/no-node"
+  forgeflow_status=0
+  PATH="$forgeflow_test_dir/no-node" \
+    "$forgeflow_portability_shell" "$forgeflow_copy/scripts/release-check" \
+    >"$forgeflow_stdout" 2>"$forgeflow_stderr" || forgeflow_status=$?
+  [ "$forgeflow_status" -eq 1 ] ||
+    fail 'release wrapper did not fail with readiness status without Node'
+  [ ! -s "$forgeflow_stdout" ] ||
+    fail 'release wrapper emitted success without Node'
+  grep -Fqx 'release check failed: NODE_UNAVAILABLE' "$forgeflow_stderr" ||
+    fail 'release wrapper did not sanitize missing Node'
+}
+
 portability_ci_is_separate_and_pinned() {
   grep -Fq 'portability:' "$forgeflow_repo/.github/workflows/verify.yml" ||
     fail 'workflow lacks a portability job'
@@ -182,6 +199,7 @@ portability_coverage_is_documented() {
 run_case 'FF220-AC-001' canonical_verify_keeps_existing_dependencies
 run_case 'FF220-AC-002' selected_shell_is_real
 run_case 'FF220-AC-003' copied_scripts_use_selected_shell
+run_case 'FF220-AC-003' release_wrapper_is_portable_without_node
 run_case 'FF220-AC-002' selected_shell_runs_existing_behavior_suites
 run_case 'FF220-AC-004' portability_ci_is_separate_and_pinned
 run_case 'FF220-AC-005' portability_coverage_is_documented

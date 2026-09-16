@@ -211,13 +211,19 @@ expected fixtures before parity is re-baselined.
   live-integration evidence.
 - Decide each default switch independently; do not batch commands.
 
-### Wave 9 — legacy retirement, if separately approved
+### Wave 9 — legacy retirement
 
 - Classify the runtime/command-surface change under `protocol/versioning.md`.
 - Revisit ADR-003 if portable shell entrypoints would be removed or require Node.
 - Publish migration and rollback guidance.
 - Remove one legacy Implementation per independently reviewable ticket. Retaining
   a portable compatibility Implementation is an acceptable final outcome.
+
+TST-018 received separate Human Review approval on 2026-09-16. Its bounded
+release-check removal keeps the direct command as a thin wrapper, confines Node
+to optional maintainer tooling, removes the legacy selector and implementation,
+and leaves adopter Protocol `VERSION` at `0.10.0`. Its verification record maps
+every gate item below to fixed evidence before the executable oracle is removed.
 
 ## Why this order differs from the initial example
 
@@ -260,7 +266,9 @@ until a Breaking Protocol decision is explicitly approved.
 - Before a default switch, rollback is selection-only: invoke the unchanged
   shell Implementation.
 - After a per-command default switch, retain an explicit legacy selector or
-  reversible wrapper for the defined deprecation window.
+  reversible wrapper for the defined deprecation window. TST-018 ended the
+  release-check window; its rollback restores the complete pre-removal revision,
+  not a copied script or hidden fallback.
 - npm rollback pins the last known tooling version and changes dist-tags only
   through a separately authorized release action.
 - Rolling back npm does not undo repository files written by `init`; restore

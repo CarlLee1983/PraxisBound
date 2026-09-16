@@ -1066,7 +1066,7 @@ NODE
 }
 
 legacy_shell_commands_do_not_delegate_to_node() {
-  for legacy_command in bootstrap doctor story-check handoff-check release-check verification-check codex-activate; do
+  for legacy_command in bootstrap doctor story-check handoff-check verification-check codex-activate; do
     if grep -E '(^|[[:space:]])(node|nodejs|pnpm)([[:space:]]|$)' \
       "$praxisbound_repo/scripts/$legacy_command" >/dev/null; then
       fail "legacy shell command $legacy_command delegates to the TypeScript runtime"

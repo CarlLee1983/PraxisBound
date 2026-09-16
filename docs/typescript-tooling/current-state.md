@@ -403,11 +403,14 @@ Command:
 Purpose:
 Inspect whether this PraxisBound checkout is a locally coherent release candidate.
 Root `make release-check` first runs the full canonical gate and then this
-script; direct invocation performs only the local release inspection.
+script; direct invocation performs only the local release inspection. The
+script is a thin POSIX wrapper around the TypeScript JSON compatibility adapter;
+the superseded shell implementation and runtime selector were removed by
+TST-018.
 
 Inputs:
-No arguments; repository Git/HEAD/index/worktree/tag state and committed/working
-`VERSION`.
+No arguments and no implementation selector; repository
+Git/HEAD/index/worktree/tag state and committed/working `VERSION`.
 
 Outputs:
 On success: version, commit, expected tag, local-tag state, and the explicit
@@ -422,22 +425,24 @@ Files written:
 None intended.
 
 Environment dependencies:
-A Git worktree and external Git tooling. It clears selected Git routing state,
-sets `GIT_OPTIONAL_LOCKS=0`, `GIT_NO_LAZY_FETCH=1`, and
-`GIT_NO_REPLACE_OBJECTS=1`, and disables fsmonitor per relevant query.
+A supported Node.js runtime and the installed repository tooling. The
+TypeScript Git adapter clears selected Git routing state, disables hooks and
+optional locks, and performs guarded observations through the local Git
+process.
 
 External process dependencies:
-`git`, `grep`, `wc`, `tr`, and `dirname`.
+`node` and `git`.
 
 Exit codes:
-`0` local candidate passes; `1` local readiness or inspection failure; `2` any
-argument.
+`0` local candidate passes; `1` local readiness, adapter, or runtime failure;
+`2` invalid invocation or retired/unknown implementation selection.
 
 Failure modes:
 Non-Git/non-root/unborn repository; hidden index flags; missing, malformed,
 uncommitted, or mismatched `VERSION`; dirty worktree; wrong or conflicting tag;
 tag not resolving to the expected commit; concurrent HEAD/tag/index/version/tree
-change; guarded Git query failure.
+change; guarded Git query failure; unavailable Node; invalid wrapper invocation;
+or a retired/unknown implementation selector. No case invokes a shell fallback.
 
 Side effects:
 Read-only local Git inspection. It explicitly performs no remote lookup, CI
@@ -453,10 +458,11 @@ remote-not-checked evidence, read-only guarantee, and exit semantics are
 semantic.
 
 Tests covering behavior:
-`tests/release-check.sh`, `tests/portability.sh`, release documentation,
-`make verify-release`, and composed `make release-check`. Fixtures cover hostile
-Git configuration, promisor/lazy-fetch protection, mutation detection, and tag
-TOCTOU cases.
+`tests/release-check-entrypoint.sh`, TypeScript release conformance tests,
+`tests/portability.sh`, release documentation, `make verify-tooling`, and
+composed `make release-check`. Fixtures cover hostile Git configuration,
+promisor/lazy-fetch protection, mutation detection, tag TOCTOU, malformed child
+results, missing runtime, and absence of legacy fallback.
 
 ## Current coupling and extraction map
 
@@ -469,7 +475,7 @@ TOCTOU cases.
 | Init/activation desired file set and conflict decisions                                          | Core mutation planner                  | The same input snapshot must produce the same proposed effects.             |
 | Staging, rename, signal handling, rollback execution                                             | CLI mutation Adapter                   | These are operating-system effects, not deterministic decisions.            |
 | Human text, colors, progress, help, `process.exitCode`                                           | CLI renderer/adapter                   | Presentation and process integration stay outside Core.                     |
-| Legacy output normalization                                                                      | parity test harness only               | It is an oracle bridge, not a supported integration Interface.              |
+| Historical legacy-output normalization                                                           | fixed TST-017/TST-018 evidence          | The removed oracle is retained as evidence, not executable production code. |
 
 ## Inventory conclusions
 

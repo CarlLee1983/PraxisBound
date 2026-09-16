@@ -49,7 +49,6 @@ tests/portability.sh|retained legacy portability fixture
 tests/praxisbound-activation.sh|explicit activation migration and security test
 tests/praxisbound-identity.sh|explicit identity migration and allowlist test
 tests/protocol.sh|retained historical protocol fixture
-tests/release-check.sh|retained historical release fixture
 tests/review-integrity.sh|retained historical review fixture
 tests/story-check.sh|retired environment-variable fixture
 tests/typescript-tooling.sh|legacy-coordinate rejection fixture

@@ -2,11 +2,8 @@
 
 verify: verify-protocol verify-bootstrap verify-doctor verify-story verify-handoff verify-release verify-typescript verify-go verify-actions verify-execution verify-tooling verify-praxisbound
 
-RELEASE_CHECK_IMPLEMENTATION ?= typescript
-export RELEASE_CHECK_IMPLEMENTATION
-
 release-check: verify
-	./scripts/release-check-select
+	./scripts/release-check
 
 verify-protocol:
 	sh -n tests/protocol.sh tests/code-quality.sh tests/human-review.sh tests/review-integrity.sh
@@ -45,8 +42,7 @@ verify-execution:
 	./scripts/verification-check --result specs/stories/FF-224-execution-governance
 
 verify-release:
-	sh -n scripts/release-check tests/release-check.sh
-	./tests/release-check.sh
+	sh -n scripts/release-check tests/release-check-entrypoint.sh
 
 verify-typescript:
 	$(MAKE) -C examples/typescript verify
@@ -62,10 +58,10 @@ verify-tooling:
 	pnpm test
 	sh -n tests/typescript-tooling.sh
 	./tests/typescript-tooling.sh
-	sh -n scripts/release-check-select tests/release-check-switch.sh
+	sh -n tests/release-check-entrypoint.sh
 	node --check scripts/release-check-compat.mjs
 	pnpm exec prettier --check scripts/release-check-compat.mjs
-	./tests/release-check-switch.sh
+	./tests/release-check-entrypoint.sh
 
 verify-go:
 	$(MAKE) -C examples/go verify

@@ -549,6 +549,12 @@ Verification:
 
 Depends on: TST-017 plus the complete Legacy Removal Gate.
 
+Approved boundary: on 2026-09-16 Human Review declared the TST-017
+deprecation/default period complete and approved the Breaking maintainer-tooling
+Node requirement. Preserve `scripts/release-check` as a thin wrapper, remove the
+selector and shell implementation, keep Protocol `VERSION` at `0.10.0`, and
+roll back only by restoring the complete pre-TST-018 revision.
+
 Scope:
 
 - Remove only the superseded shell `release-check` Implementation after its
