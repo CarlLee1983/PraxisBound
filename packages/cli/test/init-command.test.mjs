@@ -188,3 +188,142 @@ test("TST012-AC-006: npm package content includes the complete bundled snapshot"
   ])
     assert.ok(files.includes(path), `missing packed snapshot asset: ${path}`);
 });
+
+// TST-019. These cases assert next-step identifiers, presence and ordering.
+// They never assert description wording: rewording a step is not a contract
+// change, while removing, reordering or renaming one is.
+const gateStepId = "verification-gate";
+const confirmStepId = "confirm-adoption";
+
+function stepIds(result) {
+  return result.data.nextSteps.map((step) => step.id);
+}
+
+test("TST019-AC-001: preview and applied outcomes both carry ordered next steps", async () => {
+  const previewRoot = await temporaryTarget("steps-preview");
+  const appliedRoot = await temporaryTarget("steps-applied");
+  try {
+    const preview = run(["--dry-run", "--json", previewRoot]);
+    const applied = run(["--json", appliedRoot]);
+
+    assert.equal(preview.status, 0, preview.stderr);
+    assert.equal(applied.status, 0, applied.stderr);
+    const previewResult = JSON.parse(preview.stdout);
+    const appliedResult = JSON.parse(applied.stdout);
+    assert.equal(previewResult.outcome, "INIT_PREVIEW");
+    assert.equal(appliedResult.outcome, "INIT_APPLIED");
+
+    for (const result of [previewResult, appliedResult]) {
+      assert.deepEqual(validateResultEnvelope(result), {
+        ok: true,
+        value: result,
+      });
+      assert.ok(Array.isArray(result.data.nextSteps));
+      // deepEqual pins presence and order together: the gate step precedes
+      // the confirmation step, and no step was added, dropped or renamed.
+      assert.deepEqual(stepIds(result), [gateStepId, confirmStepId]);
+      for (const step of result.data.nextSteps) {
+        assert.equal(typeof step.id, "string");
+        assert.ok(step.id.length > 0);
+        assert.equal(typeof step.description, "string");
+        assert.ok(step.description.length > 0);
+      }
+    }
+    assert.deepEqual(stepIds(previewResult), stepIds(appliedResult));
+  } finally {
+    await rm(previewRoot, { recursive: true, force: true });
+    await rm(appliedRoot, { recursive: true, force: true });
+  }
+});
+
+test("TST019-AC-002: human output prints the same steps in the same order", async () => {
+  const root = await temporaryTarget("steps-human");
+  try {
+    const machine = run(["--dry-run", "--json", root]);
+    const human = run(["--dry-run", root]);
+
+    assert.equal(human.status, 0, human.stderr);
+    const steps = JSON.parse(machine.stdout).data.nextSteps;
+    let cursor = -1;
+    for (const step of steps) {
+      const at = human.stdout.indexOf(step.description);
+      assert.ok(at >= 0, `human output omits step ${step.id}`);
+      assert.ok(at > cursor, `human output misorders step ${step.id}`);
+      cursor = at;
+    }
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("TST019-AC-003/004: the gate step states an outcome and no mode writes a gate", async () => {
+  const root = await temporaryTarget("steps-gate");
+  try {
+    const applied = run(["--json", root]);
+    assert.equal(applied.status, 0, applied.stderr);
+    const result = JSON.parse(applied.stdout);
+
+    const gate = result.data.nextSteps.find((step) => step.id === gateStepId);
+    assert.ok(gate !== undefined, "the gate step is absent");
+    // Structural, not wording: a required outcome fits on one line, a file body
+    // does not, and these names belong to no repository's prose.
+    assert.ok(!gate.description.includes("\n"));
+    assert.doesNotMatch(
+      gate.description,
+      /\b(?:golang|go\.mod|npm|pnpm|yarn|cargo|pytest|gradle|maven|tsc)\b/i,
+      "the gate step must not name a specific toolchain",
+    );
+    assert.equal(result.schemaVersion, "1.0.0");
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("TST019-AC-004: no mode writes a verification gate into the target", async () => {
+  const modes = [
+    ["safe", []],
+    ["force", ["--force"]],
+    ["upgrade", ["--upgrade"]],
+  ];
+  for (const [name, flags] of modes) {
+    const root = await temporaryTarget(`steps-nogate-${name}`);
+    try {
+      if (name === "force") await writeFile(join(root, "AGENTS.md"), "own\n");
+      if (name === "upgrade")
+        await mkdir(join(root, "specs", "stories", "_template"), {
+          recursive: true,
+        });
+      const applied = run(["--json", ...flags, root]);
+      assert.equal(applied.status, 0, `${name}: ${applied.stderr}`);
+
+      for (const [entry] of await manifest(root))
+        assert.doesNotMatch(
+          entry.split("/").at(-1),
+          /^(?:GNU)?[Mm]akefile$/,
+          `${name} mode wrote a verification gate: ${entry}`,
+        );
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  }
+});
+
+test("TST019-AC-006: a failed init reports its typed failure and emits no next steps", async () => {
+  const root = await temporaryTarget("steps-failure");
+  try {
+    await writeFile(join(root, "AGENTS.md"), "adopter guide\n");
+    const conflict = run(["--dry-run", "--json", root]);
+    const usage = run(["--force", "--upgrade", "--json", root]);
+
+    assert.equal(conflict.status, 1);
+    assert.equal(usage.status, 2);
+    const conflictResult = JSON.parse(conflict.stdout);
+    assert.equal(conflictResult.outcome, "INIT_CONFLICT");
+    assert.equal(conflictResult.data?.nextSteps, undefined);
+    const usageResult = JSON.parse(usage.stdout);
+    assert.equal(usageResult.error.code, "INIT_USAGE");
+    assert.equal(usageResult.data?.nextSteps, undefined);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});

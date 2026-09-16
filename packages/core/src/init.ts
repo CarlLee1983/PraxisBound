@@ -1,5 +1,7 @@
 import { createHash } from "node:crypto";
 
+import { adoptionNextSteps } from "./adoption-next-steps.js";
+
 import {
   IMPLEMENTED_PROTOCOL_VERSION,
   RESULT_SCHEMA_VERSION,
@@ -664,7 +666,13 @@ export function evaluateInitMutation(
 
   if (observation.committed) {
     return Object.freeze({
-      result: result("pass", "INIT_APPLIED", 0, Object.freeze([]), data),
+      result: result(
+        "pass",
+        "INIT_APPLIED",
+        0,
+        Object.freeze([]),
+        Object.freeze({ ...data, nextSteps: adoptionNextSteps }),
+      ),
       changes: plan.effects,
       plan,
     });
@@ -893,6 +901,7 @@ export function planMutation(request: InitPlanRequest): InitPlanEvaluation {
       provenance,
       planId: plan.planId,
       changes,
+      nextSteps: adoptionNextSteps,
     }),
     changes,
     plan,

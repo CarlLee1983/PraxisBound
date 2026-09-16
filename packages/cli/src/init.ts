@@ -307,6 +307,13 @@ export function renderInitHuman(
   }
   const data = execution.result.data;
   const changes = Array.isArray(data?.changes) ? data.changes : [];
+  // Rendered from the same collection the machine contract carries, so the
+  // watching human sees exactly the steps the consumer was given.
+  const nextSteps = (Array.isArray(data?.nextSteps) ? data.nextSteps : [])
+    .map((step) => (step as { description?: unknown }).description)
+    .filter(
+      (description): description is string => typeof description === "string",
+    );
   const preview = execution.result.outcome === "INIT_PREVIEW";
   const lines = [
     preview ? "PraxisBound init dry run" : "PraxisBound init",
@@ -321,6 +328,15 @@ export function renderInitHuman(
         : `${verb === "replace" ? "Replaced" : "Installed"} ${String(entry.path)}`;
     }),
     "",
+    ...(nextSteps.length === 0
+      ? []
+      : [
+          "Next steps to complete this Adoption:",
+          ...nextSteps.map(
+            (description, index) => `${index + 1}. ${description}`,
+          ),
+          "",
+        ]),
     preview
       ? "PraxisBound init dry run completed"
       : "PraxisBound init completed",

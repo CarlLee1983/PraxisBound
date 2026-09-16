@@ -15,6 +15,7 @@ test("AC-005/TST012-AC-004/TST014-AC-003: the Core package root exposes only the
     "activationSkillDirectory",
     "activationSnapshotPath",
     "adoptionMarkerPath",
+    "adoptionNextSteps",
     "assertResultEnvelope",
     "createAdoptionMarker",
     "evaluateActivationAcquisition",

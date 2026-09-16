@@ -98,6 +98,9 @@ export type {
   InitStageObservation,
 } from "./init.js";
 
+export { adoptionNextSteps } from "./adoption-next-steps.js";
+export type { AdoptionNextStep } from "./adoption-next-steps.js";
+
 export { evaluateRepositoryDoctor } from "./repository.js";
 export type {
   RepositoryComposedObservation,

@@ -107,6 +107,8 @@ packed_packages_have_the_bounded_public_contract() {
     './README.md' \
     './dist/activation.d.ts' \
     './dist/activation.js' \
+    './dist/adoption-next-steps.d.ts' \
+    './dist/adoption-next-steps.js' \
     './dist/declarations.d.ts' \
     './dist/declarations.js' \
     './dist/handoff.d.ts' \
