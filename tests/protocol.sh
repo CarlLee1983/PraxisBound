@@ -936,6 +936,12 @@ subsequent_release_procedure_is_documented() {
          /^## / { inside = 0 }
          inside' "$forgeflow_runbook" | tr '\n' ' ' | tr -s ' '
   )
+  # A closing fence followed by prose on the same line does not close the
+  # block, and silently renders the rest of the section as code.
+  if grep -En '^```.*[^a-z]' "$forgeflow_runbook" | grep -Ev '^[0-9]+:```(sh|text|json|markdown|make|yaml)?$' | grep -q .; then
+    fail 'docs/releasing.md has a code fence line carrying prose'
+  fi
+
   for forgeflow_release_term in \
     'Trusted Publishing: OIDC authenticates' \
     'Do not add an `NPM_TOKEN`' \

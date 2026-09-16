@@ -43,6 +43,8 @@ verify-execution:
 
 verify-release:
 	sh -n scripts/release-check tests/release-check-entrypoint.sh
+	sh -n scripts/publish-dispatch tests/publish-dispatch.sh
+	./tests/publish-dispatch.sh
 
 verify-typescript:
 	$(MAKE) -C examples/typescript verify

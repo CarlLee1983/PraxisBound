@@ -317,8 +317,17 @@ CLI dispatches makes the approved SHA undispatchable for CLI. If that happens,
 stop for Human Review rather than publishing CLI from a different revision.
 
 A human then dispatches `publish.yml` for `core`, verifies the public Core
-version, and dispatches it again with the same `candidate_sha` for `cli`. An
-existing package receives the new version on `next` only; `latest` does not
+version, and dispatches it again with the same `candidate_sha` for `cli`. From
+a maintainer checkout with an authenticated `gh`, `scripts/publish-dispatch`
+performs one such dispatch after re-checking these preconditions and asking
+for the exact coordinate as confirmation:
+
+```sh
+./scripts/publish-dispatch core
+./scripts/publish-dispatch cli
+```
+
+An existing package receives the new version on `next` only; `latest` does not
 move. Run the public smoke suite against the exact new versions.
 
 Only after that smoke passes does a human promote `latest`, with 2FA, for each
