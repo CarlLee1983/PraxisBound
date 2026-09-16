@@ -973,6 +973,16 @@ publication_workflow_keeps_its_guards() {
       fail "publish.yml lost a publication guard: $forgeflow_guard"
   done
 
+  # publish.yml reruns make verify, and the release-check rollback case archives
+  # a historical revision. A shallow checkout lacks it, so every publication
+  # would fail before npm publish; verify.yml already fetches full history.
+  for forgeflow_verifying_workflow in publish.yml verify.yml
+  do
+    grep -Fq -- 'fetch-depth: 0' \
+      "$forgeflow_repo/.github/workflows/$forgeflow_verifying_workflow" ||
+      fail "$forgeflow_verifying_workflow checks out without full history"
+  done
+
   # Authentication is OIDC only: the workflow must not reference a stored npm
   # credential that could substitute for a failed trust exchange.
   for forgeflow_credential in NODE_AUTH_TOKEN NPM_TOKEN
