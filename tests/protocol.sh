@@ -176,7 +176,7 @@ for forgeflow_required_file in \
   tests/doctor.sh \
   tests/story-check.sh \
   tests/handoff-check.sh \
-  tests/release-check.sh \
+  tests/release-check-entrypoint.sh \
   tests/review-integrity.sh \
   specs/stories/FF-216-review-integrity-and-state-consistency/story.md \
   specs/stories/FF-216-review-integrity-and-state-consistency/acceptance.md \
@@ -430,11 +430,11 @@ grep -Fq './tests/doctor.sh' "$forgeflow_makefile" ||
 grep -Eq '^release-check:[[:space:]]+verify$' "$forgeflow_makefile" ||
   fail 'release-check does not depend on canonical verify'
 
-grep -Fq './scripts/release-check-select' "$forgeflow_makefile" ||
-  fail 'release-check target does not invoke the selected local checker'
+grep -Fq './scripts/release-check' "$forgeflow_makefile" ||
+  fail 'release-check target does not invoke the local compatibility wrapper'
 
-grep -Fq './tests/release-check-switch.sh' "$forgeflow_makefile" ||
-  fail 'root verify does not include release-check switch acceptance tests'
+grep -Fq './tests/release-check-entrypoint.sh' "$forgeflow_makefile" ||
+  fail 'root verify does not include release-check entrypoint acceptance tests'
 
 forgeflow_release_runbook="$forgeflow_repo/docs/releasing.md"
 
@@ -464,23 +464,19 @@ grep -Fq '[release runbook](docs/releasing.md)' "$forgeflow_repo/README.md" ||
   fail 'README does not link to the release runbook'
 
 for forgeflow_release_checker_term in \
-  'GIT_NO_LAZY_FETCH=1' \
-  "'HEAD:VERSION'" \
-  "--format='%(refname) %(objectname)'" \
-  'remote_checks=not-performed'
+  'RELEASE_CHECK_IMPLEMENTATION' \
+  'unsupported implementation' \
+  'NODE_UNAVAILABLE' \
+  'release-check-compat.mjs'
 do
   grep -Fq -- "$forgeflow_release_checker_term" \
     "$forgeflow_repo/scripts/release-check" ||
     fail "release checker is missing: $forgeflow_release_checker_term"
 done
 
-if grep -Fq 'refname:short' "$forgeflow_repo/scripts/release-check"; then
-  fail 'release checker must not use ambiguous short tag refs'
-fi
-
-if grep -Eq '(^|[;&|[:space:]])(gh|curl|wget)([;&|[:space:]]|$)|git.*[[:space:]](fetch|push|ls-remote|update-ref|tag)([;&|[:space:]]|$)' \
+if grep -Eq '(^|[;&|[:space:]])(gh|curl|wget|git)([;&|[:space:]]|$)' \
   "$forgeflow_repo/scripts/release-check"; then
-  fail 'release checker must not perform network or Git mutation commands'
+  fail 'release wrapper must not perform Git or network commands'
 fi
 
 check_story_headings \

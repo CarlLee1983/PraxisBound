@@ -395,3 +395,14 @@ The human-authorized [release runbook](../docs/releasing.md) defines the remote
 exact-SHA evidence, stop conditions, publication commands, and post-publication
 checks. This optional maintainer capability is additive; it does not change the
 existing `make verify` contract or require adopters to install a release tool.
+
+TST-018 is a **Breaking maintainer-tooling** change outside the adopter Protocol
+surface. `make release-check` and direct `scripts/release-check` retain their
+command forms, outputs, exits, read-only behavior, and remote-exclusion contract,
+but the direct command now requires Node and
+`RELEASE_CHECK_IMPLEMENTATION=legacy` no longer selects the removed shell
+implementation. Human Review approved that runtime consequence after the
+TST-017 deprecation/default period on 2026-09-16. Maintainers remove the selector
+and use the repository's supported Node runtime; rollback restores the complete
+pre-TST-018 revision. Adopting repositories gain no Node requirement and no
+Protocol file, command, or expectation changes, so `VERSION` remains `0.10.0`.

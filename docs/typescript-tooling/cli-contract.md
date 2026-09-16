@@ -53,7 +53,7 @@ verify             = execute make verify
 | `praxisbound story check [story ...]`        | `scripts/story-check`                 | Discovers Stories when omitted; supports `--ready`.                                              |
 | `praxisbound verification check [story ...]` | `scripts/verification-check`          | Resolves plans by default; supports `--result`.                                                  |
 | `praxisbound handoff check [file]`           | `scripts/handoff-check`               | Defaults to `specs/handoff.md`.                                                                  |
-| `praxisbound release check [repo]`           | `scripts/release-check`               | Local, read-only release inspection; target defaults to `.`; never performs remote checks.       |
+| `praxisbound release check [repo]`           | `scripts/release-check` Node wrapper  | Local, read-only release inspection; target defaults to `.`; never performs remote checks.       |
 | `praxisbound codex activate <repo>`          | `scripts/codex-activate`              | Preview by default; supports `--apply`; stays a late migration wave.                             |
 
 Global options may appear after the selected command path and before or among
