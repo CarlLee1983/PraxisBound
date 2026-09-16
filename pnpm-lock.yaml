@@ -30,7 +30,7 @@ importers:
   packages/cli:
     dependencies:
       '@praxisbound/core':
-        specifier: 0.1.0
+        specifier: 0.2.0
         version: link:../core
 
   packages/core: {}

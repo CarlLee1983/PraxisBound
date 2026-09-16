@@ -920,6 +920,69 @@ risk_driven_readiness_is_additive_for_0_8_0() {
     fail 'contract-check docs omit the risk-inference boundary'
 }
 
+# PB004-AC-005. The runbook covered only first publication by bootstrap token.
+# Every later release of an existing package authenticates by OIDC and lands on
+# next, and only a human moves latest; a runbook that omits this invites a
+# token fallback or an agent dist-tag write.
+subsequent_release_procedure_is_documented() {
+  forgeflow_runbook="$forgeflow_repo/docs/releasing.md"
+
+  grep -Fqx '## 8. Publish a later version of an existing package' \
+    "$forgeflow_runbook" ||
+    fail 'docs/releasing.md has no subsequent-release section'
+
+  forgeflow_subsequent=$(
+    awk '/^## 8\. Publish a later version of an existing package$/ { inside = 1; next }
+         /^## / { inside = 0 }
+         inside' "$forgeflow_runbook" | tr '\n' ' ' | tr -s ' '
+  )
+  for forgeflow_release_term in \
+    'Trusted Publishing: OIDC authenticates' \
+    'Do not add an `NPM_TOKEN`' \
+    'receives the new version on `next` only; `latest` does not move' \
+    '`main` stays frozen at that SHA until the CLI dispatch has succeeded' \
+    'does a human promote `latest`, with 2FA' \
+    'npm dist-tag add @praxisbound/core@<version> latest' \
+    'it does not dispatch the workflow, write dist-tags'
+  do
+    case "$forgeflow_subsequent" in
+      *"$forgeflow_release_term"*) ;;
+      *) fail "subsequent-release section omits: $forgeflow_release_term" ;;
+    esac
+  done
+}
+
+# PB004-AC-008. The publication guards the PB-004 Security Fixture Matrix relies
+# on live in publish.yml. Nothing else tests that file, so a deleted guard would
+# otherwise go unnoticed until a human dispatch published something it should
+# have refused.
+publication_workflow_keeps_its_guards() {
+  forgeflow_workflow="$forgeflow_repo/.github/workflows/publish.yml"
+
+  for forgeflow_guard in \
+    "if: github.ref == 'refs/heads/main'" \
+    '[ "${#CANDIDATE_SHA}" -eq 40 ] || exit 2' \
+    '[ "$CANDIDATE_SHA" = "$DISPATCH_SHA" ] || {' \
+    'already exists' \
+    'E404' \
+    '[ "$(npm view "@praxisbound/core@$CORE_VERSION" version)" = "$CORE_VERSION" ]' \
+    'id-token: write' \
+    'npm publish "./packages/$PACKAGE" --tag next --access public --provenance'
+  do
+    grep -Fq -- "$forgeflow_guard" "$forgeflow_workflow" ||
+      fail "publish.yml lost a publication guard: $forgeflow_guard"
+  done
+
+  # Authentication is OIDC only: the workflow must not reference a stored npm
+  # credential that could substitute for a failed trust exchange.
+  for forgeflow_credential in NODE_AUTH_TOKEN NPM_TOKEN
+  do
+    if grep -Fq -- "$forgeflow_credential" "$forgeflow_workflow"; then
+      fail "publish.yml references a stored npm credential: $forgeflow_credential"
+    fi
+  done
+}
+
 # The 0.10.0 release record. VERSION reached 0.10.0 with the PB-001 identity
 # migration, but no release note was written; this guards the record that now
 # closes that gap. The terms are the migration an adopter must act on, so a
@@ -1011,5 +1074,7 @@ run_case 'P0001-AC-007' mutable_lifecycle_state_is_removed_for_0_8_0
 run_case 'P0002-AC-009' risk_driven_readiness_is_additive_for_0_8_0
 run_case 'P1003-AC-008' structural_contract_is_capability_based_for_0_9_0
 run_case 'REL-0.10.0' identity_migration_is_recorded_for_0_10_0
+run_case 'PB004-AC-005' subsequent_release_procedure_is_documented
+run_case 'PB004-AC-008' publication_workflow_keeps_its_guards
 
 printf 'protocol tests passed\n'

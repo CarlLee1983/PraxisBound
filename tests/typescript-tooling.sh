@@ -375,7 +375,7 @@ await import("@praxisbound/core");
 await import("@praxisbound/cli");
 NODE
     praxisbound_installed_version=$(./node_modules/.bin/praxisbound --version)
-    [ "$praxisbound_installed_version" = '0.1.0' ] ||
+    [ "$praxisbound_installed_version" = '0.2.0' ] ||
       fail 'installed CLI bin did not report the packed version'
   )
 }

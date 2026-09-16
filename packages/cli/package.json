@@ -1,6 +1,6 @@
 {
   "name": "@praxisbound/cli",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "PraxisBound CLI and machine-result serialization",
   "license": "MIT",
   "type": "module",
@@ -36,6 +36,6 @@
     "prepack": "pnpm run build"
   },
   "dependencies": {
-    "@praxisbound/core": "0.1.0"
+    "@praxisbound/core": "0.2.0"
   }
 }

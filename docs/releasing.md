@@ -299,3 +299,37 @@ Authoritative npm references: [scoped public packages](https://docs.npmjs.com/cr
 [staged publishing](https://docs.npmjs.com/staged-publishing/),
 [Trusted Publishers](https://docs.npmjs.com/trusted-publishers/), and
 [dist-tags](https://docs.npmjs.com/adding-dist-tags-to-packages/).
+
+## 8. Publish a later version of an existing package
+
+Once a package exists, every later version publishes through GitHub Actions
+Trusted Publishing: OIDC authenticates the `publish.yml` run, and no stored
+credential is involved. Do not add an `NPM_TOKEN` or `NODE_AUTH_TOKEN` secret to
+make a publish succeed; if OIDC authentication fails, stop for Human Review.
+
+Raise both manifests and the CLI's exact Core dependency to the new version in
+one reviewed change, merge it, and use that merge commit as `candidate_sha`
+once local `make verify` and its exact-SHA `verify.yml` run pass. The dispatch
+must come from `main` while `main` still points at that SHA, and `main` stays
+frozen at that SHA until the CLI dispatch has succeeded: the workflow compares
+`candidate_sha` with the dispatched revision, so a merge between the Core and
+CLI dispatches makes the approved SHA undispatchable for CLI. If that happens,
+stop for Human Review rather than publishing CLI from a different revision.
+
+A human then dispatches `publish.yml` for `core`, verifies the public Core
+version, and dispatches it again with the same `candidate_sha` for `cli`. An
+existing package receives the new version on `next` only; `latest` does not
+move. Run the public smoke suite against the exact new versions.
+
+Only after that smoke passes does a human promote `latest`, with 2FA, for each
+package:
+
+```sh
+npm dist-tag add @praxisbound/core@<version> latest
+npm dist-tag add @praxisbound/cli@<version> latest
+```
+
+Rerun the public smoke suite against `latest`. An agent prepares the change and
+records the evidence; it does not dispatch the workflow, write dist-tags, or
+inspect credential or access-settings pages. A defective published version is
+never overwritten: leave `latest` where it was and publish a fixed patch.
