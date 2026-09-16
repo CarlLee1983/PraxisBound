@@ -459,7 +459,7 @@ semantic.
 
 Tests covering behavior:
 `tests/release-check-entrypoint.sh`, TypeScript release conformance tests,
-`tests/portability.sh`, release documentation, `make verify-release`, and
+`tests/portability.sh`, release documentation, `make verify-tooling`, and
 composed `make release-check`. Fixtures cover hostile Git configuration,
 promisor/lazy-fetch protection, mutation detection, tag TOCTOU, malformed child
 results, missing runtime, and absence of legacy fallback.

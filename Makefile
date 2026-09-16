@@ -43,7 +43,6 @@ verify-execution:
 
 verify-release:
 	sh -n scripts/release-check tests/release-check-entrypoint.sh
-	./tests/release-check-entrypoint.sh
 
 verify-typescript:
 	$(MAKE) -C examples/typescript verify
@@ -62,6 +61,7 @@ verify-tooling:
 	sh -n tests/release-check-entrypoint.sh
 	node --check scripts/release-check-compat.mjs
 	pnpm exec prettier --check scripts/release-check-compat.mjs
+	./tests/release-check-entrypoint.sh
 
 verify-go:
 	$(MAKE) -C examples/go verify
