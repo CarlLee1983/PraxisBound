@@ -1,6 +1,6 @@
 {
   "name": "@praxisbound/core",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "PraxisBound result and Protocol-selection contracts",
   "license": "MIT",
   "type": "module",
