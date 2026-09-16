@@ -43,8 +43,8 @@
 * [ ] AC-009: `README.md` and `docs/getting-started.md` present both adoption
   paths side by side with their requirements stated, neither described as
   deprecated or as replacing the other, the package invocation written with the
-  scoped name, and the unscoped spelling called out as resolving to an unrelated
-  package. The getting-started guide no longer implies a checkout of this
+  scoped name, and the unscoped spelling called out as not controlled by this
+  project. The getting-started guide no longer implies a checkout of this
   repository is required.
 * [ ] AC-010: `ADR-012` records the vendor-neutrality and machine-contract
   position, its rejected alternatives, and a falsification condition naming in

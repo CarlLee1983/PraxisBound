@@ -3,7 +3,23 @@
 PraxisBound can be added to an existing repository without installing an agent
 runtime or changing its programming language.
 
-## 1. Bootstrap the repository
+## 1. Adopt the repository
+
+Two paths reach the same Adoption. Neither replaces the other, and neither is
+being retired.
+
+| Path              | Requirements                                                                | Run from                                           |
+| ----------------- | --------------------------------------------------------------------------- | -------------------------------------------------- |
+| Portable shell    | files, Make, and the repository's existing CI; it needs no language runtime | a PraxisBound checkout                             |
+| Published package | Node                                                                        | anywhere, including without a PraxisBound checkout |
+
+Both install the same starter layout, refuse to replace a managed file, and
+leave the verification gate to the repository. Neither is a prerequisite for
+adopting the Protocol: both are Reference Tooling, and the contract they
+install is the same either way. Choose on requirements, and on whether you
+need the machine-readable Semantic Result that only the package path emits.
+
+### Portable shell path
 
 From a PraxisBound checkout, run:
 
@@ -11,7 +27,35 @@ From a PraxisBound checkout, run:
 ./scripts/bootstrap /path/to/repository
 ```
 
-This installs the opinionated starter layout:
+### Published package path
+
+The published CLI does the same work without a PraxisBound checkout. It
+requires Node; the portable shell path does not.
+
+```sh
+npx @praxisbound/cli init /path/to/repository
+npx @praxisbound/cli init --dry-run /path/to/repository
+```
+
+Applying is the default and `--dry-run` previews, mirroring the shell path's
+`--dry-run`; `--force` and `--upgrade` carry the same meanings described below.
+
+Like the shell path, `init` does not write the repository-owned `Makefile`.
+
+From tooling version 0.2.0 onward, `init` also reports the ordered next steps
+that remain before the repository is a complete Adoption: create that gate,
+then run Doctor and confirm PASS. The steps are printed for a person to read
+and, with `--json`, carried as structured data under `data.nextSteps` so an
+agent can act on them without parsing prose. Tooling 0.1.0 applies the same
+adoption but reports no steps.
+
+Use the scoped name exactly as written. The unscoped `praxisbound` name on
+npm is not controlled by this project, so `npx praxisbound` does not install
+PraxisBound.
+
+### What either path installs
+
+Both paths install the opinionated starter layout:
 
 ```text
 AGENTS.md
@@ -33,7 +77,7 @@ specs/
 this snapshot came from. It is what a later `--upgrade` reads; see
 [Upgrading an adopting repository](upgrading.md).
 
-The script refuses to replace any managed file. Review conflicts manually; use
+Both paths refuse to replace any managed file. Review conflicts manually; use
 `--force` only when replacing those exact files is intentional.
 
 Preview the same static safety and conflict checks without changing the target:
@@ -61,23 +105,24 @@ directory and file symlinks and uses single-file atomic replacement plus
 atomic installation transaction or a sandbox for an actively hostile,
 concurrently mutated filesystem.
 
-Bootstrap success means only that this installer-managed guide, optional
+Adoption success means only that this installer-managed guide, optional
 Guidance starter, marker, and Story-template files were installed. It is not
 the adoption contract: a conforming repository needs only `AGENTS.md`, a
-`Makefile` exposing `make verify`, and `specs/stories/`. Bootstrap intentionally
-does not create the repository-owned `Makefile`, call Doctor, run `make verify`,
-review the result, or authorize a merge.
+`Makefile` exposing `make verify`, and `specs/stories/`. Neither path writes
+the repository-owned `Makefile`, calls Doctor, runs `make verify`, reviews the
+result, or authorizes a merge.
 
 ## 2. Inspect the adopted structure (optional)
 
-From a PraxisBound checkout, Doctor can confirm the static required structure
-without changing the target:
+Doctor confirms the static required structure without changing the target,
+from a PraxisBound checkout or from the published package:
 
 ```sh
 ./scripts/doctor /path/to/repository
+npx @praxisbound/cli doctor /path/to/repository
 ```
 
-Immediately after a fresh bootstrap into an otherwise empty directory, this
+Immediately after a fresh adoption into an otherwise empty directory, this
 command is expected to report the missing `Makefile` and exit `1`. Define the
 repository gate in the next step, then run Doctor again.
 

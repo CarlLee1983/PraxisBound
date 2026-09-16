@@ -108,6 +108,16 @@ status check or ruleset separately.
 
 ## Adopt PraxisBound in a repository
 
+Two paths reach the same Adoption. Neither replaces the other, and neither is
+being retired; pick the one that fits the environment you are adopting into.
+
+| Path              | Requirements                                                                | Run from                                           |
+| ----------------- | --------------------------------------------------------------------------- | -------------------------------------------------- |
+| Portable shell    | files, Make, and the repository's existing CI; it needs no language runtime | a PraxisBound checkout                             |
+| Published package | Node                                                                        | anywhere, including without a PraxisBound checkout |
+
+### Portable shell path
+
 Run the bootstrap script with the repository directory:
 
 ```sh
@@ -149,13 +159,42 @@ Preview the same static preflight without writing to the target:
 ./scripts/bootstrap --force --dry-run /path/to/repository
 ```
 
-A successful bootstrap means only that these installer-managed files were
+A successful adoption means only that these installer-managed files were
 installed. They are not PraxisBound's repository conformance inventory: the
 required entrypoints are `AGENTS.md`, `Makefile` exposing `make verify`, and
 `specs/stories/`. Guidance, templates, handoff evidence, Skills, CI, and
-repository-specific extensions are optional capabilities. It does not create
-the adopter-owned `Makefile`, run Doctor, execute `make verify`, perform human
-review, or authorize a merge.
+repository-specific extensions are optional capabilities. It does not write
+the repository-owned `Makefile`, run Doctor, execute `make verify`, perform
+human review, or authorize a merge.
+
+### Published package path
+
+The published CLI applies the same adoption without a checkout of this
+repository. It requires Node; the portable shell path above does not.
+
+```sh
+npx @praxisbound/cli init /path/to/repository
+npx @praxisbound/cli init --dry-run /path/to/repository
+```
+
+Applying is the default; `--dry-run` previews, and `--force` and `--upgrade`
+behave as they do for the shell path.
+
+`init` installs the same starter layout and, like the shell path, it does not
+write the repository-owned `Makefile`: an Adoption owns its verification gate.
+
+From tooling version 0.2.0 onward, `init` also reports the ordered next steps
+that remain before the repository is a complete Adoption — create that gate,
+then run Doctor and confirm PASS. The steps are printed for a person to read
+and, with `--json`, carried as structured data under `data.nextSteps` so an
+agent can act on them without parsing prose. Tooling 0.1.0 applies the same
+adoption but reports no steps.
+
+Use the scoped name exactly as written. The unscoped `praxisbound` name on
+npm is not controlled by this project, so `npx praxisbound` does not install
+PraxisBound.
+
+### After either path
 
 Copy `specs/stories/_template` to a directory named for the Story, fill
 in the requirements, and ask an agent to implement that Story ID.

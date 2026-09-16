@@ -84,7 +84,12 @@ adopting the Protocol.
   consumer executing the emitted steps literally reaches a PASSing `doctor`.
 * Present the package path and the portable shell path side by side in
   `README.md` and `docs/getting-started.md`, each with its requirements stated,
-  and call out that the unscoped package name resolves to an unrelated project.
+  and call out that the unscoped package name is not controlled by this
+  project. (#58 and #62 say it "resolves to an unrelated third-party package".
+  That was true of the former `forgeflow` name and was carried over by mistake:
+  on 2026-09-16 `registry.npmjs.org/praxisbound` returned 404 while
+  `registry.npmjs.org/forgeflow` returned an unrelated `forgeflow@0.6.0`. The
+  documentation states the verifiable claim instead.)
 * Record the vendor-neutrality and machine-contract position as `ADR-012`.
 
 ### Out of Scope
