@@ -7,15 +7,21 @@
 * unit: pass — `make verify; 329 TypeScript tests and the retained release conformance corpus passed`
 * integration: pass — `tests/release-check-entrypoint.sh; tests/typescript-tooling.sh; make verify`
 * contract: pass — `tests/release-check-entrypoint.sh; the exact Make recipe, six-line output, failure projection, migration, and whole-revision rollback checks passed`
-* e2e: blocked — `the post-change exact-SHA GitHub Actions Node/Linux/macOS matrix requires separate commit and push authorization; local make verify and restricted-PATH portability passed`
+* e2e: pass — `exact post-change SHA ad9e6c562f692b63dd223de8f140ecd12bf556fb passed all 30 push and pull-request checks in Actions runs 35068834571 and 35068839212 across the root gate, Node 22/24/26 on Linux/macOS, and both portability jobs`
 * architecture: pass — `independent Sol/high public-contract, security, and portability review approved the corrected checkpoint with no remaining material finding`
 
-The final local gate completed successfully at 2026-09-16T04:30:55Z. The same
-worktree passed the focused entrypoint suite, retained TypeScript release
-conformance, packed consumer and adoption checks, and
+The final local gate completed successfully before exact SHA
+ad9e6c562f692b63dd223de8f140ecd12bf556fb was committed at
+2026-09-16T07:29:59Z. The same worktree passed the focused entrypoint suite,
+retained TypeScript release conformance, packed consumer and adoption checks,
+`make verify-actions`, and
 `PATH=/usr/bin:/bin make verify-portability PORTABILITY_SHELL=/bin/sh`. The
 independent reviewer found and rechecked portability, fixture-matrix, rollback,
-and Make-recipe fixes before approving the checkpoint.
+and Make-recipe fixes before approving the checkpoint. The first post-push
+check exposed that the entrypoint suite ran before its build artifacts, and the
+second exposed that shallow CI checkout omitted the fixed rollback revision.
+The owning Make and checkout boundaries were corrected before the passing
+exact-SHA runs recorded here.
 
 ## Evidence
 
@@ -23,7 +29,7 @@ and Make-recipe fixes before approving the checkpoint.
 * `AC-002`: pass — `TST018-AC-002 copied the actual root Make recipe, observed verify and the Node adapter exactly once, preserved the six success lines and direct command, kept the disposable candidate clean, and suppressed inspection after verification failure.`
 * `AC-003`: pass — `TST018-AC-003 proved the removed selectors, arguments, deterministic missing-Node path, non-root target, hostile child stderr, malformed or multiple JSON, unsupported versions, exit 17, invalid typed result, and newline data all fail closed without success, fallback, mutation, or remote invocation.`
 * `AC-004`: pass — `TST018-AC-004 archived complete revision fcc5595d5c95a42a82e67bb6f82be7886fdfaa64 into a disposable rollback directory and observed its checker, selector, legacy and switch suites, Make wiring, and legacy branch as one set; current guidance names Node, selector removal, the full revision, external-state exclusions, and unchanged Protocol 0.10.0.`
-* `AC-005`: blocked — `Retained release conformance, packed consumers, adoption, local portability, complete make verify, and independent Sol/high review pass, but the required post-change exact-SHA supported Node/Linux/macOS GitHub Actions matrix is unobserved until commit and push are separately authorized.`
+* `AC-005`: pass — `Retained release conformance, packed consumers, adoption, local portability, complete make verify, and independent Sol/high review passed; exact SHA ad9e6c562f692b63dd223de8f140ecd12bf556fb then passed all 30 supported Node/Linux/macOS checks in Actions runs 35068834571 and 35068839212.`
 
 ## Fixed Pre-Removal Legacy Removal Gate
 
@@ -57,5 +63,4 @@ copying the legacy implementation into the post-removal tree.
 
 ## Residual Risks
 
-* `Post-change exact-SHA remote CI requires separate push authorization.`
 * `No live ForgePilot-owned integration check has been observed; TST-016 treats it as optional external evidence and TST-018 must not claim otherwise.`
