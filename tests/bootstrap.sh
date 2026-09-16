@@ -921,6 +921,76 @@ adopter_documentation_agrees_on_the_upgrade_contract() {
 
 run_case 'AC-012' adopter_documentation_agrees_on_the_upgrade_contract
 
+# TST019-AC-009. Both adoption paths are presented as equals: the portable
+# shell path needs no language runtime, the package path needs Node, and
+# neither is the successor to the other.
+adopter_documentation_presents_both_adoption_paths() {
+  for forgeflow_case_page in README.md docs/getting-started.md
+  do
+    forgeflow_case_path="$forgeflow_repo/$forgeflow_case_page"
+
+    for forgeflow_case_expected in \
+      'npx @praxisbound/cli init' \
+      './scripts/bootstrap' \
+      'requires Node' \
+      'needs no language runtime' \
+      'ordered next steps' \
+      'data.nextSteps'
+    do
+      grep -Fq -- "$forgeflow_case_expected" "$forgeflow_case_path" ||
+        fail "$forgeflow_case_page does not document $forgeflow_case_expected"
+    done
+
+    # The sentences below span line breaks, and grep is line-oriented, so the
+    # text is flattened before matching. The denial is the whole point:
+    # asserting that the phrase "repository-owned Makefile" merely appears
+    # would pass a page claiming the opposite.
+    forgeflow_case_flat=$(tr '\n' ' ' <"$forgeflow_case_path" | tr -s ' ')
+
+    # Scoped to the package section, because a denial elsewhere on the page
+    # would otherwise cover for a package section that claims the opposite.
+    forgeflow_case_section=$(
+      awk '/^### Published package path$/ { inside = 1; next }
+           /^#{2,3} / { inside = 0 }
+           inside' "$forgeflow_case_path" | tr '\n' ' ' | tr -s ' '
+    )
+    [ -n "$forgeflow_case_section" ] ||
+      fail "$forgeflow_case_page has no published package path section"
+
+    case "$forgeflow_case_section" in
+      *'does not write the repository-owned `Makefile`'*) ;;
+      *'not write the repository-owned `Makefile`'*) ;;
+      *)
+        fail "$forgeflow_case_page does not deny writing the Makefile"
+        ;;
+    esac
+
+    # The unscoped name is not this project's, and it is not published: a
+    # reader who guesses it does not get PraxisBound. Saying more than that
+    # would be a claim about a package nobody here controls.
+    case "$forgeflow_case_flat" in
+      *'`praxisbound` name on npm is not controlled by this project'*) ;;
+      *)
+        fail "$forgeflow_case_page does not disown the unscoped npm name"
+        ;;
+    esac
+
+    # Neither path replaces the other; the shell path is not being retired.
+    case "$forgeflow_case_flat" in
+      *deprecat*)
+        fail "$forgeflow_case_page contains the word deprecated"
+        ;;
+    esac
+  done
+
+  # The guide no longer assumes the reader has cloned this repository.
+  grep -Fq -- 'without a PraxisBound checkout' \
+    "$forgeflow_repo/docs/getting-started.md" ||
+    fail 'docs/getting-started.md still implies a PraxisBound checkout is required'
+}
+
+run_case 'TST019-AC-009' adopter_documentation_presents_both_adoption_paths
+
 prepare_recovery_fault() {
   forgeflow_fault_root="$forgeflow_test_dir/$forgeflow_case_id-$1"
   mkdir -p "$forgeflow_fault_root"
