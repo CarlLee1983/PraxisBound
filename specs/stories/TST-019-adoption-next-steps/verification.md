@@ -7,10 +7,14 @@
 * unit: pass — `make verify; 339 TypeScript tests passed, including the five TST019 command-boundary cases`
 * integration: pass — `tests/typescript-tooling.sh TST019-AC-007; tests/bootstrap.sh TST019-AC-009`
 * contract: pass — `packages/core/test/root-import.test.mjs and tests/typescript-tooling.sh PB003-AC-001 accepted the widened public export and package surfaces; validateResultEnvelope accepted every init envelope carrying nextSteps at RESULT_SCHEMA_VERSION 1.0.0`
-* e2e: blocked — `post-change exact-SHA Actions runs require the push this record accompanies and have not been observed`
+* e2e: pass — `exact SHA 3fb0cb0e0435ea90850922fd55b60a6c4131ade1 passed all 30 push and pull-request checks in Actions runs 35101057401 and 35101095632, across the root gate, Node 22/24/26 on Linux and macOS, and both portability jobs`
 * architecture: blocked — `no independent human architecture review of ADR-012 and the next-step contract has been performed`
 
-The final local gate completed successfully on the tree recorded here. Two
+The final local gate completed successfully before exact SHA
+3fb0cb0e0435ea90850922fd55b60a6c4131ade1 was pushed. That revision is the tip
+of PR #63, merged into main as 9857531b35d6f92f111fcf449e83b4c8b10cbe46; the
+remote runs recorded above are for it. This record reached main later, and
+changes only this file. Two
 implementation slices were mutation-checked rather than merely observed green:
 reversing the two steps in `packages/core/src/adoption-next-steps.ts` failed
 `TST019-AC-007` as designed, and replacing the consumer's gate with a Makefile
@@ -42,5 +46,4 @@ inverting the package-section sentence in `README.md`.
 
 * `The next-step behavior is not in the published @praxisbound/cli 0.1.0. The adopter documentation qualifies it by tooling version; that qualification must be removed when 0.2.0 is published, and until then an adopter following the package path receives no steps.`
 * `Three acceptance criteria rest on Human Review that has not happened, so this Story is partial and must not be reported as complete.`
-* `Remote exact-SHA CI has not been observed for this branch.`
 * `INIT_CLEANUP_INCOMPLETE carries no next steps although the target was written. This is deliberate and recorded in the Story's Expected Errors, not a defect, but it is the one outcome that changes a repository without telling the caller what remains.`
