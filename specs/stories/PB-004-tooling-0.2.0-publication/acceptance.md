@@ -40,6 +40,13 @@
   candidate guard, unused-version check, Core-before-CLI check, OIDC permission,
   and `next`-tagged provenance publish, and references no stored npm
   credential.
+* [ ] AC-009: `scripts/publish-dispatch core|cli [sha]` refuses before any
+  dispatch when arguments are malformed, `main` is not the candidate, the
+  candidate's `verify.yml` push run on `main` did not succeed, a `publish.yml`
+  run is active, the version is already published, CLI precedes its Core, or
+  the typed confirmation is not the exact coordinate. Confirmed, it dispatches
+  exactly once from `main`, watches that run, waits for the registry, and
+  reports failure of either; it writes no dist-tag.
 
 ## Acceptance Evidence
 
@@ -53,6 +60,7 @@
 | `AC-006` | human | `PB-004 publication record` | `any failed dispatch or defective published version` | `registry state retained and recorded with no overwrite, token fallback, or latest move` |
 | `AC-007` | command | `make verify` | `approved merge SHA` | `exit 0 locally and success in the exact-SHA verify.yml run` |
 | `AC-008` | test | `tests/protocol.sh PB004-AC-008` | `.github/workflows/publish.yml` | `every listed guard is present and neither NODE_AUTH_TOKEN nor NPM_TOKEN is referenced` |
+| `AC-009` | test | `tests/publish-dispatch.sh PB004-AC-009` | `fake gh and npm on PATH with no network or credential` | `every refusal dispatches nothing; confirmed core and cli dispatch exact arguments, watch the run, and never call npm dist-tag` |
 
 ## Security Fixture Matrix
 

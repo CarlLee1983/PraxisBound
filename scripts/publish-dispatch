@@ -1,0 +1,203 @@
+#!/bin/sh
+
+set -eu
+
+# Dispatches publish.yml for one PraxisBound package and follows it to the
+# registry. It is a convenience for the human who owns publication; it never
+# writes a dist-tag, and it dispatches only after the operator types the exact
+# package coordinate. See docs/releasing.md section 8.
+
+repository=${PRAXISBOUND_REPOSITORY:-CarlLee1983/PraxisBound}
+poll_seconds=${PRAXISBOUND_PUBLISH_POLL_SECONDS:-10}
+poll_attempts=${PRAXISBOUND_PUBLISH_POLL_ATTEMPTS:-30}
+
+usage() {
+  printf 'usage: scripts/publish-dispatch core|cli [candidate-sha]\n' >&2
+  exit 2
+}
+
+refuse() {
+  printf 'publish-dispatch refused: %s\n' "$1" >&2
+  exit 1
+}
+
+malformed_candidate() {
+  printf 'publish-dispatch: candidate must be a full 40-character lowercase SHA\n' >&2
+  exit 2
+}
+
+[ "$#" -ge 1 ] && [ "$#" -le 2 ] || usage
+package=$1
+case "$package" in
+  core|cli) ;;
+  *) usage ;;
+esac
+
+if [ "$#" -eq 2 ]; then
+  case "$2" in
+    *[!0-9a-f]*|'') malformed_candidate ;;
+  esac
+  [ "${#2}" -eq 40 ] || malformed_candidate
+fi
+
+for tool in gh npm; do
+  command -v "$tool" >/dev/null 2>&1 || refuse "$tool is not on PATH"
+done
+gh auth status >/dev/null 2>&1 || refuse 'gh is not authenticated'
+
+main_head() {
+  gh api "repos/$repository/commits/main" --jq .sha
+}
+
+active_publications() {
+  gh run list --repo "$repository" --workflow publish.yml --limit 20 \
+    --json status --jq '[.[] | select(.status != "completed")] | length'
+}
+
+# The workflow compares candidate_sha with the dispatched main revision, so a
+# candidate that is not main's head could never publish.
+require_candidate_is_main() {
+  current_main=$(main_head)
+  [ "$candidate" = "$current_main" ] ||
+    refuse "main is at $current_main, not candidate $candidate"
+}
+
+require_no_active_publication() {
+  [ "$(active_publications)" = 0 ] ||
+    refuse 'a publish.yml run is already in progress'
+}
+
+candidate=${2:-$(main_head)}
+require_candidate_is_main
+
+verification=$(gh run list --repo "$repository" --workflow verify.yml \
+  --commit "$candidate" --branch main --event push --limit 1 \
+  --json status,conclusion --jq '.[0] | "\(.status) \(.conclusion)"')
+[ "$verification" = 'completed success' ] ||
+  refuse "verify.yml for $candidate on main is '$verification', not 'completed success'"
+
+require_no_active_publication
+
+source_version() {
+  gh api "repos/$repository/contents/packages/$1/package.json?ref=$candidate" \
+    --jq '.content | @base64d | fromjson | .version'
+}
+
+# Returns 0 when the coordinate is published, 1 when the registry answers E404,
+# and 2 for anything else. Only an explicit E404 counts as unpublished: an
+# outage or an authentication error is never evidence that a version is unused.
+registry_state() {
+  registry_error=$(mktemp "${TMPDIR:-/tmp}/praxisbound-npm-view.XXXXXX")
+  if npm view "$1" version >/dev/null 2>"$registry_error"; then
+    rm -f "$registry_error"
+    return 0
+  fi
+  if grep -Eq '(^|[[:space:]])E404([[:space:]]|$)' "$registry_error"; then
+    rm -f "$registry_error"
+    return 1
+  fi
+  rm -f "$registry_error"
+  return 2
+}
+
+require_unpublished() {
+  if registry_state "$1"; then
+    refuse "$1 is already published; versions are immutable"
+  else
+    state=$?
+  fi
+  [ "$state" -eq 1 ] || refuse "cannot read $1 from the registry"
+}
+
+require_published() {
+  if registry_state "$1"; then
+    return 0
+  else
+    state=$?
+  fi
+  [ "$state" -eq 1 ] || refuse "cannot read $1 from the registry"
+  refuse "$1 is not published; $2"
+}
+
+version=$(source_version "$package")
+[ -n "$version" ] || refuse "cannot read packages/$package/package.json at $candidate"
+coordinate="@praxisbound/$package@$version"
+
+require_unpublished "$coordinate"
+
+if [ "$package" = cli ]; then
+  core_version=$(source_version core)
+  [ -n "$core_version" ] || refuse "cannot read packages/core/package.json at $candidate"
+  require_published "@praxisbound/core@$core_version" 'dispatch core first'
+fi
+
+printf 'Repository: %s\nCandidate:  %s (main, verify.yml success)\nPackage:    %s\n\n' \
+  "$repository" "$candidate" "$coordinate"
+printf 'This publishes an immutable version to the next dist-tag.\n'
+printf 'Type "publish %s" to dispatch: ' "$coordinate"
+IFS= read -r confirmation || confirmation=
+[ "$confirmation" = "publish $coordinate" ] || refuse 'publication was not confirmed'
+
+# Confirmation can take minutes; re-check what may have changed meanwhile.
+require_candidate_is_main
+require_no_active_publication
+
+before=$(gh run list --repo "$repository" --workflow publish.yml \
+  --event workflow_dispatch --commit "$candidate" --limit 5 \
+  --json databaseId --jq 'map(.databaseId) | max // 0')
+
+dispatch_output=$(gh workflow run publish.yml --repo "$repository" --ref main \
+  -f "candidate_sha=$candidate" -f "package=$package")
+
+# gh prints the created run URL when it can; that names this dispatch exactly.
+# Polling for a newer run on the same commit is only the fallback.
+run_id=$(printf '%s\n' "$dispatch_output" |
+  sed -n 's|^https://github\.com/.*/actions/runs/\([0-9][0-9]*\)$|\1|p' | sed -n '1p')
+attempt=0
+while [ -z "$run_id" ] && [ "$attempt" -lt "$poll_attempts" ]; do
+  attempt=$((attempt + 1))
+  found=$(gh run list --repo "$repository" --workflow publish.yml \
+    --event workflow_dispatch --commit "$candidate" --limit 5 \
+    --json databaseId --jq "map(select(.databaseId > $before)) | .[0].databaseId // empty")
+  if [ -n "$found" ]; then
+    run_id=$found
+  else
+    sleep "$poll_seconds"
+  fi
+done
+[ -n "$run_id" ] ||
+  refuse 'the dispatched publish.yml run did not appear; check Actions before retrying'
+
+printf '\nWatching publish.yml run %s\n' "$run_id"
+if ! gh run watch "$run_id" --repo "$repository" --exit-status >/dev/null; then
+  # A watch can end for reasons of its own; ask the run itself before claiming
+  # it failed, so a still-running publication is not mistaken for a failure.
+  outcome=$(gh run view "$run_id" --repo "$repository" \
+    --json status,conclusion --jq '"\(.status) \(.conclusion)"')
+  case "$outcome" in
+    'completed success') ;;
+    completed*) refuse "publish.yml run $run_id did not succeed ($outcome); inspect it before any retry" ;;
+    *) refuse "lost track of publish.yml run $run_id while it is '$outcome'; do not dispatch again until it completes" ;;
+  esac
+fi
+
+attempt=0
+while :; do
+  if registry_state "$coordinate"; then
+    break
+  fi
+  attempt=$((attempt + 1))
+  [ "$attempt" -lt "$poll_attempts" ] ||
+    refuse "run $run_id succeeded but the registry does not show $coordinate yet"
+  sleep "$poll_seconds"
+done
+
+printf 'Published %s to next from %s.\n' "$coordinate" "$candidate"
+if [ "$package" = core ]; then
+  printf 'Next: smoke-test it, keep main frozen, then run scripts/publish-dispatch cli %s\n' \
+    "$candidate"
+else
+  printf 'Next: smoke-test both packages, then promote latest yourself with 2FA:\n'
+  printf '  npm dist-tag add @praxisbound/core@%s latest\n' "$core_version"
+  printf '  npm dist-tag add %s latest\n' "$coordinate"
+fi

@@ -93,6 +93,10 @@ steps appear.
   against `latest`.
 * A static test holding `publish.yml` to the guards this Story's security
   fixtures rely on.
+* `scripts/publish-dispatch`, a helper the human runs to perform one dispatch:
+  it re-checks the candidate, CI, concurrency and registry state, requires the
+  exact coordinate typed as confirmation, dispatches, and follows the run to
+  the registry. It never writes a dist-tag.
 
 ### Out of Scope
 
