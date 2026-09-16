@@ -194,3 +194,21 @@ Not applicable:
   package consumer coverage moves to the supported Linux/macOS matrix.
 * `tests/typescript-tooling.sh pnpm clean-consumer fixture` — release validation
   is replaced by npm-native tarball creation and npm-only consumer evidence.
+
+## Later Supersession
+
+This Story's `@forgeflow` namespace identity clauses were themselves superseded
+after acceptance. `AC-001` was never proven and stays blocked; it was not
+retried under this Story.
+
+* `@forgeflow/core, @forgeflow/cli, and the forgeflow executable` — superseded
+  by the maintainer-controlled `@praxisbound/core`, `@praxisbound/cli`, and
+  `praxisbound` identity decided in
+  [ADR-011](../../decisions/ADR-011-praxisbound-identity-and-migration.md).
+* `AC-001 npm scope control` — the equivalent obligation is carried by
+  `AC-004` of `specs/stories/PB-003-npm-distribution/`, which passed with
+  authenticated organization-owner evidence for `@praxisbound`.
+
+The package-content, clean-consumer, acquisition, and offline fixtures this
+Story built were retained and reused by PB-003; only the namespace identity was
+replaced. This Story's result remains `VERIFICATION_PARTIAL`.

@@ -59,3 +59,9 @@ snapshot provenance checks, and the configured Node/Linux/macOS consumer
 matrix. Finish with `make verify`. Record the external npm scope-control review
 and remote matrix results honestly; either remains blocked if it cannot be
 observed in the current authorized environment.
+
+`AC-001` was never observed and stays blocked. The `@forgeflow` namespace it
+names was superseded by ADR-011 before any publication, and the equivalent
+scope-control obligation is `AC-004` of
+`specs/stories/PB-003-npm-distribution/`. This note records that history; it
+does not relax, restate, or satisfy `AC-001`.
