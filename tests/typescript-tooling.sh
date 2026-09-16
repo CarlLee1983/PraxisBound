@@ -639,6 +639,109 @@ NODE
   : >"$praxisbound_test_dir/packed-init-passed"
 }
 
+# TST019-AC-007. The sufficiency proof: a consumer that executes the emitted
+# steps literally reaches a complete Adoption. This does not test an agent and
+# must never depend on a language model — the claim "an agent can complete the
+# adoption" is untestable and belongs in a Human Review observation. What is
+# tested is whether the instructions are sufficient: if a step is absent,
+# misordered or insufficient, this case fails.
+emitted_next_steps_are_sufficient_for_adoption() {
+  [ -d "$praxisbound_consumer_dir/node_modules" ] ||
+    fail 'packed-package consumer fixture is unavailable'
+
+  (
+    CDPATH='' cd "$praxisbound_consumer_dir"
+    node --input-type=module <<'NODE'
+import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
+import { mkdirSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { validateResultEnvelope } from "@praxisbound/core";
+
+const cli = join(process.cwd(), "node_modules", ".bin", "praxisbound");
+const target = join(process.cwd(), "next-steps-adoption");
+mkdirSync(target);
+
+function doctor() {
+  const execution = spawnSync(cli, ["doctor", "--json", target], {
+    encoding: "utf8",
+  });
+  assert.ok(
+    execution.stdout.length > 0,
+    `doctor produced no result: ${execution.stderr}`,
+  );
+  const report = JSON.parse(execution.stdout);
+  assert.equal(validateResultEnvelope(report).ok, true);
+  return report;
+}
+
+const applied = spawnSync(cli, ["init", "--json", target], {
+  encoding: "utf8",
+});
+assert.equal(applied.status, 0, applied.stderr);
+const result = JSON.parse(applied.stdout);
+assert.equal(validateResultEnvelope(result).ok, true);
+assert.equal(result.outcome, "INIT_APPLIED");
+
+// The fixture holds no verification gate, so the Adoption is incomplete until
+// the emitted steps are followed. Without this, a vacuously passing doctor
+// would make the rest of the case prove nothing.
+assert.equal(doctor().outcome, "failure");
+
+// Every action is dispatched by the step identifier the command emitted, never
+// by this consumer's own knowledge of what adoption requires. A renamed or
+// dropped step therefore fails here instead of silently working anyway, and a
+// misordered one runs the confirmation before the gate exists.
+const performed = [];
+const actions = {
+  "verification-gate"() {
+    // The step states a required outcome rather than a file body, so the gate
+    // is this consumer's own: any Makefile whose verify target runs its checks
+    // and exits 0 satisfies it.
+    writeFileSync(
+      join(target, "Makefile"),
+      "verify:\n\t@echo consumer checks passed\n",
+    );
+    // Execute the outcome the step describes. Doctor inspects statically and
+    // never runs make, so without this a Makefile with no verify rule, or one
+    // that exits nonzero, would still reach the confirmation step.
+    const gate = spawnSync("make", ["verify"], { cwd: target, encoding: "utf8" });
+    assert.equal(gate.status, 0, `make verify did not pass: ${gate.stderr}`);
+  },
+  "confirm-adoption"() {
+    const report = doctor();
+    // A PASSing Adoption: doctor reports the repository contract complete,
+    // with no drift and a zero exit.
+    assert.equal(
+      report.outcome,
+      "success",
+      "the emitted next steps were not sufficient to reach a PASSing Adoption",
+    );
+    assert.equal(report.status, "pass");
+    assert.equal(report.exit, 0);
+  },
+};
+
+const steps = result.data.nextSteps;
+assert.ok(Array.isArray(steps) && steps.length > 0, "adoption emitted no steps");
+for (const step of steps) {
+  assert.ok(
+    Object.hasOwn(actions, step.id),
+    `no consumer action for step ${step.id}`,
+  );
+  actions[step.id]();
+  performed.push(step.id);
+}
+assert.deepEqual(
+  performed,
+  Object.keys(actions),
+  "an expected next step was never emitted",
+);
+NODE
+  )
+  : >"$praxisbound_test_dir/next-steps-sufficient"
+}
+
 packed_activation_is_consumable() {
   [ -d "$praxisbound_consumer_dir/node_modules" ] ||
     fail 'packed-package consumer fixture is unavailable'
@@ -754,6 +857,8 @@ clean_npm_consumer_runs_required_commands() {
     fail 'clean npm consumer machine checks did not complete'
   [ -f "$praxisbound_test_dir/packed-init-passed" ] ||
     fail 'clean npm consumer init checks did not complete'
+  [ -f "$praxisbound_test_dir/next-steps-sufficient" ] ||
+    fail 'clean npm consumer adoption next-step checks did not complete'
   [ -f "$praxisbound_consumer_dir/package-lock.json" ] ||
     fail 'clean consumer has no npm package lock'
   [ ! -e "$praxisbound_consumer_dir/pnpm-lock.yaml" ] &&
@@ -1084,6 +1189,7 @@ run_case 'TST002-AC-005' packed_machine_contract_is_consumable
 run_case 'TST016-AC-001' packed_process_consumer_contract
 run_case 'TST016-AC-004' process_consumer_fail_closed
 run_case 'TST013-AC-001' packed_init_apply_is_consumable
+run_case 'TST019-AC-007' emitted_next_steps_are_sufficient_for_adoption
 run_case 'PB003-AC-003' clean_npm_consumer_runs_required_commands
 run_case 'TST014-AC-001' packed_activation_is_consumable
 run_case 'PB003-AC-003' pinned_acquisition_and_offline_execution_are_distinct
