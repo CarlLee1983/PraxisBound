@@ -85,9 +85,9 @@ Story of its own.
   section, and the missing package form of Codex activation in `README.md`.
 * A static test holding the prompt's pinned version equal to the CLI package
   version and holding the prompt's required instructions.
-* Six agent observations on the final committed prompt, run by the human in
-  fresh sessions against two disposable fixture repositories the agent prepares
-  outside this repository.
+* Six agent observations on the final committed prompt, each a fresh
+  non-interactive session started by the agent against a new copy of one of two
+  disposable fixture repositories prepared outside this repository.
 
 ### Out of Scope
 
@@ -103,7 +103,11 @@ Story of its own.
 * Two disposable fixture repositories: a Node project with no `AGENTS.md` whose
   tests run with `node --test` and no dependencies, and a Go project that already
   holds an `AGENTS.md` with marked repository-specific rules and its own tests.
-* Claude Code and Codex sessions started fresh by the human.
+* Fresh non-interactive sessions: Claude Code through `claude -p` with a fixed
+  tool allowlist, and Codex through `codex exec` in its workspace-write sandbox
+  with network access. Neither bypasses permissions or sandboxing. Each loads
+  the human's own global agent configuration, which is recorded, not isolated,
+  because a real adopter's agent carries its own configuration too.
 
 ## Outputs
 
@@ -128,10 +132,11 @@ Story of its own.
 * R7: Every recorded observation uses the same prompt text, identified by the
   commit that holds it. Changing the prompt after an observation invalidates
   every observation and requires all six to be repeated.
-* R8: An observation counts only if the human's input during the session was
-  limited to tool-permission decisions and, when the agent asked a question, the
-  reply "follow the prompt and decide". Any other input marks the observation
-  assisted; it is recorded and does not count.
+* R8: An observation counts only if its session received the prompt as its only
+  input and nothing afterwards: a fresh non-interactive session with no human or
+  agent input during the run. Any other input marks the observation assisted; it
+  is recorded and does not count. The human decided on 2026-09-17, after two
+  pilots, that the agent starts these sessions instead of the human.
 * R9: Pass or fail for an observation is established by the agent inspecting the
   fixture repository's final state, not by the observed agent's own report.
 
@@ -144,7 +149,9 @@ Story of its own.
   pass.
 * An observation whose merged `AGENTS.md` drops any marked original rule fails.
 * An observation in which the agent commits, or changes files outside the
-  fixture repository, fails.
+  fixture repository other than package or build caches and temporary files,
+  fails. Files a tool in the human's own environment adds on its own are
+  recorded and do not fail the observation.
 * A prompt whose pinned version differs from `packages/cli/package.json` fails
   the static test.
 
