@@ -43,6 +43,12 @@ this runbook when making a release or review decision; a handoff may preserve a
 historical publication fact but is not the long-term source of truth for
 current remote state.
 
+Protocol 0.8.0 was never released on its own, and there is no `v0.8.0` tag or
+GitHub Release by design. PR #25 bumped `VERSION` to 0.8.0 and then to 0.9.0
+before merging, so `main` went from 0.7.0 to 0.9.0 and no 0.8.0 commit passed
+exact-SHA CI on `main`; `v0.9.0` marks that merge. Do not add a `v0.8.0` tag
+retroactively: no commit satisfies step 3 below.
+
 ## 1. Classify and prepare the change
 
 Classify every adopter-facing change as breaking, additive, or corrective under
