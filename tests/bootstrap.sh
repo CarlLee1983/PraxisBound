@@ -991,6 +991,197 @@ adopter_documentation_presents_both_adoption_paths() {
 
 run_case 'TST019-AC-009' adopter_documentation_presents_both_adoption_paths
 
+# TST-020. The agent adoption prompt in docs/getting-started.md. It is checked
+# by one function over a page, a README and a manifest, so the real documents
+# and mutated copies go through exactly the same rules. The function prints the
+# first problem it finds and returns 1; it prints nothing for a sound page.
+agent_prompt_problem() {
+  forgeflow_prompt_page=$1
+  forgeflow_prompt_readme=$2
+  forgeflow_prompt_manifest=$3
+
+  forgeflow_prompt_version=$(
+    sed -n 's/^  "version": "\(.*\)",$/\1/p' "$forgeflow_prompt_manifest"
+  )
+  [ -n "$forgeflow_prompt_version" ] || {
+    echo 'cannot read the CLI package version'
+    return 1
+  }
+
+  # The section must sit inside the published package path, before the part
+  # both paths share.
+  forgeflow_prompt_order=$(
+    awk '/^### Published package path$/ { print "package" }
+         /^### Adopt with an AI agent$/ { print "agent" }
+         /^### What either path installs$/ { print "shared" }' \
+      "$forgeflow_prompt_page" | tr '\n' ' '
+  )
+  [ "$forgeflow_prompt_order" = 'package agent shared ' ] || {
+    echo 'the Adopt with an AI agent section is missing or outside the package path'
+    return 1
+  }
+
+  forgeflow_prompt_section=$(
+    awk '/^### Adopt with an AI agent$/ { inside = 1; next }
+         /^#{2,3} / { inside = 0 }
+         inside' "$forgeflow_prompt_page"
+  )
+  # The first text block is the prompt; the second is the optional step 2.
+  forgeflow_prompt_text=$(
+    printf '%s\n' "$forgeflow_prompt_section" |
+      awk '/^```text$/ { block++; inside = 1; next }
+           /^```$/ { inside = 0; next }
+           inside && block == 1' | tr '\n' ' ' | tr -s ' '
+  )
+  forgeflow_prompt_force=$(
+    printf '%s\n' "$forgeflow_prompt_section" |
+      awk '/^```text$/ { block++; inside = 1; next }
+           /^```$/ { inside = 0; next }
+           inside && block == 2' | tr '\n' ' ' | tr -s ' '
+  )
+  [ -n "$forgeflow_prompt_text" ] && [ -n "$forgeflow_prompt_force" ] || {
+    echo 'the section does not hold the prompt and the optional step 2'
+    return 1
+  }
+
+  # Every CLI reference an agent would execute is pinned to the package version.
+  forgeflow_prompt_unpinned=$(
+    printf '%s %s\n' "$forgeflow_prompt_text" "$forgeflow_prompt_force" |
+      grep -o '@praxisbound/cli[^ `]*' |
+      grep -vxF "@praxisbound/cli@$forgeflow_prompt_version" || :
+  )
+  [ -z "$forgeflow_prompt_unpinned" ] || {
+    echo "the prompt references $forgeflow_prompt_unpinned, not @praxisbound/cli@$forgeflow_prompt_version"
+    return 1
+  }
+
+  for forgeflow_prompt_required in \
+    'init --json .' \
+    'INIT_CONFLICT' \
+    'do not use --force' \
+    'data.nextSteps' \
+    'identified by its `id`' \
+    '`verification-gate`' \
+    'checks this repository already has' \
+    'never use a command that always succeeds' \
+    '`confirm-adoption`' \
+    'doctor --json .' \
+    'verify --json .' \
+    'Report which checks' \
+    'Do not commit'
+  do
+    case "$forgeflow_prompt_text" in
+      *"$forgeflow_prompt_required"*) ;;
+      *)
+        echo "the prompt lacks: $forgeflow_prompt_required"
+        return 1
+        ;;
+    esac
+  done
+
+  for forgeflow_prompt_required in \
+    'uncommitted changes' \
+    'init --force --json .' \
+    'git show HEAD:AGENTS.md' \
+    'without dropping or weakening' \
+    'git diff'
+  do
+    case "$forgeflow_prompt_force" in
+      *"$forgeflow_prompt_required"*) ;;
+      *)
+        echo "the optional step 2 lacks: $forgeflow_prompt_required"
+        return 1
+        ;;
+    esac
+  done
+
+  # Vendor-neutral: no agent product or vendor is named in what gets pasted.
+  if printf '%s %s\n' "$forgeflow_prompt_text" "$forgeflow_prompt_force" |
+    grep -Eiq '(claude|codex|cursor|copilot|gemini|chatgpt|aider|windsurf|openai|anthropic)'
+  then
+    echo 'the prompt names an agent product or vendor'
+    return 1
+  fi
+
+  grep -Fq -- 'docs/getting-started.md#adopt-with-an-ai-agent' "$forgeflow_prompt_readme" || {
+    echo 'README.md does not point to the agent adoption prompt'
+    return 1
+  }
+}
+
+agent_prompt_documentation_is_sound() {
+  forgeflow_prompt_result=$(
+    agent_prompt_problem "$forgeflow_repo/docs/getting-started.md" \
+      "$forgeflow_repo/README.md" "$forgeflow_repo/packages/cli/package.json"
+  ) || fail "$forgeflow_prompt_result"
+}
+
+# AC-007: each mutation of a sound copy is rejected, so the rules above guard
+# something rather than passing vacuously.
+agent_prompt_mutations_are_rejected() {
+  forgeflow_prompt_dir="$forgeflow_test_dir/tst020"
+  mkdir -p "$forgeflow_prompt_dir"
+  cp "$forgeflow_repo/README.md" "$forgeflow_prompt_dir/README.md"
+  cp "$forgeflow_repo/packages/cli/package.json" "$forgeflow_prompt_dir/package.json"
+  forgeflow_prompt_version=$(
+    sed -n 's/^  "version": "\(.*\)",$/\1/p' "$forgeflow_prompt_dir/package.json"
+  )
+
+  for forgeflow_prompt_mutation in \
+    "s/@praxisbound\/cli@$forgeflow_prompt_version doctor/@praxisbound\/cli@9.9.9 doctor/" \
+    "s/@praxisbound\/cli@$forgeflow_prompt_version verify/@praxisbound\/cli verify/" \
+    's/use a command that always succeeds/use any command/' \
+    's/Do not commit\./Commit when done./' \
+    's/do not use --force/use --force if needed/' \
+    's/git show HEAD:AGENTS.md/the old file/' \
+    's/Work from the$/Work, as Claude Code, from the/'
+  do
+    sed "$forgeflow_prompt_mutation" "$forgeflow_repo/docs/getting-started.md" \
+      >"$forgeflow_prompt_dir/getting-started.md"
+    if cmp -s "$forgeflow_repo/docs/getting-started.md" "$forgeflow_prompt_dir/getting-started.md"; then
+      fail "mutation did not apply: $forgeflow_prompt_mutation"
+    fi
+    if agent_prompt_problem "$forgeflow_prompt_dir/getting-started.md" \
+      "$forgeflow_prompt_dir/README.md" "$forgeflow_prompt_dir/package.json" >/dev/null
+    then
+      fail "mutated documentation was accepted: $forgeflow_prompt_mutation"
+    fi
+  done
+
+  # A version bump that the prompt does not follow is rejected.
+  sed 's/^  "version": ".*",$/  "version": "9.9.9",/' \
+    "$forgeflow_repo/packages/cli/package.json" >"$forgeflow_prompt_dir/package.json"
+  if agent_prompt_problem "$forgeflow_repo/docs/getting-started.md" \
+    "$forgeflow_prompt_dir/README.md" "$forgeflow_prompt_dir/package.json" >/dev/null
+  then
+    fail 'a prompt pinned to a stale version was accepted'
+  fi
+
+  # A README without the pointer is rejected.
+  grep -vF 'adopt-with-an-ai-agent' "$forgeflow_repo/README.md" >"$forgeflow_prompt_dir/README.md"
+  if agent_prompt_problem "$forgeflow_repo/docs/getting-started.md" \
+    "$forgeflow_prompt_dir/README.md" "$forgeflow_repo/packages/cli/package.json" >/dev/null
+  then
+    fail 'a README without the prompt pointer was accepted'
+  fi
+}
+
+readme_names_both_codex_activation_forms() {
+  for forgeflow_codex_form in \
+    './scripts/codex-activate /path/to/repository' \
+    'npx @praxisbound/cli codex activate /path/to/repository'
+  do
+    grep -Fq -- "$forgeflow_codex_form" "$forgeflow_repo/README.md" ||
+      fail "README.md does not name $forgeflow_codex_form"
+  done
+}
+
+run_case 'TST020-AC-001' agent_prompt_documentation_is_sound
+run_case 'TST020-AC-002' agent_prompt_documentation_is_sound
+run_case 'TST020-AC-004' agent_prompt_documentation_is_sound
+run_case 'TST020-AC-007' agent_prompt_mutations_are_rejected
+run_case 'TST020-AC-009' readme_names_both_codex_activation_forms
+
 prepare_recovery_fault() {
   forgeflow_fault_root="$forgeflow_test_dir/$forgeflow_case_id-$1"
   mkdir -p "$forgeflow_fault_root"
