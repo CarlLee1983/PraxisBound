@@ -59,9 +59,10 @@ lifecycle script. After publication it compares the registry's integrity for
 that version with the recomputed digest and records both in the run summary.
 
 `verify.yml` and the pack job share one composite action,
-`.github/actions/setup-verification`. The pack job disables the pnpm cache,
-unlike `verify.yml`, so a cache written by an untrusted pull-request run never
-feeds a publication artifact. That difference is deliberate.
+`.github/actions/setup-verification`. The pack job disables every dependency
+cache the action restores, unlike `verify.yml`, so a publication artifact is
+built only from lockfile-pinned downloads made in that run and never from a
+cache an earlier run wrote. That difference is deliberate.
 
 A `rehearsal` input runs the same jobs, the same environment approval and every
 guard except unused-version, which it reports instead of enforcing so that an
@@ -78,9 +79,13 @@ rehearsal never reaches a real `npm publish`.
 * The environment `npm-publication` and the npm Trusted Publisher entries are
   access settings owned by the human maintainer; agents neither configure nor
   inspect them.
-* `scripts/publish-dispatch` owns the maintainer's dispatch experience, including
-  telling the maintainer that the run awaits environment approval. It never
-  approves a run or writes a dist-tag.
+* `scripts/publish-dispatch` owns the maintainer's dispatch experience: run by
+  the maintainer with the maintainer's own credentials, it refuses to dispatch
+  when `npm-publication` is missing or has no required reviewer, and tells the
+  maintainer that the run awaits approval. It never approves a run, changes a
+  setting or writes a dist-tag. A dispatch from the GitHub interface bypasses
+  that refusal, which is why the environment is created before this structure
+  is merged.
 
 ## Consequences
 
@@ -88,9 +93,9 @@ A compromised development dependency or package script can still corrupt what
 the pack job builds, but it cannot mint an npm credential, and the artifact is
 packed in the same job, from the same revision, immediately after `make verify`
 passed there. `make verify` does not inspect that exact tarball; it proves the
-revision, and the pack job's own packed-package tests prove the packing. Provenance names
-the run and the tarball digest, not the job, so the digest comparison between
-jobs is what ties the published bytes to the verified build.
+revision, and the pack job's own packed-package tests prove the packing.
+Provenance names the run and the tarball digest, not the job, so the digest
+comparison between jobs is what ties the published bytes to the verified build.
 
 Every publication now waits for a human approval in GitHub, in addition to the
 dispatch. The first real upload and provenance signature under this structure

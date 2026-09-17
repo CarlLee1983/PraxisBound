@@ -83,7 +83,7 @@ Tooling and Protocol versions are untouched: no package version changes, and
   `id-token: write` in environment `npm-publication`, both conditioned on
   `main`.
 * Pack job: candidate and exact-SHA `verify.yml` guards before any install,
-  shared setup with the pnpm cache disabled, `make verify`, `npm pack` of the
+  shared setup with dependency caches disabled, `make verify`, `npm pack` of the
   selected package only, its sha512 as a job output, and the tarball uploaded
   as an artifact.
 * Publish job: no checkout and no install; Node 24 with the npm version check;
@@ -100,16 +100,18 @@ Tooling and Protocol versions are untouched: no package version changes, and
 * A composite action `.github/actions/setup-verification` used by `verify.yml`'s
   `verify` job and the pack job, with a `cache` input; the deliberate cache
   difference explained in the action.
-* `scripts/publish-dispatch` printing that the run awaits `npm-publication`
-  approval, with the run URL, after dispatching.
+* `scripts/publish-dispatch` refusing before dispatch when environment
+  `npm-publication` is missing or has no required-reviewer rule, and printing
+  that the run awaits its approval, with the run URL, after dispatching.
 * Static tests holding the workflow split, the guards, the rehearsal boundary,
-  the shared setup and the helper message; `make verify-actions` linting the
-  composite action.
+  the shared setup and the helper message; the composite action's structure is
+  held by `tests/protocol.sh`, because actionlint does not lint composite
+  actions.
 * `docs/releasing.md` section 8 updated for the approval step, the rehearsal,
   and the human setup order.
 * Human steps, in order: create environment `npm-publication` with the
   maintainer as required reviewer, self-approval allowed, deployments limited to
-  `main`, before any dispatch of the new workflow; merge; dispatch a rehearsal;
+  `main`, before merging this change; merge; dispatch a rehearsal;
   add the environment name to both npm Trusted Publisher entries; dispatch a
   rehearsal again.
 
@@ -166,7 +168,7 @@ Tooling and Protocol versions are untouched: no package version changes, and
   the OIDC token exchange succeeded. No path with `rehearsal` true runs a
   publish without `--dry-run`, and a real publication never passes `--dry-run`.
 * R8: `verify.yml`'s `verify` job and the pack job set up through the same
-  composite action. The pack job disables the pnpm cache.
+  composite action. The pack job disables every dependency cache it restores.
 * R9: Authentication stays OIDC only. No `NPM_TOKEN` or `NODE_AUTH_TOKEN` is
   referenced by either workflow or the composite action.
 * R10: The agent prepares, verifies and records. Environment and Trusted
@@ -185,6 +187,11 @@ Tooling and Protocol versions are untouched: no package version changes, and
   version, fails in the publish job before `npm publish`.
 * A rejected or unapproved environment approval leaves the publish job unrun and
   nothing published.
+* `scripts/publish-dispatch` refuses before dispatching when environment
+  `npm-publication` is missing or unprotected. A dispatch made outside the
+  helper while the environment is missing would run unprotected, because GitHub
+  creates a referenced environment without protection rules; creating it before
+  merging is the only defense for that path.
 * A rehearsal whose OIDC exchange fails, including one caused by an environment
   mismatch with the npm Trusted Publisher entry, fails the run; it does not pass
   on a zero exit status alone.

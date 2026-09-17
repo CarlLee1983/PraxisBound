@@ -14,21 +14,28 @@ on:
         options:
           - core
           - cli
+      rehearsal:
+        description: Rehearse the OIDC exchange with npm publish --dry-run; never publishes
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   actions: read
   contents: read
-  id-token: write
 
 concurrency:
   group: praxisbound-npm-publication
   cancel-in-progress: false
 
 jobs:
-  publish-next:
+  pack:
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    outputs:
+      digest: ${{ steps.pack.outputs.digest }}
+      tarball: ${{ steps.pack.outputs.tarball }}
 
     steps:
       - name: Check out the exact publication revision
@@ -65,6 +72,56 @@ jobs:
             exit 1
           }
 
+      # cache: false — a publication restores no dependency cache at all, so
+      # every dependency in its artifact comes from a lockfile-pinned
+      # download made in this run. See the composite action.
+      - name: Set up verification tooling
+        uses: ./.github/actions/setup-verification
+        with:
+          cache: false
+
+      - name: Build and verify the exact publication revision
+        run: |
+          pnpm install --frozen-lockfile
+          make verify
+
+      - name: Pack the selected package
+        id: pack
+        env:
+          PACKAGE: ${{ inputs.package }}
+        run: |
+          case "$PACKAGE" in
+            core|cli) ;;
+            *) exit 2 ;;
+          esac
+          mkdir -p dist/publish
+          npm pack "./packages/$PACKAGE" --pack-destination dist/publish >/dev/null
+          tarball=$(find dist/publish -maxdepth 1 -type f -name '*.tgz')
+          [ -n "$tarball" ] || { echo 'npm pack produced no tarball' >&2; exit 1; }
+          digest="sha512-$(openssl dgst -sha512 -binary "$tarball" | openssl base64 -A)"
+          {
+            printf 'tarball=%s\n' "$(basename "$tarball")"
+            printf 'digest=%s\n' "$digest"
+          } >>"$GITHUB_OUTPUT"
+
+      - name: Upload the packed tarball
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: publication-tarball
+          path: dist/publish/${{ steps.pack.outputs.tarball }}
+          if-no-files-found: error
+          retention-days: 1
+
+  publish:
+    if: github.ref == 'refs/heads/main'
+    needs: pack
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: npm-publication
+    permissions:
+      id-token: write
+
+    steps:
       - name: Set up Node.js
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
@@ -79,54 +136,144 @@ jobs:
           }
           NODE
 
-      - name: Install locked tooling dependencies
-        uses: pnpm/setup@703c52620218391530e48b9e8870d5c0082e1b9b # v2.1.0
+      - name: Download the packed tarball
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          cache: false
-          require-lockfile: true
+          name: publication-tarball
+          path: dist/publish
 
-      - name: Install TypeScript example dependencies
-        run: pnpm --dir examples/typescript install --frozen-lockfile
-
-      - name: Set up Go
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with:
-          go-version-file: examples/go/go.mod
-          cache-dependency-path: examples/go/go.sum
-
-      - name: Download Go modules
-        run: go -C examples/go mod download
-
-      - name: Build and verify the exact publication revision
+      - name: Refuse a tarball that does not match the pack job digest
+        id: verify_digest
+        env:
+          TARBALL_NAME: ${{ needs.pack.outputs.tarball }}
+          EXPECTED_DIGEST: ${{ needs.pack.outputs.digest }}
         run: |
-          pnpm install --frozen-lockfile
-          make verify
+          TARBALL="dist/publish/$TARBALL_NAME"
+          [ -f "$TARBALL" ] || { echo "downloaded artifact is missing $TARBALL" >&2; exit 1; }
+          ACTUAL_DIGEST="sha512-$(openssl dgst -sha512 -binary "$TARBALL" | openssl base64 -A)"
+          [ "$ACTUAL_DIGEST" = "$EXPECTED_DIGEST" ] || {
+            echo "tarball digest $ACTUAL_DIGEST differs from the pack job's $EXPECTED_DIGEST" >&2
+            exit 1
+          }
+          printf 'tarball=%s\n' "$TARBALL" >>"$GITHUB_OUTPUT"
 
-      - name: Verify publication order and unused version
+      - name: Read package coordinates from the tarball
+        id: manifest
+        env:
+          TARBALL: ${{ steps.verify_digest.outputs.tarball }}
+        run: |
+          MANIFEST=$(tar -xzOf "$TARBALL" package/package.json)
+          NAME=$(printf '%s' "$MANIFEST" |
+            node -e 'process.stdout.write(JSON.parse(require("fs").readFileSync(0,"utf8")).name || "")')
+          VERSION=$(printf '%s' "$MANIFEST" |
+            node -e 'process.stdout.write(JSON.parse(require("fs").readFileSync(0,"utf8")).version || "")')
+          CORE_DEPENDENCY=$(printf '%s' "$MANIFEST" |
+            node -e 'const p = JSON.parse(require("fs").readFileSync(0,"utf8")); process.stdout.write((p.dependencies && p.dependencies["@praxisbound/core"]) || "")')
+          if [ -z "$NAME" ] || [ -z "$VERSION" ]; then
+            echo 'cannot read name and version from the tarball package.json' >&2
+            exit 1
+          fi
+          {
+            printf 'name=%s\n' "$NAME"
+            printf 'version=%s\n' "$VERSION"
+            printf 'core_dependency=%s\n' "$CORE_DEPENDENCY"
+          } >>"$GITHUB_OUTPUT"
+
+      - name: Guard the publication coordinate before any npm command authenticates
         env:
           PACKAGE: ${{ inputs.package }}
+          REHEARSAL: ${{ inputs.rehearsal }}
+          NAME: ${{ steps.manifest.outputs.name }}
+          VERSION: ${{ steps.manifest.outputs.version }}
+          CORE_DEPENDENCY: ${{ steps.manifest.outputs.core_dependency }}
         run: |
-          case "$PACKAGE" in
-            core|cli) ;;
-            *) exit 2 ;;
-          esac
-          VERSION=$(node -p "require('./packages/$PACKAGE/package.json').version")
+          [ "$NAME" = "@praxisbound/$PACKAGE" ] || {
+            echo "tarball name $NAME does not match the dispatched package @praxisbound/$PACKAGE" >&2
+            exit 1
+          }
+          COORDINATE="$NAME@$VERSION"
           LOOKUP_DIR=$(mktemp -d)
           trap 'rm -rf "$LOOKUP_DIR"' EXIT
-          if npm view "@praxisbound/$PACKAGE@$VERSION" version >"$LOOKUP_DIR/version" 2>"$LOOKUP_DIR/error"; then
-            echo "@praxisbound/$PACKAGE@$VERSION already exists" >&2
+          if npm view "$COORDINATE" version >"$LOOKUP_DIR/version" 2>"$LOOKUP_DIR/error"; then
+            if [ "$REHEARSAL" = 'true' ]; then
+              echo "rehearsal: $COORDINATE already exists; unused-version is reported, not enforced" >&2
+            else
+              echo "$COORDINATE already exists" >&2
+              exit 1
+            fi
+          elif ! grep -Eq '(^|[[:space:]])E404([[:space:]]|$)' "$LOOKUP_DIR/error"; then
+            echo "Cannot confirm $COORDINATE is unused" >&2
             exit 1
           fi
-          if ! grep -Eq '(^|[[:space:]])E404([[:space:]]|$)' "$LOOKUP_DIR/error"; then
-            echo "Cannot confirm @praxisbound/$PACKAGE@$VERSION is unused" >&2
-            exit 1
-          fi
-          if [ "$PACKAGE" = cli ]; then
-            CORE_VERSION=$(node -p "require('./packages/core/package.json').version")
-            [ "$(npm view "@praxisbound/core@$CORE_VERSION" version)" = "$CORE_VERSION" ]
+          if [ "$NAME" = '@praxisbound/cli' ]; then
+            case "$CORE_DEPENDENCY" in
+              ''|*[!0-9.]*)
+                echo "@praxisbound/cli's Core dependency \"$CORE_DEPENDENCY\" is not an exact version" >&2
+                exit 1
+                ;;
+            esac
+            CORE_PUBLISHED_VERSION=$(npm view "@praxisbound/core@$CORE_DEPENDENCY" version 2>/dev/null) || {
+              echo "@praxisbound/core@$CORE_DEPENDENCY is not public" >&2
+              exit 1
+            }
+            [ "$CORE_PUBLISHED_VERSION" = "$CORE_DEPENDENCY" ] || {
+              echo "@praxisbound/core@$CORE_DEPENDENCY is not public" >&2
+              exit 1
+            }
           fi
 
       - name: Publish to the next tag with provenance
+        if: ${{ inputs.rehearsal != true }}
         env:
-          PACKAGE: ${{ inputs.package }}
-        run: npm publish "./packages/$PACKAGE" --tag next --access public --provenance
+          REHEARSAL: ${{ inputs.rehearsal }}
+          TARBALL: ${{ steps.verify_digest.outputs.tarball }}
+        run: |
+          [ "$REHEARSAL" != 'true' ] || { echo 'a rehearsal never reaches a real npm publish' >&2; exit 1; }
+          npm publish "$TARBALL" --tag next --access public --provenance
+
+      - name: Rehearse the OIDC exchange without publishing
+        if: ${{ inputs.rehearsal == true }}
+        env:
+          REHEARSAL: ${{ inputs.rehearsal }}
+          TARBALL: ${{ steps.verify_digest.outputs.tarball }}
+        run: |
+          [ "$REHEARSAL" = 'true' ] || { echo 'rehearsal step ran outside a rehearsal dispatch' >&2; exit 1; }
+          set +e
+          OUTPUT=$(npm publish "$TARBALL" --dry-run --tag next --access public --provenance --loglevel verbose 2>&1)
+          STATUS=$?
+          set -e
+          printf '%s\n' "$OUTPUT"
+          printf '%s\n' "$OUTPUT" | grep -Fq 'Successfully retrieved and set token' || {
+            echo "rehearsal did not show a successful OIDC token exchange (npm publish --dry-run exit $STATUS)" >&2
+            exit 1
+          }
+
+      - name: Compare registry integrity with the published digest
+        if: ${{ inputs.rehearsal != true }}
+        env:
+          REHEARSAL: ${{ inputs.rehearsal }}
+          NAME: ${{ steps.manifest.outputs.name }}
+          VERSION: ${{ steps.manifest.outputs.version }}
+          DIGEST: ${{ needs.pack.outputs.digest }}
+        run: |
+          [ "$REHEARSAL" != 'true' ] || { echo 'a rehearsal never publishes, so it has no registry integrity to compare' >&2; exit 1; }
+          COORDINATE="$NAME@$VERSION"
+          ATTEMPT=0
+          MAX_ATTEMPTS=10
+          INTEGRITY=
+          while [ "$ATTEMPT" -lt "$MAX_ATTEMPTS" ]; do
+            ATTEMPT=$((ATTEMPT + 1))
+            INTEGRITY=$(npm view "$COORDINATE" dist.integrity 2>/dev/null) || INTEGRITY=
+            [ -z "$INTEGRITY" ] || break
+            sleep 5
+          done
+          {
+            printf 'Published %s\n' "$COORDINATE"
+            printf 'Artifact digest:    %s\n' "$DIGEST"
+            printf 'Registry integrity: %s\n' "$INTEGRITY"
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+          [ -n "$INTEGRITY" ] || { echo "registry never reported integrity for $COORDINATE" >&2; exit 1; }
+          [ "$INTEGRITY" = "$DIGEST" ] || {
+            echo "registry integrity $INTEGRITY differs from artifact digest $DIGEST" >&2
+            exit 1
+          }

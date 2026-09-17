@@ -7,8 +7,8 @@
   workflow-level permissions grant no `id-token`, and the publish job runs in
   environment `npm-publication`.
 * [ ] AC-002: The pack job runs the candidate and exact-SHA `verify.yml` guards
-  before any install, sets up through the shared composite action with the pnpm
-  cache disabled, runs `make verify`, packs only the selected package, exposes
+  before any install, sets up through the shared composite action with dependency
+  caches disabled, runs `make verify`, packs only the selected package, exposes
   the tarball's sha512 as a job output, and uploads the tarball as an artifact.
 * [ ] AC-003: The publish job has no checkout, install, `make` or repository
   script step. It downloads the artifact, refuses an sha512 different from the
@@ -32,15 +32,18 @@
 * [ ] AC-006: `verify.yml`'s `verify` job and the pack job use
   `.github/actions/setup-verification`; the action carries the setup lines
   `verify.yml` previously held and explains the pack job's disabled cache;
-  `make verify-actions` lints it; neither workflow nor the action references
-  `NPM_TOKEN` or `NODE_AUTH_TOKEN`.
+  `tests/protocol.sh` holds the action's structure, because actionlint lints
+  workflow files only and does not descend into a composite action; neither
+  workflow nor the action references `NPM_TOKEN` or `NODE_AUTH_TOKEN`.
 * [ ] AC-007: After a confirmed dispatch, `scripts/publish-dispatch` prints that
   the run awaits approval of environment `npm-publication`, with the run URL,
-  before watching it. Every existing refusal still dispatches nothing and the
-  helper still never writes a dist-tag.
+  before watching it. Before dispatching, it refuses when environment
+  `npm-publication` does not exist or has no required-reviewer protection rule.
+  Every existing refusal still dispatches nothing and the helper still never
+  writes a dist-tag.
 * [ ] AC-008: `docs/releasing.md` section 8 documents the environment approval,
   the rehearsal and how to read its result, and the human setup order: create
-  the environment before the first dispatch, rehearse, add the environment to
+  the environment before merging this change, rehearse, add the environment to
   both npm Trusted Publisher entries, rehearse again.
 
 ## Failure Cases
@@ -71,8 +74,8 @@
 | `AC-003` | test | `tests/protocol.sh PB005-AC-003` | `.github/workflows/publish.yml` | `publish job has no checkout, install, make or repository script; downloads, compares sha512, publishes the tarball, compares registry integrity and writes the summary` |
 | `AC-004` | test | `tests/publication-workflow.sh PB005-AC-004` | `publish job guard logic run against fixture tarballs with fake npm` | `published version, CLI before Core and non-exact Core dependency are each refused before any authenticating npm command` |
 | `AC-005` | test | `tests/publication-workflow.sh PB005-AC-005` | `publish job logic with rehearsal true and false, fake npm recording its arguments` | `rehearsal reports but does not enforce unused-version, invokes only a dry-run publish, fails without the OIDC success line; a real run never passes dry-run` |
-| `AC-006` | test | `tests/protocol.sh PB005-AC-006` | `verify.yml, publish.yml, the composite action and the Makefile` | `both jobs use the action, the setup terms live in it, the cache rationale is present, verify-actions lints it, and no stored npm credential is referenced` |
-| `AC-007` | test | `tests/publish-dispatch.sh PB005-AC-007` | `fake gh and npm on PATH with no network or credential` | `confirmed dispatch prints the npm-publication approval notice and run URL; existing refusals and the no-dist-tag case still pass` |
+| `AC-006` | test | `tests/protocol.sh PB005-AC-006` | `verify.yml, publish.yml and the composite action` | `both jobs use the action, the setup terms and composite structure live in it, the verify job no longer holds them, the cache rationale is present, and no stored npm credential is referenced` |
+| `AC-007` | test | `tests/publish-dispatch.sh PB005-AC-007` | `fake gh and npm on PATH with no network or credential` | `a missing or unprotected npm-publication environment is refused before dispatch; confirmed dispatch prints the approval notice and run URL; existing refusals and the no-dist-tag case still pass` |
 | `AC-008` | test | `tests/protocol.sh PB005-AC-008` | `docs/releasing.md` | `section 8 names the npm-publication approval, the rehearsal and its OIDC result, and the four-step human setup order` |
 | `AC-009` | test | `tests/publication-workflow.sh PB005-AC-009` | `local fixture tarballs, a mismatched digest, fake npm responses` | `each listed refusal fails with its own message and no real publish invocation is recorded` |
 | `AC-010` | command | `make verify` | `current checkout and the pull request verify.yml run` | `exit 0 locally and success for every verify.yml job on the pull request head` |
@@ -87,6 +90,7 @@
 | `publish.rehearsal` | `true on an unpublished version` | preserve | `dry-run publish only; registry unchanged` | `tests/publication-workflow.sh PB005-AC-005` |
 | `publish.artifact` | `tarball altered after the pack job` | reject | `publish job digest comparison, before npm authenticates` | `tests/publication-workflow.sh PB005-AC-009` |
 | `publish.artifact-digest` | `sha512 differing from the downloaded tarball` | reject | `publish job digest comparison` | `tests/publication-workflow.sh PB005-AC-009` |
+| `publish.environment-approval` | `environment npm-publication missing or without required reviewers when the helper dispatches` | reject | `scripts/publish-dispatch precondition, before any dispatch` | `tests/publish-dispatch.sh PB005-AC-007` |
 | `publish.environment-approval` | `approval rejected by the reviewer` | reject | `GitHub environment gate; publish job never runs` | `PB-005 rehearsal record` |
 | `npm.package-version` | `0.2.0 on a real run` | reject | `publish job unused-version guard reading the tarball manifest` | `tests/publication-workflow.sh PB005-AC-004` |
 | `npm.authorization` | `NODE_AUTH_TOKEN reference in publish.yml or the setup action` | reject | `.github/workflows/publish.yml; .github/actions/setup-verification/action.yml` | `tests/protocol.sh PB005-AC-006` |
@@ -94,7 +98,7 @@
 | `npm.integrity` | `registry integrity differing from the artifact digest` | reject | `publish job post-publication check and run summary` | `tests/publication-workflow.sh PB005-AC-009` |
 | `publish.workflow` | `id-token write added to the pack job` | reject | `.github/workflows/publish.yml` | `tests/protocol.sh PB005-AC-001` |
 | `publish.workflow` | `checkout step added to the publish job` | reject | `.github/workflows/publish.yml` | `tests/protocol.sh PB005-AC-003` |
-| `ci.setup` | `pnpm cache enabled for the pack job` | reject | `.github/workflows/publish.yml` | `tests/protocol.sh PB005-AC-002` |
+| `ci.setup` | `pnpm or Go cache enabled for the pack job` | reject | `.github/workflows/publish.yml` | `tests/protocol.sh PB005-AC-002` |
 
 ## Verification Notes
 

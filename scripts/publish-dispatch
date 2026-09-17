@@ -67,6 +67,29 @@ require_no_active_publication() {
     refuse 'a publish.yml run is already in progress'
 }
 
+# GitHub auto-creates a referenced environment without any protection rule the
+# first time a workflow names it, so a dispatch made outside this helper while
+# npm-publication is missing would run unprotected. The API response body is
+# never printed: only its exit status and the one counted field are read.
+require_protected_environment() {
+  environment_check=$(mktemp "${TMPDIR:-/tmp}/praxisbound-npm-publication-env.XXXXXX")
+  if ! gh api "repos/$repository/environments/npm-publication" \
+    --jq '[.protection_rules[]? | select(.type == "required_reviewers")] | length' \
+    >"$environment_check" 2>/dev/null; then
+    rm -f "$environment_check"
+    refuse 'environment npm-publication does not exist or is unreachable; create it before dispatching (see docs/releasing.md section 8)'
+  fi
+  protection_rule_count=$(cat "$environment_check")
+  rm -f "$environment_check"
+  case "$protection_rule_count" in
+    ''|*[!0-9]*)
+      refuse 'environment npm-publication has no required-reviewer protection rule; configure it before dispatching (see docs/releasing.md section 8)'
+      ;;
+  esac
+  [ "$protection_rule_count" -gt 0 ] ||
+    refuse 'environment npm-publication has no required-reviewer protection rule; configure it before dispatching (see docs/releasing.md section 8)'
+}
+
 candidate=${2:-$(main_head)}
 require_candidate_is_main
 
@@ -77,6 +100,7 @@ verification=$(gh run list --repo "$repository" --workflow verify.yml \
   refuse "verify.yml for $candidate on main is '$verification', not 'completed success'"
 
 require_no_active_publication
+require_protected_environment
 
 source_version() {
   gh api "repos/$repository/contents/packages/$1/package.json?ref=$candidate" \
@@ -167,6 +191,9 @@ while [ -z "$run_id" ] && [ "$attempt" -lt "$poll_attempts" ]; do
 done
 [ -n "$run_id" ] ||
   refuse 'the dispatched publish.yml run did not appear; check Actions before retrying'
+
+run_url="https://github.com/$repository/actions/runs/$run_id"
+printf '\nRun %s awaits approval of environment npm-publication: %s\n' "$run_id" "$run_url"
 
 printf '\nWatching publish.yml run %s\n' "$run_id"
 if ! gh run watch "$run_id" --repo "$repository" --exit-status >/dev/null; then
