@@ -1,12 +1,12 @@
 # Contract：整批審閱與執行交接
 
-Contract ID：`SPEC-BATCH-REVIEW/R-001`。狀態：待人類審閱（proposed）。日期：2026-09-17。
+Contract ID：`SPEC-BATCH-REVIEW/R-001`。狀態：已接受（accepted，人類審閱並合併 #94）。日期：2026-09-17。
 
 本文件定稿 [spec.md](spec.md) R-001 要求的產物格式、指紋、定位、命令結果與授權邊界。
 取捨與不可靜默推翻的邊界記錄於
 [ADR-014](../../decisions/ADR-014-batch-review-is-projection-and-proposal-not-authority.md)；
 詞彙以 [CONTEXT.md](../../../CONTEXT.md) 的 Batch Review 段為準。
-本文件未經人類審閱前不得作為 R-002～R-009 的實作依據；它不證明任何功能已實作。
+本文件是 R-002～R-009 的實作依據；它不證明任何功能已實作。
 
 機器可讀格式位於 [`schemas/`](schemas/)（JSON Schema 2020-12，共用定義在 `defs.schema.json`），
 範例位於 [`examples/`](examples/)。範例中的 SHA-256 與 commit 為示意值，不對應任何真實檔案。

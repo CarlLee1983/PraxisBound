@@ -1,7 +1,8 @@
 # ADR-014: Batch review is projection and proposal, never authority
 
-* Status: proposed
+* Status: accepted
 * Date: 2026-09-17
+* Accepted: 2026-09-17
 
 ## Context
 
