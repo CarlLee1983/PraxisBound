@@ -1,0 +1,106 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:praxisbound:batch-review:forgepilot-observation:1",
+  "title": "PraxisBound external integration observation v1 (ForgePilot)",
+  "description": "What one handoff attempt observed. ForgePilot remains authoritative for current state.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "batchId",
+    "fingerprint",
+    "packet",
+    "forgepilotVersion",
+    "observedAt",
+    "steps",
+    "stoppedBecause"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "1.0.0"
+    },
+    "batchId": {
+      "$ref": "urn:praxisbound:batch-review:defs:1#/$defs/batchId"
+    },
+    "fingerprint": {
+      "$ref": "urn:praxisbound:batch-review:defs:1#/$defs/sha256"
+    },
+    "packet": {
+      "$ref": "urn:praxisbound:batch-review:defs:1#/$defs/recordRef"
+    },
+    "forgepilotVersion": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256
+    },
+    "observedAt": {
+      "$ref": "urn:praxisbound:batch-review:defs:1#/$defs/utcTime"
+    },
+    "steps": {
+      "type": "array",
+      "maxItems": 2000,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "command",
+          "exit",
+          "stdout",
+          "stderr"
+        ],
+        "properties": {
+          "command": {
+            "enum": [
+              "goal-create",
+              "work-add",
+              "run"
+            ]
+          },
+          "story": {
+            "$ref": "urn:praxisbound:batch-review:defs:1#/$defs/storyId"
+          },
+          "workItemId": {
+            "type": "string",
+            "pattern": "^WI-[0-9]+$"
+          },
+          "exit": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "stdout": {
+            "type": "string",
+            "maxLength": 1048576
+          },
+          "stderr": {
+            "type": "string",
+            "maxLength": 1048576
+          },
+          "truncated": {
+            "type": "boolean"
+          },
+          "originalStdoutBytes": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "originalStderrBytes": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      }
+    },
+    "stoppedBecause": {
+      "enum": [
+        "completed-awaiting-goal-review",
+        "run-stopped",
+        "goal-exists",
+        "step-failed",
+        "result-unknown",
+        "preflight-not-ready",
+        "authorization-missing"
+      ]
+    }
+  }
+}

@@ -46,3 +46,54 @@ _Avoid_: status, approval
 Equivalence between two tooling implementations at the Semantic Result and
 observable-effects level for the same repository fixture and invocation.
 _Avoid_: identical output, rewrite completeness
+
+## Batch Review
+
+**Review Batch**:
+An explicitly declared set of ADRs, Specs, Stories, and acceptance files reviewed
+together, with the requirement relationships between them stated rather than
+inferred.
+_Avoid_: review scope, all specs, project review
+
+**Spec**:
+A requirements baseline that Stories are derived from; an input to batch review,
+not a Protocol artifact and not execution authority.
+_Avoid_: feature doc, requirements Story
+
+**Requirement Fingerprint**:
+The content identity of a Review Batch, covering its declaration and every
+source it selects, including uncommitted changes and excluding derived views.
+_Avoid_: batch version, Git HEAD, snapshot time
+
+**Review Projection**:
+A derived, read-only rendering of a Review Batch for human reading; never a
+source of definitions.
+_Avoid_: review document, HTML source
+
+**Revision Request**:
+A human proposal to change a located part of a Review Batch; it carries no
+authority to change sources or grant work.
+_Avoid_: change order, approval, instruction
+
+**Revision Response**:
+An Agent's recorded disposition of one Revision Request against a specific
+Requirement Fingerprint; historical Evidence, never human approval.
+_Avoid_: resolution, acceptance
+
+**Definition Confirmation**:
+A human's explicit, recorded claim that a Review Batch at one Requirement
+Fingerprint is the intended definition; not identity-verified, and not
+Execution Authorization.
+_Avoid_: approval, sign-off, review state
+
+**Execution Authorization**:
+Permission to cause effects such as source edits, work creation, or runs,
+resolved from a Story, the current human session, or a control plane at the
+time of the effect; never read from a file.
+_Avoid_: approved flag, authorized field
+
+**Execution Packet**:
+The start-of-work input handed to an external Agent or control plane for a
+confirmed, preflighted Review Batch; it records observed authorization and
+never proves work was done.
+_Avoid_: handoff, verification handoff, dispatch approval
