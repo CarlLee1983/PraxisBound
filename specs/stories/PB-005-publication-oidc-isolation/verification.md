@@ -8,7 +8,7 @@
 * integration: pass — `tests/publication-workflow.sh PB005-AC-004, AC-005, AC-006 and AC-009 under sh and dash; tests/publish-dispatch.sh PB005-AC-007 under sh and dash`
 * contract: pass — `publish.yml keeps the PB-004 candidate, exact-SHA verify.yml, unused-version and OIDC-only guards, held by PB004-AC-008 as narrowed in the Story's Superseded Behavior`
 * e2e: pass — `all 30 checks on pull request #78 head f6cdbd90e56a8d6119c555f9f2298fa413f160f0 passed, including verify.yml's verify job through the composite action`
-* architecture: blocked — `no human architecture review of the implementation has been performed`
+* architecture: pass — `Human Review: carl accepted in a Claude Code session on 2026-09-17 at 2026-09-17T06:12Z, reviewing main at 33c0d2c61000c34d49a47f94095c4c394879363f and the rehearsal evidence below. Accepted ADR-013's two-job split, the npm-publication environment gate, the shared composite setup and the helper precheck, with the residual risks below, including the observed unapproved rehearsal 35182525063.`
 
 The first pull request head, dda39f1, failed `make verify-actions` in CI:
 shellcheck on the runner reported SC2015 in the manifest step, which the local
@@ -44,7 +44,6 @@ failed PB005-AC-007.
 
 ## Residual Risks
 
-* `The architecture check is blocked: no human architecture review of the PB-005 implementation has been recorded, so this Story is partial and must not be reported as complete.`
 * `The first real upload and provenance signature under the two-job structure cannot be observed without publishing; the next publication Story must record it as an acceptance criterion.`
 * `A dispatch outside the helper, from the GitHub interface or gh workflow run, bypasses the helper's environment precheck. If npm-publication is missing or unprotected when such a dispatch runs, the publish job runs without approval. This was observed, not only inferred: rehearsal run 35182525063 ran its publish job with no approval before the environment was protected. Had it not been a rehearsal, and had the version been unused, it would have published without approval. Creating the environment before merging remains the only defense, and the runbook order was not followed this time.`
 * `The rehearsals observed that the publish job downloads the artifact with no GITHUB_TOKEN permission beyond id-token, and that npm accepts the OIDC exchange when the job environment matches the Trusted Publisher entry. No rehearsal observed a deliberate mismatch, such as an entry naming a different environment, so rejection in that case rests on documentation.`
