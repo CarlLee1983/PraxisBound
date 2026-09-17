@@ -8,7 +8,7 @@
 * integration: pass — `tests/publication-workflow.sh PB005-AC-004, AC-005, AC-006 and AC-009 under sh and dash; tests/publish-dispatch.sh PB005-AC-007 under sh and dash`
 * contract: pass — `publish.yml keeps the PB-004 candidate, exact-SHA verify.yml, unused-version and OIDC-only guards, held by PB004-AC-008 as narrowed in the Story's Superseded Behavior`
 * e2e: pass — `all 30 checks on pull request #78 head f6cdbd90e56a8d6119c555f9f2298fa413f160f0 passed, including verify.yml's verify job through the composite action`
-* architecture: blocked — `no human architecture review of the implementation has been performed`
+* architecture: pass — `Human Review: carl accepted in a Claude Code session on 2026-09-17 at 2026-09-17T06:12Z, reviewing main at 33c0d2c61000c34d49a47f94095c4c394879363f and the rehearsal evidence below. Accepted ADR-013's two-job split, the npm-publication environment gate, the shared composite setup and the helper precheck, with the residual risks below, including the observed unapproved rehearsal 35182525063.`
 
 The first pull request head, dda39f1, failed `make verify-actions` in CI:
 shellcheck on the runner reported SC2015 in the manifest step, which the local
@@ -33,7 +33,7 @@ failed PB005-AC-007.
 * `AC-008`: pass — `tests/protocol.sh PB005-AC-008 held docs/releasing.md section 8 to the environment approval, the rehearsal and its OIDC line, and the human setup order with the environment created before merging.`
 * `AC-009`: pass — `tests/publication-workflow.sh PB005-AC-009 observed a mismatched digest refused before any npm command, a registry integrity mismatch failing after publication, and a rehearsal lacking the OIDC line failing, each with no real publish invocation.`
 * `AC-010`: pass — `make verify exited 0 locally on f6cdbd9, and all 30 pull request checks for that head passed.`
-* `AC-011`: blocked — `requires the human to create environment npm-publication, merge, and dispatch rehearsals for core and cli before and after adding the environment to both npm Trusted Publisher entries; not yet observed.`
+* `AC-011`: pass — `The human created environment npm-publication (required reviewer CarlLee1983, self-review allowed, deployment branch main; the agent saw only the human's own gh api output) after PB-005 merged, contrary to the runbook's create-before-merge order. In that interval CarlLee1983 dispatched core rehearsal run 35182525063 at 2026-09-17T04:35:59Z: its publish job started four seconds after the pack job finished, has no approval record, and exchanged an OIDC token, so it ran without the environment gate. Because it was a rehearsal nothing was published, and it is not counted toward this criterion. PB-005 merged as 33c0d2c61000c34d49a47f94095c4c394879363f and its verify.yml push run 35182143422 successful. First round, dispatched before the human was asked to add the environment to the npm Trusted Publisher entries: rehearsal runs 35182844128 for core and 35183212638 for cli. The human then stated that both entries were set to environment npm-publication. Second round: runs 35183958788 for core and 35184196927 for cli. All four were human-dispatched from main at that SHA with rehearsal true, waited for and received the human's environment approval, and completed success with pack and publish succeeding; each publish job logged npm verbose oidc Successfully retrieved and set token, the second-round runs after POST 201 to the package OIDC token exchange; the guard reported 0.2.0 as already existing without enforcing it; the real publish and integrity steps were skipped; npm's dry-run then refused to publish over 0.2.0 as expected. latest and next remained 0.2.0 for both packages.`
 
 ## Authority Used
 
@@ -44,10 +44,9 @@ failed PB005-AC-007.
 
 ## Residual Risks
 
-* `The architecture check and AC-011 are blocked, so this Story is partial and must not be reported as complete.`
 * `The first real upload and provenance signature under the two-job structure cannot be observed without publishing; the next publication Story must record it as an acceptance criterion.`
-* `A dispatch from the GitHub interface bypasses the helper's environment precheck. If npm-publication does not exist when such a dispatch runs, GitHub creates it without protection and the publish job runs without approval. Creating the environment before merging is the only defense.`
-* `That the publish job's download-artifact step needs no GITHUB_TOKEN permission beyond id-token, and how the npm registry treats an environment mismatch, rest on documentation and code reading; the AC-011 rehearsals are their first observation.`
+* `A dispatch outside the helper, from the GitHub interface or gh workflow run, bypasses the helper's environment precheck. If npm-publication is missing or unprotected when such a dispatch runs, the publish job runs without approval. This was observed, not only inferred: rehearsal run 35182525063 ran its publish job with no approval before the environment was protected. Had it not been a rehearsal, and had the version been unused, it would have published without approval. Creating the environment before merging remains the only defense, and the runbook order was not followed this time.`
+* `The rehearsals observed that the publish job downloads the artifact with no GITHUB_TOKEN permission beyond id-token, and that npm accepts the OIDC exchange when the job environment matches the Trusted Publisher entry. No rehearsal observed a deliberate mismatch, such as an entry naming a different environment, so rejection in that case rests on documentation.`
 * `The rehearsal's success signal is the verbose npm log line "Successfully retrieved and set token", confirmed in npm/cli lib/utils/oidc.js; a future npm release that rewords it makes rehearsals fail closed.`
 * `The composite action is checked structurally by tests/protocol.sh, not linted, because actionlint does not descend into composite actions. Its run steps are single commands.`
 * `Local and CI shellcheck versions disagree: CI reported SC2015 that local shellcheck 0.11.0 did not, so a clean local make verify-actions does not guarantee a clean CI run.`
