@@ -148,6 +148,14 @@ The 0.7.0 and 0.8.0 steps below describe their original ForgeFlow-era commands;
 when running them against PraxisBound 0.10.0, replace the old decision-root
 variable with `PRAXISBOUND_DECISIONS_ROOT` and use current skill names.
 
+0.8.0 was never released on its own. Its changes reached `main` in the same
+pull request as 0.9.0, so no checkout of `main` was ever at 0.8.0 and there is
+no `v0.8.0` tag or GitHub Release. An adoption at 0.7.0 upgrades to 0.9.0 and
+applies both the 0.8.0 and 0.9.0 steps; moving on to 0.10.0 then follows the
+identity migration above, which accepts only a `version=0.9.0` marker.
+[`docs/releases/0.8.0.md`](releases/0.8.0.md) remains the record of what 0.8.0
+changed.
+
 * when upgrading to 0.3.3 or later, compare the Code Quality guidance;
 * when upgrading to 0.3.4 or later, compare Review Preparation and human-only
   acceptance guidance; and

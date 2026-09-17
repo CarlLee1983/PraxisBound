@@ -999,6 +999,22 @@ publication_workflow_keeps_its_guards() {
   done
 }
 
+# REL-0.8.0. 0.8.0 reached main only inside PR #25, merged together with the
+# 0.9.0 bump, so no main commit ever carried VERSION 0.8.0 and none passed
+# exact-SHA CI. It is deliberately untagged. Both the adopter upgrade guide and
+# the release runbook must say so, or a reader will "restore" a missing tag on
+# a commit the runbook forbids.
+unreleased_0_8_0_is_recorded() {
+  for forgeflow_release_status_document in docs/upgrading.md docs/releasing.md
+  do
+    forgeflow_flat=$(tr '\n' ' ' <"$forgeflow_repo/$forgeflow_release_status_document" | tr -s ' ')
+    case "$forgeflow_flat" in
+      *'0.8.0 was never released on its own'*'no `v0.8.0` tag or GitHub Release'*) ;;
+      *) fail "$forgeflow_release_status_document does not record that 0.8.0 is untagged" ;;
+    esac
+  done
+}
+
 # The 0.10.0 release record. VERSION reached 0.10.0 with the PB-001 identity
 # migration, but no release note was written; this guards the record that now
 # closes that gap. The terms are the migration an adopter must act on, so a
@@ -1090,6 +1106,7 @@ run_case 'P0001-AC-007' mutable_lifecycle_state_is_removed_for_0_8_0
 run_case 'P0002-AC-009' risk_driven_readiness_is_additive_for_0_8_0
 run_case 'P1003-AC-008' structural_contract_is_capability_based_for_0_9_0
 run_case 'REL-0.10.0' identity_migration_is_recorded_for_0_10_0
+run_case 'REL-0.8.0' unreleased_0_8_0_is_recorded
 run_case 'PB004-AC-005' subsequent_release_procedure_is_documented
 run_case 'PB004-AC-008' publication_workflow_keeps_its_guards
 
