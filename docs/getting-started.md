@@ -43,7 +43,7 @@ Applying is the default and `--dry-run` previews, mirroring the shell path's
 Like the shell path, `init` does not write the repository-owned `Makefile`.
 
 From tooling version 0.2.0 onward, `init` also reports the ordered next steps
-that remain before the repository is a complete Adoption: create that gate,
+that remain before the repository reaches Adoption: create that gate,
 then run Doctor and confirm PASS. The steps are printed for a person to read
 and, with `--json`, carried as structured data under `data.nextSteps` so an
 agent can act on them without parsing prose. Tooling 0.1.0 applies the same
@@ -137,6 +137,7 @@ For a repository you trust, explicitly run its canonical gate once:
 
 ```sh
 ./scripts/doctor --run-verify /path/to/repository
+npx @praxisbound/cli doctor --run-verify /path/to/repository
 ```
 
 This mode executes repository-owned code and is neither read-only nor
@@ -190,6 +191,7 @@ declaration before implementation starts:
 
 ```sh
 ./scripts/story-check specs/stories/ORD-123-refund-order
+npx @praxisbound/cli story check specs/stories/ORD-123-refund-order
 ```
 
 See [Contract checks](contract-checks.md) for the result and exit semantics.
@@ -223,11 +225,23 @@ When historical execution context will help, copy the handoff template to a
 record path and replace its placeholders with one exact point-in-time
 observation:
 
+From a PraxisBound checkout:
+
 ```sh
 mkdir -p specs/handoffs
 cp /path/to/praxisbound/templates/handoff.md \
   specs/handoffs/2026-09-12T023000Z-ABC-005.md
 ./scripts/handoff-check specs/handoffs/2026-09-12T023000Z-ABC-005.md
+```
+
+Without a checkout, fetch the same template from the tagged release and check
+it with the published package:
+
+```sh
+mkdir -p specs/handoffs
+curl -fsSL -o specs/handoffs/2026-09-12T023000Z-ABC-005.md \
+  https://raw.githubusercontent.com/CarlLee1983/PraxisBound/v0.10.0/templates/handoff.md
+npx @praxisbound/cli handoff check specs/handoffs/2026-09-12T023000Z-ABC-005.md
 ```
 
 The [Handoff Evidence Contract](../protocol/handoff.md) requires one Story, UTC

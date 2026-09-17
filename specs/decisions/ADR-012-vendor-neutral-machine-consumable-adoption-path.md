@@ -2,6 +2,7 @@
 
 * Status: accepted
 * Date: 2026-09-16
+* Revised: 2026-09-17
 
 ## Context
 
@@ -20,10 +21,10 @@ The second is what adoption tells the adopter when it finishes. `init` writes
 the templates, the guidance and the adoption marker, but it deliberately does
 not write a verification gate: the glossary defines an Adoption as a repository
 that owns its local gate, so writing a `Makefile` would move ownership to the
-Reference Tooling. The repository is therefore incomplete when `init` returns,
-and until now nothing said so. The alternatives for saying so were prose on
-stdout, a documentation page the adopter is expected to find, or structured
-data in the Semantic Result.
+Reference Tooling. The repository is therefore only Adopting when `init`
+returns, and until now nothing said so. The alternatives for saying so were
+prose on stdout, a documentation page the adopter is expected to find, or
+structured data in the Semantic Result.
 
 Three alternatives were considered and rejected:
 
@@ -56,8 +57,11 @@ data in the Semantic Result's `data`, each step carrying a stable identifier
 alongside a human-readable description. The identifiers, their ordering, and the
 presence of a step are under version protection and change only through a
 declared classification; the description wording is presentation and may be
-reworded freely. The prose printed for a watching human is rendered from the
-same steps and is never the contract.
+reworded freely. A step identifier tells a consumer which action remains, not
+how to perform it: how to perform an identified step is the consumer's own
+knowledge, and the description is presentation over that same identity. The
+prose printed for a watching human is rendered from the same steps and is
+never the contract.
 
 This governs the Reference Tooling only. The portable shell entrypoints are
 untouched: `scripts/bootstrap` produces no Semantic Result and gains no next
@@ -77,14 +81,14 @@ steps.
 ## Consequences
 
 Adopting the Protocol requires no vendor agreement, and a repository that never
-runs activation is a complete Adoption. The cost is that an agent-driven
+runs activation can still reach Adoption. The cost is that an agent-driven
 adoption under a supported vendor takes two commands rather than one, and a
 vendor whose convention differs receives nothing tailored to it.
 
 Treating the steps as a contract means an editor cannot silently drop or
 reorder one to tidy the output, and a consumer may report progress by
-identifier. It also means the steps cannot claim that an agent completes the
-adoption: that claim is untestable and CI must not depend on a language model.
+identifier. It also means the steps cannot claim that an agent reaches
+Adoption: that claim is untestable and CI must not depend on a language model.
 The testable restatement is that following the emitted steps literally produces
 a PASSing `doctor`; an actual agent-driven adoption is a Human Review
 observation, not an automated check.
@@ -97,8 +101,9 @@ envelope, which is closed to additional properties, adding them does not bump
 
 A vendor's discovery convention becomes necessary for an Adoption to reach a
 PASSing `doctor`, or a supported consumer has to read the printed prose to
-recover a step it cannot obtain from the structured result. Either condition
-means the split between `packages/core/src/init.ts`,
+recover which step remains, or its identity or order, because it cannot obtain
+that from the structured result. Either condition means the split between
+`packages/core/src/init.ts`, `packages/core/src/adoption-next-steps.ts`,
 `packages/cli/src/init.ts`, `packages/cli/src/init-mutation.ts`,
 `packages/cli/src/init-observation.ts`, `packages/cli/src/init-snapshot.ts` and
 `scripts/bootstrap` on the adoption side and
@@ -108,3 +113,10 @@ means the split between `packages/core/src/init.ts`,
 `packages/cli/src/activation-snapshot.ts` and
 `scripts/codex-activate` on the activation side no longer expresses the
 contract, and the boundary must be redrawn as a Breaking change.
+
+## Revision
+
+Corrective, 2026-09-17: this revision names the module that holds the emitted
+steps, states what a step identifier actually recovers, and aligns wording
+with the glossary's Adopting and Adoption terms. The decision itself is
+unchanged.
