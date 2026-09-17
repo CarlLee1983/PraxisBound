@@ -169,10 +169,10 @@ jobs:
             node -e 'process.stdout.write(JSON.parse(require("fs").readFileSync(0,"utf8")).version || "")')
           CORE_DEPENDENCY=$(printf '%s' "$MANIFEST" |
             node -e 'const p = JSON.parse(require("fs").readFileSync(0,"utf8")); process.stdout.write((p.dependencies && p.dependencies["@praxisbound/core"]) || "")')
-          [ -n "$NAME" ] && [ -n "$VERSION" ] || {
+          if [ -z "$NAME" ] || [ -z "$VERSION" ]; then
             echo 'cannot read name and version from the tarball package.json' >&2
             exit 1
-          }
+          fi
           {
             printf 'name=%s\n' "$NAME"
             printf 'version=%s\n' "$VERSION"
