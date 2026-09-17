@@ -8,7 +8,7 @@
 * integration: pass — `tests/typescript-tooling.sh PB003-AC-001 and PB003-AC-003; tests/publish-dispatch.sh PB004-AC-009`
 * contract: pass — `tests/protocol.sh PB004-AC-005 and PB004-AC-008 held the runbook and publish.yml guards; public cli@0.2.0 metadata declares exact @praxisbound/core 0.2.0`
 * e2e: pass — `exact SHA 5c7043d15a9cd2443555ba7629d57e1b66a0a93b passed all 15 jobs of verify.yml push run 35115020499; isolated public consumers of the exact 0.2.0 coordinates and of latest passed the AC-003 command set with installed-binary network calls denied`
-* architecture: blocked — `no independent human architecture review of the PB-004 publication sequence has been performed`
+* architecture: pass — `Human Review: carl accepted in a Claude Code session on 2026-09-17 at 02:49Z, reviewing main at 8c95d79b44a6485b4320cb4f25949135752e79b2. Accepted the publication sequence in docs/releasing.md section 8, .github/workflows/publish.yml with the server-side exact-SHA verify.yml guard added in #72, and scripts/publish-dispatch, with the residual risks below: guards held statically, token denial resting on the npm setting, and OIDC scope and setup duplication tracked in #73.`
 
 The publication candidate is `5c7043d15a9cd2443555ba7629d57e1b66a0a93b`, the merge
 commit of PR #67, which followed PR #66. The first candidate, `e7a87ab`, was
@@ -35,7 +35,6 @@ abandoned after its Core dispatch failed; see `AC-006`.
 
 ## Residual Risks
 
-* `The PB-004 publication sequence has had no independent human architecture review, so the architecture check is blocked and this Story is partial.`
 * `PB-004 R2 and the security fixture rows for dispatch-ref, candidate-sha, remote verification, package order and unused version are enforced by publish.yml and held statically by PB004-AC-008; apart from the historical e7a87ab failure, no deliberately rejected dispatch was observed against GitHub. The remote verification guard was added after 0.2.0 was published, in response to Human Review on 2026-09-17 (#72), and has never executed in a real dispatch.`
 * `publish.yml grants id-token: write to the same job that installs dev dependencies and runs make verify, so every dev dependency executes where an OIDC token can be minted. Human Review on 2026-09-17 accepted this as a residual risk rather than a PB-004 change; #73 tracks isolating OIDC to a publish-only job.`
 * `publish.yml duplicates verify.yml's setup and runs only during a real publication, so setup drift is discovered at publication time, as the shallow checkout was in e7a87ab. PB004-AC-008 guards selected lines by grep only. Human Review on 2026-09-17 accepted this as a residual risk; #73 tracks sharing the setup.`
