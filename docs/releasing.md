@@ -315,11 +315,14 @@ make a publish succeed; if OIDC authentication fails, stop for Human Review.
 
 Raise both manifests and the CLI's exact Core dependency to the new version in
 one reviewed change, merge it, and use that merge commit as `candidate_sha`
-once local `make verify` and its exact-SHA `verify.yml` run pass. The dispatch
-must come from `main` while `main` still points at that SHA, and `main` stays
-frozen at that SHA until the CLI dispatch has succeeded: the workflow compares
-`candidate_sha` with the dispatched revision, so a merge between the Core and
-CLI dispatches makes the approved SHA undispatchable for CLI. If that happens,
+once local `make verify` and its exact-SHA `verify.yml` run pass. `publish.yml`
+itself refuses a candidate whose exact-SHA `verify.yml` push run on `main` did
+not succeed, so `scripts/publish-dispatch`'s own check is no longer the only
+guard. The dispatch must come from `main` while `main` still points at that SHA,
+and `main` stays frozen at that SHA until the CLI dispatch has succeeded: the
+workflow compares `candidate_sha` with the dispatched revision, so a merge
+between the Core and CLI dispatches makes the approved SHA undispatchable for
+CLI. If that happens,
 stop for Human Review rather than publishing CLI from a different revision.
 
 A human then dispatches `publish.yml` for `core`, verifies the public Core

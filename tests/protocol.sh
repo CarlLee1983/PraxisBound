@@ -961,7 +961,9 @@ subsequent_release_procedure_is_documented() {
 # PB004-AC-008. The publication guards the PB-004 Security Fixture Matrix relies
 # on live in publish.yml. Nothing else tests that file, so a deleted guard would
 # otherwise go unnoticed until a human dispatch published something it should
-# have refused.
+# have refused. This includes the server-side exact-SHA verify.yml check that
+# a GitHub UI dispatch cannot bypass, unlike the client-side check in
+# scripts/publish-dispatch.
 publication_workflow_keeps_its_guards() {
   forgeflow_workflow="$forgeflow_repo/.github/workflows/publish.yml"
 
@@ -973,6 +975,9 @@ publication_workflow_keeps_its_guards() {
     'E404' \
     '[ "$(npm view "@praxisbound/core@$CORE_VERSION" version)" = "$CORE_VERSION" ]' \
     'id-token: write' \
+    'actions: read' \
+    '--workflow verify.yml --commit "$CANDIDATE_SHA"' \
+    '[ "$verification" = '\''completed success'\'' ] || {' \
     'npm publish "./packages/$PACKAGE" --tag next --access public --provenance'
   do
     grep -Fq -- "$forgeflow_guard" "$forgeflow_workflow" ||

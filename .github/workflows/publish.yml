@@ -16,6 +16,7 @@ on:
           - cli
 
 permissions:
+  actions: read
   contents: read
   id-token: write
 
@@ -49,6 +50,20 @@ jobs:
             exit 1
           }
           [ "$(git rev-parse HEAD)" = "$CANDIDATE_SHA" ]
+
+      - name: Refuse a candidate without a successful exact-SHA verify.yml run
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CANDIDATE_SHA: ${{ inputs.candidate_sha }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          verification=$(gh run list --repo "$REPOSITORY" --workflow verify.yml --commit "$CANDIDATE_SHA" \
+            --branch main --event push --limit 1 \
+            --json status,conclusion --jq '.[0] | "\(.status) \(.conclusion)"')
+          [ "$verification" = 'completed success' ] || {
+            echo "verify.yml for $CANDIDATE_SHA on main is '$verification', not 'completed success'" >&2
+            exit 1
+          }
 
       - name: Set up Node.js
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
