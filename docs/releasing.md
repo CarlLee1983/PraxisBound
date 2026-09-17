@@ -378,8 +378,15 @@ guard. The dispatch must come from `main` while `main` still points at that SHA,
 and `main` stays frozen at that SHA until the CLI dispatch has succeeded: the
 workflow compares `candidate_sha` with the dispatched revision, so a merge
 between the Core and CLI dispatches makes the approved SHA undispatchable for
-CLI. If that happens,
-stop for Human Review rather than publishing CLI from a different revision.
+CLI. If that happens, stop for Human Review rather than publishing CLI from a
+different revision.
+
+The version change also updates the agent adoption prompt in
+[Getting Started](getting-started.md#adopt-with-an-ai-agent), which pins the
+CLI version: `tests/bootstrap.sh` fails until every `@praxisbound/cli@` in the
+prompt matches `packages/cli/package.json`. Changing the prompt text invalidates
+TST-020's agent observations, so repeat all six on the new prompt, as TST-020's
+verification record describes, before that change is merged.
 
 A human then approves the `npm-publication` environment when GitHub prompts
 for it, dispatches `publish.yml` for `core`, verifies the public Core version,
@@ -397,6 +404,17 @@ run URL, before it starts watching:
 
 An existing package receives the new version on `next` only; `latest` does not
 move. Run the public smoke suite against the exact new versions.
+
+Confirm the provenance of each new version, because a rehearsal never produces
+one: `npm publish --dry-run` exchanges the OIDC token but neither signs nor
+uploads. In a consumer with an empty `userconfig` and cache, install both exact
+versions and run `npm audit signatures`; it must report verified registry
+signatures and verified attestations for both packages. Then confirm that each
+version's provenance on npmjs.com names `CarlLee1983/PraxisBound`,
+`.github/workflows/publish.yml`, the approved `candidate_sha` and its publish
+run, and that the run summary shows the registry integrity equal to the artifact
+digest. The first publication after PB-005 is the first observation of
+provenance from the two-job workflow; record it in that release's Story.
 
 Only after that smoke passes does a human promote `latest`, with 2FA, for each
 package:
