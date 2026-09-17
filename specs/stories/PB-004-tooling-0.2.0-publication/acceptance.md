@@ -37,9 +37,9 @@
 * [ ] AC-007: `make verify` passes on the approved SHA locally and in its
   exact-SHA `verify.yml` run.
 * [ ] AC-008: `publish.yml` keeps its main-only job condition, full-SHA
-  candidate guard, unused-version check, Core-before-CLI check, OIDC permission,
-  and `next`-tagged provenance publish, and references no stored npm
-  credential.
+  candidate guard, exact-SHA `verify.yml` success check, unused-version check,
+  Core-before-CLI check, OIDC permission, and `next`-tagged provenance publish,
+  and references no stored npm credential.
 * [ ] AC-009: `scripts/publish-dispatch core|cli [sha]` refuses before any
   dispatch when arguments are malformed, `main` is not the candidate, the
   candidate's `verify.yml` push run on `main` did not succeed, a `publish.yml`
@@ -76,6 +76,7 @@
 | `npm.dist-tags` | `latest moved before exact-version smoke` | reject | `registry dist-tags` | `PB-004 dist-tag record` |
 | `package.manifest` | `@praxisbound/core 0.1.0 dependency in CLI 0.2.0` | reject | `packed CLI manifest, by invariant assertion on the real tree rather than an injected fixture` | `tests/typescript-tooling.sh PB003-AC-001` |
 | `publish.workflow` | `candidate guard line deleted` | reject | `.github/workflows/publish.yml` | `tests/protocol.sh PB004-AC-008` |
+| `publish.candidate-sha` | `main SHA whose verify.yml push run did not succeed` | reject | `publish.yml remote verification guard, before any build` | `tests/protocol.sh PB004-AC-008` |
 
 ## Verification Notes
 

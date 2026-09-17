@@ -64,7 +64,7 @@ steps appear.
 * Boundary: `CLI npm package and praxisbound executable`
 * Boundary: `npm publication sequence`
 * Contract: `Core and CLI declare one exact tooling version 0.2.0, independent of Protocol VERSION 0.10.0, and CLI depends on the exact Core version`
-* Contract: `publication runs only from one approved main SHA with passing local and exact-SHA remote verification, authenticates by OIDC with no stored token, and publishes Core to next before CLI`
+* Contract: `publication runs only from one approved main SHA with passing local verification and exact-SHA remote verification, the latter enforced by publish.yml itself, authenticates by OIDC with no stored token, and publishes Core to next before CLI`
 * Contract: `latest moves to 0.2.0 only by an explicit human dist-tag write after next passes public smoke`
 * Owner: `Core npm package = PraxisBound Reference Tooling`
 * Owner: `CLI npm package and praxisbound executable = PraxisBound Reference Tooling`
@@ -155,6 +155,8 @@ steps appear.
 * A CLI dispatch before Core `0.2.0` is public fails at the order check.
 * An OIDC authentication failure at `npm publish` leaves the version unpublished
   and stops for Human Review without falling back to a token.
+* A dispatch whose candidate has no successful `verify.yml` push run on `main`
+  fails at the remote verification guard before any build.
 
 ## Dependencies
 
