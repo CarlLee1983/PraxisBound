@@ -194,6 +194,9 @@ Use the scoped name exactly as written. The unscoped `praxisbound` name on
 npm is not controlled by this project, so `npx praxisbound` does not install
 PraxisBound.
 
+To have an AI coding agent run this path and create the gate for you, use the
+prompt in [Adopt with an AI agent](docs/getting-started.md#adopt-with-an-ai-agent).
+
 ### After either path
 
 Copy `specs/stories/_template` to a directory named for the Story, fill
@@ -209,7 +212,9 @@ Story templates is covered in
 
 For Codex users who want project-local activation without a repeated source-path
 prompt, preview the optional integration with
-`./scripts/codex-activate /path/to/repository`. Review it before using `--apply`.
+`./scripts/codex-activate /path/to/repository` or
+`npx @praxisbound/cli codex activate /path/to/repository`. Review it before
+using `--apply`.
 See [Codex project activation](docs/codex-activation.md) for setup and updates.
 
 Two static, read-only checkers report contract gaps before an agent starts

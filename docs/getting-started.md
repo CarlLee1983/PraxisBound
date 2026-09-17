@@ -53,6 +53,53 @@ Use the scoped name exactly as written. The unscoped `praxisbound` name on
 npm is not controlled by this project, so `npx praxisbound` does not install
 PraxisBound.
 
+### Adopt with an AI agent
+
+The package path can be handed to an AI coding agent. Open a session in the
+repository you want to adopt, commit or stash any work in progress, and paste
+this prompt. It works with any agent that can run shell commands, and it relies
+only on the structured next steps, not on printed prose:
+
+```text
+Adopt PraxisBound in this repository with its published CLI. Work from the
+repository root. Do not commit.
+
+1. Run `npx --yes @praxisbound/cli@0.2.0 init --json .` and read the JSON result.
+2. If the outcome is INIT_CONFLICT, stop: report the conflicting paths listed
+   in `issues`, change nothing, and do not use --force.
+3. Perform every entry of `data.nextSteps` from the last `init` result, in
+   order, identified by its `id`:
+   - `verification-gate`: create or extend the root Makefile so that
+     `make verify` runs the checks this repository already has (its tests, and
+     its lint, typecheck or build where they exist) and exits non-zero when any
+     of them fails. Never add checks the repository does not have, and never
+     use a command that always succeeds.
+   - `confirm-adoption`: run `npx --yes @praxisbound/cli@0.2.0 doctor --json .`
+     and continue only when its status is pass.
+   If an entry has any other `id`, stop and report it.
+4. Run `npx --yes @praxisbound/cli@0.2.0 verify --json .` and require success.
+5. Report which checks `make verify` runs, and the Doctor and verify results.
+```
+
+The prompt stops when the repository already holds a file PraxisBound manages,
+most often its own `AGENTS.md`, because `init` then installs nothing and the
+only way forward replaces that file. To let the agent replace it and merge your
+instructions back, commit the file first and use this step 2 instead:
+
+```text
+2. If the outcome is INIT_CONFLICT: stop if any conflicting path has uncommitted
+   changes. Otherwise run
+   `npx --yes @praxisbound/cli@0.2.0 init --force --json .`, then merge every
+   rule from the committed AGENTS.md (`git show HEAD:AGENTS.md`) into the
+   installed AGENTS.md without dropping or weakening any of them, and continue
+   with step 3. Paste the full output of `git diff -- AGENTS.md` directly in
+   your final report; do not write it to a file.
+```
+
+Review what the agent built before you commit it. In particular, confirm that
+`make verify` fails when one of the repository's checks fails; a gate that
+always exits 0 passes Doctor and `verify` but verifies nothing.
+
 ### What either path installs
 
 Both paths install the opinionated starter layout:
