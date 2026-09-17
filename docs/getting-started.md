@@ -92,7 +92,8 @@ instructions back, commit the file first and use this step 2 instead:
    `npx --yes @praxisbound/cli@0.2.0 init --force --json .`, then merge every
    rule from the committed AGENTS.md (`git show HEAD:AGENTS.md`) into the
    installed AGENTS.md without dropping or weakening any of them, and continue
-   with step 3. Include the `git diff` of AGENTS.md in your report.
+   with step 3. Paste the full output of `git diff -- AGENTS.md` directly in
+   your final report; do not write it to a file.
 ```
 
 Review what the agent built before you commit it. In particular, confirm that
