@@ -640,11 +640,11 @@ NODE
 }
 
 # TST019-AC-007. The sufficiency proof: a consumer that executes the emitted
-# steps literally reaches a complete Adoption. This does not test an agent and
-# must never depend on a language model — the claim "an agent can complete the
-# adoption" is untestable and belongs in a Human Review observation. What is
-# tested is whether the instructions are sufficient: if a step is absent,
-# misordered or insufficient, this case fails.
+# steps literally reaches an Adoption. This does not test an agent and must
+# never depend on a language model — the claim "an agent can reach Adoption"
+# is untestable and belongs in a Human Review observation. What is tested is
+# whether the instructions are sufficient: if a step is absent, misordered or
+# insufficient, this case fails.
 emitted_next_steps_are_sufficient_for_adoption() {
   [ -d "$praxisbound_consumer_dir/node_modules" ] ||
     fail 'packed-package consumer fixture is unavailable'

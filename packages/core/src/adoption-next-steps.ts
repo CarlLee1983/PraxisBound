@@ -1,9 +1,9 @@
 import type { ResultDataValue } from "./result.js";
 
 /**
- * One remaining step an adopter must perform before the repository is a
- * complete Adoption. `id` is the machine contract; `description` is prose for
- * a human and may be reworded without a classification.
+ * One remaining step an Adopting repository must perform before it becomes an
+ * Adoption. `id` is the machine contract; `description` is prose for a human
+ * and may be reworded without a classification.
  */
 export interface AdoptionNextStep {
   readonly [key: string]: ResultDataValue;
@@ -27,6 +27,6 @@ export const adoptionNextSteps: readonly AdoptionNextStep[] = Object.freeze([
   Object.freeze({
     id: "confirm-adoption",
     description:
-      "Run `praxisbound doctor` from this repository's root and confirm it reports PASS. A PASSing doctor is what makes this repository a complete Adoption.",
+      "Run PraxisBound Doctor on this repository's root, using the same tooling that ran init, and confirm it reports PASS. A PASSing Doctor is what makes this repository an Adoption.",
   }),
 ]);

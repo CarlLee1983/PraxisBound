@@ -184,7 +184,7 @@ behave as they do for the shell path.
 write the repository-owned `Makefile`: an Adoption owns its verification gate.
 
 From tooling version 0.2.0 onward, `init` also reports the ordered next steps
-that remain before the repository is a complete Adoption — create that gate,
+that remain before the repository reaches Adoption — create that gate,
 then run Doctor and confirm PASS. The steps are printed for a person to read
 and, with `--json`, carried as structured data under `data.nextSteps` so an
 agent can act on them without parsing prose. Tooling 0.1.0 applies the same
