@@ -39,6 +39,12 @@ Not counting:
   linked it instead of including it, failing AC-006. a232d70 changed step 2 to
   require the full diff inline, and all six were repeated.
 
+Human Review: carl accepted TST-020 in a Claude Code session on 2026-09-17 at
+2026-09-17T07:53Z, reviewing pull request #80 with the prompt at
+a232d70532c0e3125ce73c10642256f438799ac6 and this record, including the small
+sample, the agent-started sessions, the unisolated global configuration, and
+the prompt's version pin.
+
 ## Evidence
 
 * `AC-001`: pass — `tests/bootstrap.sh TST020-AC-001 found the Adopt with an AI agent section inside the published package path, its prompt and optional step 2 blocks, and the README pointer.`
@@ -46,7 +52,7 @@ Not counting:
 * `AC-003`: pass — `Claude Code and Codex on the Node fixture each left one commit, Doctor pass, verify success, and a Makefile whose verify target runs npm test; after the total was broken make verify failed, and after restoring it passed. Outside the fixture only package caches and temporary files were written; the Codex session also shows a graft entry added to .gitignore and a .ignore file by the human's local tool.`
 * `AC-004`: pass — `tests/bootstrap.sh TST020-AC-004 found the default stop on INIT_CONFLICT and the optional step 2 with its uncommitted-changes stop, init --force, git show HEAD:AGENTS.md merge and inline git diff.`
 * `AC-005`: pass — `Claude Code and Codex on the Go fixture with the default prompt each reported INIT_CONFLICT on AGENTS.md, ran no init --force, left one commit and a clean git status, and stated that Doctor and verify were not run.`
-* `AC-006`: pass — `Claude Code and Codex on the Go fixture with the optional step 2 each ran init --force after the conflict, kept FIXTURE-RULE-A, B and C and the installed Development Workflow section in AGENTS.md, left one commit, passed Doctor and verify, built a gate running go test and go vet that failed with the base rate broken and passed once restored, and included the full git diff of AGENTS.md in the final report.`
+* `AC-006`: pass — `Claude Code and Codex on the Go fixture with the optional step 2 each ran init --force after the conflict, kept FIXTURE-RULE-A, B and C and the installed Development Workflow section in AGENTS.md, left one commit, passed Doctor and verify, built a gate running go test and go vet that failed with the base rate broken and passed once restored, and included the full git diff of AGENTS.md in the final report. Compared with a fresh init of 0.2.0, both merged files only add a section holding the original rules, and Claude Code one sentence tying make verify to FIXTURE-RULE-B; neither changes any installed line.`
 * `AC-007`: pass — `tests/bootstrap.sh TST020-AC-007 rejected copies with a wrong pinned version, an unpinned reference, a removed gate, commit and force instruction, a removed git show merge source, an agent product name, a stale package version and a README without the pointer.`
 * `AC-008`: pass — `the six observations above all used the prompt at a232d70532c0e3125ce73c10642256f438799ac6 in fresh non-interactive sessions with no further input; the pilots and the first round are recorded as not counting.`
 * `AC-009`: pass — `make verify exited 0 on a232d70, and README.md names ./scripts/codex-activate and npx @praxisbound/cli codex activate.`
@@ -64,4 +70,3 @@ Not counting:
 * `Both sessions carried the human's global agent configuration. A differently configured agent may behave differently; the observations do not isolate the prompt from that configuration.`
 * `Merging an existing AGENTS.md depends on the agent's judgment. Both merges kept the marked rules verbatim, but only rules that were marked were checked, and the prompt tells the reviewer to inspect the diff before committing.`
 * `The prompt pins @praxisbound/cli 0.2.0. tests/bootstrap.sh fails when the package version changes without the prompt, so a release must update the prompt, and these observations must be repeated if the prompt text changes.`
-* `Human Review of the Story, the prompt and this record has not been performed.`
