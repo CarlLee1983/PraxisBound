@@ -11,6 +11,7 @@ praxisbound story check [story ...]
 praxisbound verification check [story ...]
 praxisbound handoff check [handoff-file]
 praxisbound release check [repository]
+praxisbound review index <manifest>
 
 praxisbound codex activate <repository>
 ```
@@ -54,6 +55,7 @@ verify             = execute make verify
 | `praxisbound verification check [story ...]` | `scripts/verification-check`          | Resolves plans by default; supports `--result`.                                                  |
 | `praxisbound handoff check [file]`           | `scripts/handoff-check`               | Defaults to `specs/handoff.md`.                                                                  |
 | `praxisbound release check [repo]`           | `scripts/release-check` Node wrapper  | Local, read-only release inspection; target defaults to `.`; never performs remote checks.       |
+| `praxisbound review index <manifest>`        | none (new capability)                 | Reads one Batch Manifest and its declared sources; read-only; writes nothing.                    |
 | `praxisbound codex activate <repo>`          | `scripts/codex-activate`              | Preview by default; supports `--apply`; stays a late migration wave.                             |
 
 Global options may appear after the selected command path and before or among
@@ -145,6 +147,33 @@ Activation uses the same mutation taxonomy:
 | `ACTIVATION_RECOVERY_INCOMPLETE`    | `fail` | `1`  | Apply failed and at least one original could not be restored.                           |
 | `ACTIVATION_CLEANUP_INCOMPLETE`     | `fail` | `1`  | Preview, no-op, or apply cleanup left explicitly reported scratch or recovery material. |
 
+## `praxisbound review index` contract
+
+`praxisbound review index <manifest> [--json]` reads one Batch Manifest
+(`specs/batches/<BATCH-ID>/batch.json`) and the working-tree bytes of every
+ADR, Spec, `story.md`, and `acceptance.md` it declares, and reports the
+Requirement Fingerprint, stable locators, and the Spec requirement -> Story
+-> acceptance trace under `data`. It is the first slice of batch review
+(`specs/features/batch-review/contract.md` §2-§5, §12, §13; `ADR-014`); no
+`REVIEW_*` outcome is in scope, only the existing envelope outcomes:
+
+| Outcome               | Status  | Exit | Meaning                                                                          |
+| ---------------------- | ------- | ---- | --------------------------------------------------------------------------------- |
+| `success`              | `pass`  | `0`  | The manifest is valid. Missing sources, unmapped Spec entries, and Stories without acceptance criteria are reported as `issues`/`data.diagnostics`, not failures. |
+| `usage-error`          | `error` | `2`  | Invalid or missing argv.                                                          |
+| `configuration-error`  | `error` | `2`  | The manifest is unreadable, not JSON, fails the schema, names an unsupported `schemaVersion`, its `batchId` does not match its directory, a declared path is unsafe, or an input exceeds contract §13's limits. |
+| `ERROR`                | `error` | `3`  | An unexpected internal failure.                                                   |
+
+Issue codes this command can emit: `REVIEW_MANIFEST_INVALID`,
+`REVIEW_SCHEMA_UNSUPPORTED`, `REVIEW_PATH_UNSAFE`, `REVIEW_INPUT_TOO_LARGE`,
+`REVIEW_SOURCE_MISSING`, `REVIEW_STORY_UNKNOWN`, `REVIEW_REQUIREMENT_UNMAPPED`,
+`REVIEW_ACCEPTANCE_MISSING`, `REVIEW_ANCHOR_DUPLICATE`,
+`REVIEW_SECTION_UNRECOGNIZED`, and `REVIEW_DEPENDENCY_UNDECLARED`. A declared
+path with an unsafe segment, or an input over a contract §13 limit, rejects
+the whole command before any source content is read; every other gap is a
+diagnostic on a `success` result, aligned one-to-one between `issues` and
+`data.diagnostics`. The command writes no file.
+
 ## Static and execution trust boundary
 
 These commands are always static and target-read-only:
@@ -155,6 +184,7 @@ verification check
 handoff check
 doctor              # without --run-verify
 release check
+review index
 codex activate       # without --apply; external scratch is allowed
 ```
 
