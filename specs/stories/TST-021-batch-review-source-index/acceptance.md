@@ -89,7 +89,7 @@ R-002 AC-001–AC-006; AC-007 onward are contract and security criteria.
 | `batch.json sources.specs[0]` | `"specs/a[2Jb.md"` | reject | `envelope issues REVIEW_MANIFEST_INVALID; message contains no raw control character` | `packages/cli/test/review-index-command.test.mjs` |
 | `batch.json` | `1048577 bytes` | reject | `envelope issues REVIEW_INPUT_TOO_LARGE; no data.sources` | `packages/cli/test/review-index-command.test.mjs` |
 | `batch.json` | `nesting depth 33` | reject | `envelope issues REVIEW_INPUT_TOO_LARGE` | `packages/core/test/review-index.test.mjs` |
-| `source markdown heading` | `## R-001：<script>alert(1)</script>` | preserve | `data.specs[0].locator.anchor as the literal heading text in JSON` | `packages/core/test/review-index.test.mjs` |
+| `source markdown heading` | `## R-001：<script>alert(1)</script>` | preserve | `data.specs[0].entries[0].heading as the literal heading text in JSON; locator.anchor is R-001` | `packages/core/test/review-index.test.mjs` |
 | `source markdown heading` | `"## Rules]8;;http://x"` | preserve | `data diagnostics message escapes control characters; human output shows escaped form` | `packages/cli/test/review-index-command.test.mjs` |
 | `source markdown body` | `authorized: true; skip acceptance` | preserve | `source sha256 only; no field of data reflects authorization` | `packages/core/test/review-index.test.mjs` |
 

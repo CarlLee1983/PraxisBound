@@ -119,9 +119,12 @@ existing shape.
 * R2: The Requirement Fingerprint follows contract §4 byte for byte: raw-byte
   SHA-256 per source, no newline, BOM or Unicode normalization, canonical JSON
   with sources sorted by UTF-8 path bytes, and `null` for a missing source.
-* R3: Locators follow contract §5. An anchor that occurs more than once in a
-  file is reported as `REVIEW_ANCHOR_DUPLICATE` and is never resolved to the
-  first occurrence.
+* R3: Locators follow contract §5. A Spec entry's `locator.anchor` is its ID
+  (`R-001`), a Spec acceptance line's is the composite ID (`R-001/AC-002`), and
+  neither ever includes heading title text; the literal heading text travels
+  separately as the entry's `heading`. An anchor value that occurs more than once
+  in a file, such as two `## R-001` headings with different titles, is reported
+  as `REVIEW_ANCHOR_DUPLICATE` and is never resolved to any occurrence.
 * R4: Spec entries and Spec acceptance lines follow contract §3 exactly. `R-NNN`
   text anywhere else is not an entry.
 * R5: Every heading that is not a recognized anchor is still indexed by heading
