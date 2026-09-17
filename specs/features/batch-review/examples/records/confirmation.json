@@ -1,0 +1,18 @@
+{
+  "schemaVersion": "1.0.0",
+  "claim": "explicit-terminal-confirmation",
+  "batchId": "BR-001-checkout-refunds",
+  "fingerprint": "8e2b7d4c1a09f36e5d2c8b7a6f4e3d2c1b0a9f8e7d6c5b4a3928170f6e5d4c3b",
+  "manifestSha256": "a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f90",
+  "sources": [
+    { "path": "specs/decisions/ADR-021-refund-ledger.md", "sha256": "0f1e2d3c4b5a69788796a5b4c3d2e1f00f1e2d3c4b5a69788796a5b4c3d2e1f0" },
+    { "path": "specs/features/refunds/spec.md", "sha256": "a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f90" },
+    { "path": "specs/stories/RF-001-refund-request/acceptance.md", "sha256": "0f1e2d3c4b5a69788796a5b4c3d2e1f00f1e2d3c4b5a69788796a5b4c3d2e1f0" },
+    { "path": "specs/stories/RF-001-refund-request/story.md", "sha256": "a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f90" },
+    { "path": "specs/stories/RF-002-refund-approval/acceptance.md", "sha256": "0f1e2d3c4b5a69788796a5b4c3d2e1f00f1e2d3c4b5a69788796a5b4c3d2e1f0" },
+    { "path": "specs/stories/RF-002-refund-approval/story.md", "sha256": "a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f90" }
+  ],
+  "confirmedAt": "2026-09-17T09:40:00Z",
+  "deferred": [],
+  "revisionSheets": ["0f1e2d3c4b5a69788796a5b4c3d2e1f00f1e2d3c4b5a69788796a5b4c3d2e1f0"]
+}

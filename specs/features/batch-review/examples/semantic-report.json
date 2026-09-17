@@ -1,0 +1,38 @@
+{
+  "schemaVersion": "1.0.0",
+  "batchId": "BR-001-checkout-refunds",
+  "fingerprint": "8e2b7d4c1a09f36e5d2c8b7a6f4e3d2c1b0a9f8e7d6c5b4a3928170f6e5d4c3b",
+  "agent": "example-coding-agent 1.0 (self-reported)",
+  "observedAt": "2026-09-17T09:55:00Z",
+  "stories": [
+    {
+      "story": "RF-001",
+      "categories": {
+        "missing-split": { "result": "none" },
+        "contradiction": { "result": "none" },
+        "insufficient-acceptance": { "result": "none" },
+        "open-question": { "result": "none" }
+      }
+    },
+    {
+      "story": "RF-002",
+      "categories": {
+        "missing-split": { "result": "none" },
+        "contradiction": { "result": "none" },
+        "insufficient-acceptance": {
+          "result": "issues",
+          "issues": [
+            {
+              "locator": { "path": "specs/stories/RF-002-refund-approval/acceptance.md", "anchor": "AC-003", "blockSha256": "a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f90" },
+              "observation": "未涵蓋金額恰為 NT$10,000 的邊界。",
+              "impact": "邊界行為可能與稽核規則不符。",
+              "blocking": false,
+              "suggestion": "補一條等於門檻的 AC。"
+            }
+          ]
+        },
+        "open-question": { "result": "none" }
+      }
+    }
+  ]
+}

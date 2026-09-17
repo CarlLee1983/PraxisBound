@@ -1,0 +1,35 @@
+{
+  "schemaVersion": "1.0.0",
+  "batchId": "BR-001-checkout-refunds",
+  "fingerprint": "8e2b7d4c1a09f36e5d2c8b7a6f4e3d2c1b0a9f8e7d6c5b4a3928170f6e5d4c3b",
+  "packet": {
+    "path": "specs/batches/BR-001-checkout-refunds/records/packet-8e2b7d4c1a09-1.json",
+    "sha256": "a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f90"
+  },
+  "forgepilotVersion": "f2ec4b51e217c60c149797d8e3999b9f685c9eaa",
+  "observedAt": "2026-09-17T10:05:00Z",
+  "steps": [
+    {
+      "command": "goal-create",
+      "exit": 0,
+      "stdout": "Goal BR-001-checkout-refunds-8e2b7d4c1a09 created",
+      "stderr": ""
+    },
+    {
+      "command": "work-add",
+      "story": "RF-001",
+      "workItemId": "WI-001",
+      "exit": 0,
+      "stdout": "WI-001 READY\nStory: specs/stories/RF-001-refund-request",
+      "stderr": ""
+    },
+    {
+      "command": "work-add",
+      "story": "RF-002",
+      "exit": 1,
+      "stdout": "",
+      "stderr": "forgepilot: example failure"
+    }
+  ],
+  "stoppedBecause": "step-failed"
+}

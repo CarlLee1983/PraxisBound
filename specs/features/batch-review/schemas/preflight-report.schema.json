@@ -1,0 +1,104 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:praxisbound:batch-review:preflight-report:1",
+  "title": "PraxisBound batch review Preflight Report record v1",
+  "description": "Historical Evidence of one preflight run. Not implementation verification and not proof of semantic correctness.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "batchId",
+    "fingerprint",
+    "outcome",
+    "checkedAt",
+    "confirmation",
+    "semanticReport",
+    "mechanical",
+    "semantic",
+    "expect"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "1.0.0"
+    },
+    "batchId": {
+      "$ref": "urn:praxisbound:batch-review:defs:1#/$defs/batchId"
+    },
+    "fingerprint": {
+      "$ref": "urn:praxisbound:batch-review:defs:1#/$defs/sha256"
+    },
+    "outcome": {
+      "$ref": "urn:praxisbound:batch-review:defs:1#/$defs/reviewOutcome"
+    },
+    "checkedAt": {
+      "$ref": "urn:praxisbound:batch-review:defs:1#/$defs/utcTime"
+    },
+    "confirmation": {
+      "oneOf": [
+        {
+          "$ref": "urn:praxisbound:batch-review:defs:1#/$defs/recordRef"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "semanticReport": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "sha256"
+          ],
+          "properties": {
+            "sha256": {
+              "$ref": "urn:praxisbound:batch-review:defs:1#/$defs/sha256"
+            }
+          }
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "mechanical": {
+      "type": "array",
+      "maxItems": 10000,
+      "items": {
+        "$ref": "urn:praxisbound:batch-review:defs:1#/$defs/diagnostic"
+      }
+    },
+    "semantic": {
+      "type": "array",
+      "maxItems": 10000,
+      "items": {
+        "$ref": "urn:praxisbound:batch-review:defs:1#/$defs/diagnostic"
+      }
+    },
+    "expect": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "fingerprint",
+            "revision"
+          ],
+          "properties": {
+            "fingerprint": {
+              "$ref": "urn:praxisbound:batch-review:defs:1#/$defs/sha256"
+            },
+            "revision": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{40}$"
+            }
+          }
+        }
+      ]
+    }
+  }
+}

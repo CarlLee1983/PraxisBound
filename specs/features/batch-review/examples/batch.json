@@ -1,0 +1,41 @@
+{
+  "schemaVersion": "1.0.0",
+  "batchId": "BR-001-checkout-refunds",
+  "title": "退款流程第一批交付",
+  "sources": {
+    "adrs": [
+      "specs/decisions/ADR-021-refund-ledger.md"
+    ],
+    "specs": [
+      "specs/features/refunds/spec.md"
+    ],
+    "stories": [
+      "specs/stories/RF-001-refund-request",
+      "specs/stories/RF-002-refund-approval"
+    ]
+  },
+  "requirements": [
+    {
+      "spec": "specs/features/refunds/spec.md",
+      "anchor": "R-001",
+      "stories": [
+        "RF-001"
+      ]
+    },
+    {
+      "spec": "specs/features/refunds/spec.md",
+      "anchor": "R-002",
+      "stories": [
+        "RF-002"
+      ]
+    }
+  ],
+  "dependencies": [
+    {
+      "story": "RF-002",
+      "dependsOn": [
+        "RF-001"
+      ]
+    }
+  ]
+}

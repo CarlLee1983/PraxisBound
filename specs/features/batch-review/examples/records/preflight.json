@@ -1,0 +1,28 @@
+{
+  "schemaVersion": "1.0.0",
+  "batchId": "BR-001-checkout-refunds",
+  "fingerprint": "8e2b7d4c1a09f36e5d2c8b7a6f4e3d2c1b0a9f8e7d6c5b4a3928170f6e5d4c3b",
+  "outcome": "REVIEW_READY",
+  "checkedAt": "2026-09-17T10:00:00Z",
+  "confirmation": {
+    "path": "specs/batches/BR-001-checkout-refunds/records/confirmation-8e2b7d4c1a09.json",
+    "sha256": "a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f90"
+  },
+  "semanticReport": {
+    "sha256": "0f1e2d3c4b5a69788796a5b4c3d2e1f00f1e2d3c4b5a69788796a5b4c3d2e1f0"
+  },
+  "mechanical": [],
+  "semantic": [
+    {
+      "code": "REVIEW_SEMANTIC_OBSERVATION",
+      "severity": "advisory",
+      "message": "RF-002 insufficient-acceptance: boundary at threshold not covered (non-blocking)",
+      "locator": {
+        "path": "specs/stories/RF-002-refund-approval/acceptance.md",
+        "anchor": "AC-003",
+        "blockSha256": "a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f90"
+      }
+    }
+  ],
+  "expect": null
+}
