@@ -67,8 +67,8 @@ repository root. Do not commit.
 1. Run `npx --yes @praxisbound/cli@0.2.0 init --json .` and read the JSON result.
 2. If the outcome is INIT_CONFLICT, stop: report the conflicting paths listed
    in `issues`, change nothing, and do not use --force.
-3. Otherwise perform every entry of `data.nextSteps` in order, identified by
-   its `id`:
+3. Perform every entry of `data.nextSteps` from the last `init` result, in
+   order, identified by its `id`:
    - `verification-gate`: create or extend the root Makefile so that
      `make verify` runs the checks this repository already has (its tests, and
      its lint, typecheck or build where they exist) and exits non-zero when any
