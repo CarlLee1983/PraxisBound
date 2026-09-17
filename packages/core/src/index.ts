@@ -165,3 +165,29 @@ export type {
   StoryFacts,
   StoryReadinessEvaluation,
 } from "./story.js";
+
+export { indexReviewBatch } from "./review/index.js";
+export { planReviewBatch } from "./review/manifest.js";
+export type {
+  AdrIndex,
+  IndexReviewBatchResult,
+  Locator,
+  PlanReviewBatchResult,
+  ReviewBatchPlan,
+  ReviewBatchPlanDependency,
+  ReviewBatchPlanRequirement,
+  ReviewBatchStoryPlan,
+  ReviewDiagnostic,
+  ReviewDiagnosticSeverity,
+  ReviewIndex,
+  ReviewObservations,
+  SourceDigest,
+  SourceObservation,
+  SpecAcceptanceEntry,
+  SpecEntryIndex,
+  SpecIndex,
+  SpecSectionIndex,
+  StoryIndex,
+  TraceEntry,
+  TraceStoryEntry,
+} from "./review/types.js";

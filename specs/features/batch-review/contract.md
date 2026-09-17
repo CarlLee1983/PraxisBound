@@ -106,11 +106,17 @@ fingerprint = sha256(UTF-8(canonicalJson({
 2. 無顯式 ID 時使用 heading 路徑：各層 heading 文字以 ` > ` 連接。
 3. 整份文件或整批：`#document` 或 `#batch`（此時 `path` 為 manifest 路徑）。
 
+（修訂性澄清，R-002）沒有顯式 ID、也不落在任何已辨識錨點區塊內的 heading，仍以其 heading 路徑
+（規則 2）納入索引，並回報一次非阻擋診斷 `REVIEW_SECTION_UNRECOGNIZED`；不因此從索引中省略任何來源內容。
+
 `blockSha256` 是該錨點區塊原始 bytes 的 SHA-256：heading 錨點為該 heading 行起至下一個同級或更高級 heading 前；
 AC 為其所在列；`#document` 為整檔；`#batch` 為當時批次指紋字串的 UTF-8 bytes。
 
 匹配：錨點唯一且 `blockSha256` 相同為「一致」；錨點存在但 hash 不同、錨點重複或不存在為「待比對」。
 「待比對」永不自動套用到相似或同名段落（R-004 AC-005、R-005 AC-004）。
+
+（修訂性澄清，R-002）同一顯式錨點值在同一檔案內出現一次以上時，回報阻擋診斷
+`REVIEW_ANCHOR_DUPLICATE`；該錨點值不解析到任何一次出現，兩者皆不視為已對應或已覆蓋。
 
 ## 6. 修訂單與 `review import`
 
@@ -214,6 +220,8 @@ Semantic Report 由 Agent 產生：綁定 `fingerprint`；批次內每張 Story 
 | 依賴無循環 | `REVIEW_DEPENDENCY_CYCLE` | BLOCKED |
 | 依賴與對應只引用批次內 Story | `REVIEW_STORY_UNKNOWN` | BLOCKED |
 | Spec 條目皆有 Story；Story 皆有 AC | `REVIEW_REQUIREMENT_UNMAPPED`、`REVIEW_ACCEPTANCE_MISSING` | BLOCKED |
+| 對應的 Spec 條目在該 Spec 中實際存在（修訂性澄清，R-002） | `REVIEW_ANCHOR_UNKNOWN` | BLOCKED |
+| 同一檔案內錨點不重複 | `REVIEW_ANCHOR_DUPLICATE` | BLOCKED |
 | 無未解決阻擋意見 | `REVIEW_UNRESOLVED_BLOCKING` | BLOCKED |
 | 非阻擋意見都已解決或在適用的確認中 defer | `REVIEW_REVISION_UNADDRESSED` | INCOMPLETE |
 | 回應紀錄完整、合法 | `REVIEW_RESPONSE_MISMATCH`、`REVIEW_RESPONSE_INVALID` | INCOMPLETE |
@@ -221,7 +229,7 @@ Semantic Report 由 Agent 產生：綁定 `fingerprint`；批次內每張 Story 
 | Semantic Report 指紋相符 | `REVIEW_SEMANTIC_STALE` | STALE |
 | Semantic Report 含阻擋 issue | `REVIEW_SEMANTIC_BLOCKING` | BLOCKED |
 | Semantic Report 含非阻擋 issue | `REVIEW_SEMANTIC_OBSERVATION` | 不影響結果 |
-| 其他非阻擋診斷 | `REVIEW_DEPENDENCY_UNDECLARED`、`REVIEW_RECORD_INVALID`、`REVIEW_REVISION_STALE_TARGET` | 不影響結果 |
+| 其他非阻擋診斷 | `REVIEW_DEPENDENCY_UNDECLARED`、`REVIEW_RECORD_INVALID`、`REVIEW_REVISION_STALE_TARGET`、`REVIEW_SECTION_UNRECOGNIZED`（修訂性澄清，R-002） | 不影響結果 |
 
 - 優先序：`ERROR`／`*-error` > `REVIEW_STALE` > `REVIEW_BLOCKED` > `REVIEW_INCOMPLETE` > `REVIEW_READY`；全部 issues 仍列出。
 - `--expect-fingerprint`／`--expect-revision` 由 `review packet` 與 Agent 工作流程在 ForgePilot 寫入前使用（§10、§11）。
