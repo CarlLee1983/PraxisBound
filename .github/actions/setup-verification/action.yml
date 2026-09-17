@@ -1,0 +1,45 @@
+name: Set up PraxisBound verification tooling
+description: >-
+  Installs the Node.js, pnpm and Go toolchains that `make verify` requires.
+  `verify.yml`'s verify job and the publication pack job share this one
+  definition so the two can no longer drift the way they did before #66. The
+  pack job passes `cache: false`: a publication restores no dependency cache
+  at all, so every dependency in its artifact comes from a lockfile-pinned
+  download made in that same run, not from a cache entry written by an
+  earlier, differently-trusted run. Ordinary verification still caches, since
+  it publishes nothing.
+
+inputs:
+  cache:
+    description: Whether pnpm/setup and setup-go restore and save their caches
+    required: false
+    default: 'true'
+
+runs:
+  using: composite
+  steps:
+    - name: Set up Node.js
+      uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+      with:
+        node-version-file: .node-version
+
+    - name: Set up pnpm and install tooling dependencies
+      uses: pnpm/setup@703c52620218391530e48b9e8870d5c0082e1b9b # v2.1.0
+      with:
+        cache: ${{ inputs.cache }}
+        require-lockfile: true
+
+    - name: Install TypeScript example dependencies
+      shell: bash
+      run: pnpm --dir examples/typescript install --frozen-lockfile
+
+    - name: Set up Go
+      uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+      with:
+        go-version-file: examples/go/go.mod
+        cache-dependency-path: examples/go/go.sum
+        cache: ${{ inputs.cache }}
+
+    - name: Download Go modules
+      shell: bash
+      run: go -C examples/go mod download

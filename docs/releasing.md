@@ -313,6 +313,62 @@ Trusted Publishing: OIDC authenticates the `publish.yml` run, and no stored
 credential is involved. Do not add an `NPM_TOKEN` or `NODE_AUTH_TOKEN` secret to
 make a publish succeed; if OIDC authentication fails, stop for Human Review.
 
+`publish.yml` is a pack job and a publish job (`ADR-013`). The pack job proves
+the candidate, runs `make verify`, and packs one tarball; only the publish job
+holds `id-token: write`, and every dispatch, rehearsal included, pauses there
+for a human to approve the GitHub environment `npm-publication` before that
+job runs. An unapproved or rejected approval leaves the publish job unrun and
+nothing published.
+
+### Human setup, in order
+
+GitHub auto-creates an environment the first time a workflow run references
+it, and that auto-created environment has no protection rule. `publish.yml`
+already names `npm-publication`, so merging this change before the
+environment exists would let the very first dispatch, including one made from
+the GitHub interface, run the publish job unprotected. Complete this order
+once, and create the environment first:
+
+1. Create the GitHub environment `npm-publication` with a maintainer as its
+   required reviewer, self-approval allowed, and deployments limited to
+   `main`. Do this **before merging this change**, not merely before the
+   first dispatch.
+2. Merge this change to `main`.
+3. Dispatch a rehearsal (below) and confirm it succeeds.
+4. Add the environment name `npm-publication` to both npm Trusted Publisher
+   entries, for `@praxisbound/core` and `@praxisbound/cli`.
+5. Dispatch a rehearsal again and confirm it still succeeds, now with the
+   environment named on both entries.
+
+`scripts/publish-dispatch` refuses before dispatching when environment
+`npm-publication` does not exist or has no required-reviewer protection rule,
+so the helper cannot be used to reach an unprotected run. That check only
+covers the helper: a dispatch made from the GitHub interface or `gh workflow
+run` directly is not covered, which is why the environment must exist and be
+protected before this change is ever merged, not just before someone
+remembers to use the helper.
+
+### Rehearsing a dispatch
+
+A rehearsal runs the same two jobs and the same `npm-publication` approval, and
+every guard except the unused-version check, which it reports instead of
+enforcing so that an already-published version can be rehearsed. It then runs
+`npm publish --dry-run` on the tarball and fails unless the run's verbose
+output shows the OIDC token was retrieved; a rehearsal never reaches a real
+`npm publish`. The maintainer dispatches a rehearsal directly, since
+`scripts/publish-dispatch` has no rehearsal mode:
+
+```sh
+gh workflow run publish.yml --ref main \
+  -f candidate_sha=<sha> -f package=core -f rehearsal=true
+```
+
+Read the rehearsal step's log for the run: success shows the npm OIDC log line
+for a successfully retrieved token; its absence, or a failed run, means the
+OIDC exchange did not succeed and must be diagnosed, including the possibility
+that the Trusted Publisher entry does not yet name `npm-publication`, before
+any real dispatch.
+
 Raise both manifests and the CLI's exact Core dependency to the new version in
 one reviewed change, merge it, and use that merge commit as `candidate_sha`
 once local `make verify` and its exact-SHA `verify.yml` run pass. `publish.yml`
@@ -325,11 +381,14 @@ between the Core and CLI dispatches makes the approved SHA undispatchable for
 CLI. If that happens,
 stop for Human Review rather than publishing CLI from a different revision.
 
-A human then dispatches `publish.yml` for `core`, verifies the public Core
-version, and dispatches it again with the same `candidate_sha` for `cli`. From
-a maintainer checkout with an authenticated `gh`, `scripts/publish-dispatch`
-performs one such dispatch after re-checking these preconditions and asking
-for the exact coordinate as confirmation:
+A human then approves the `npm-publication` environment when GitHub prompts
+for it, dispatches `publish.yml` for `core`, verifies the public Core version,
+and dispatches it again with the same `candidate_sha` for `cli`, approving the
+environment for that run too. From a maintainer checkout with an authenticated
+`gh`, `scripts/publish-dispatch` performs one such dispatch after re-checking
+these preconditions and asking for the exact coordinate as confirmation, then
+prints that the run awaits approval of environment `npm-publication`, with the
+run URL, before it starts watching:
 
 ```sh
 ./scripts/publish-dispatch core

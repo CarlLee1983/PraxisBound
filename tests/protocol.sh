@@ -525,11 +525,7 @@ for forgeflow_workflow_term in \
   'contents: read' \
   'runs-on: ubuntu-latest' \
   'timeout-minutes:' \
-  'node-version-file: .node-version' \
-  'require-lockfile: true' \
-  'pnpm --dir examples/typescript install --frozen-lockfile' \
-  'go-version-file: examples/go/go.mod' \
-  'go -C examples/go mod download' \
+  'uses: ./.github/actions/setup-verification' \
   'run: make verify'
 do
   grep -Fq "$forgeflow_workflow_term" "$forgeflow_workflow" ||
@@ -553,16 +549,30 @@ if grep -Fq 'continue-on-error' "$forgeflow_workflow"; then
   fail 'repository workflow must not ignore failures'
 fi
 
-forgeflow_action_count=$(grep -Ec '^[[:space:]]*uses:' "$forgeflow_workflow")
-forgeflow_pinned_action_count=$(
-  grep -Ec '^[[:space:]]*uses: [^@]+@[0-9a-f]{40}([[:space:]]|$)' \
-    "$forgeflow_workflow"
-)
+# A local `uses: ./...` reference names a composite action in this same
+# commit; there is nothing else to pin it to. Every other action reference
+# in any workflow or composite action file must still carry an immutable
+# full commit SHA.
+require_pinned_actions() {
+  forgeflow_pin_file=$1
+  forgeflow_action_count=$(grep -Ec '^[[:space:]]*uses:' "$forgeflow_pin_file" || :)
+  forgeflow_local_action_count=$(
+    grep -Ec '^[[:space:]]*uses: \./' "$forgeflow_pin_file" || :
+  )
+  forgeflow_pinned_action_count=$(
+    grep -Ec '^[[:space:]]*uses: [^@]+@[0-9a-f]{40}([[:space:]]|$)' \
+      "$forgeflow_pin_file" || :
+  )
 
-if [ "$forgeflow_action_count" -eq 0 ] ||
-  [ "$forgeflow_action_count" -ne "$forgeflow_pinned_action_count" ]; then
-  fail 'repository workflow actions must use immutable commit SHAs'
-fi
+  if [ "$forgeflow_action_count" -eq 0 ] ||
+    [ "$((forgeflow_action_count - forgeflow_local_action_count))" -ne "$forgeflow_pinned_action_count" ]; then
+    fail "actions in $forgeflow_pin_file must use immutable commit SHAs"
+  fi
+}
+
+require_pinned_actions "$forgeflow_workflow"
+require_pinned_actions "$forgeflow_repo/.github/workflows/publish.yml"
+require_pinned_actions "$forgeflow_repo/.github/actions/setup-verification/action.yml"
 
 forgeflow_story_contract_acceptance="$forgeflow_repo/specs/stories/FF-208-security-fixture-matrix/acceptance.md"
 forgeflow_story_contract_tests="$forgeflow_repo/tests/story-check.sh"
@@ -949,7 +959,21 @@ subsequent_release_procedure_is_documented() {
     '`main` stays frozen at that SHA until the CLI dispatch has succeeded' \
     'does a human promote `latest`, with 2FA' \
     'npm dist-tag add @praxisbound/core@<version> latest' \
-    'it does not dispatch the workflow, write dist-tags'
+    'it does not dispatch the workflow, write dist-tags' \
+    'approve the GitHub environment `npm-publication`' \
+    'Create the GitHub environment `npm-publication`' \
+    'self-approval allowed, and deployments limited to' \
+    'Dispatch a rehearsal (below) and confirm it succeeds' \
+    'Add the environment name `npm-publication` to both npm Trusted Publisher' \
+    'Dispatch a rehearsal again and confirm it still succeeds' \
+    '-f rehearsal=true' \
+    'shows the OIDC token was retrieved' \
+    'prints that the run awaits approval of environment `npm-publication`' \
+    'before merging this change**, not merely before the' \
+    'GitHub auto-creates an environment' \
+    'refuses before dispatching when environment' \
+    'a dispatch made from the GitHub interface or `gh workflow' \
+    'run` directly is not covered'
   do
     case "$forgeflow_subsequent" in
       *"$forgeflow_release_term"*) ;;
@@ -967,26 +991,31 @@ subsequent_release_procedure_is_documented() {
 publication_workflow_keeps_its_guards() {
   forgeflow_workflow="$forgeflow_repo/.github/workflows/publish.yml"
 
+  # Guards superseded by PB-005 (specs/stories/PB-005-publication-oidc-isolation
+  # Superseded Behavior): the Core-before-CLI guard now reads the Core
+  # dependency from the tarball manifest, the publish step publishes the
+  # downloaded tarball instead of a package directory, and id-token: write is
+  # narrowed to the publish job only, checked precisely by PB005-AC-001.
   for forgeflow_guard in \
     "if: github.ref == 'refs/heads/main'" \
     '[ "${#CANDIDATE_SHA}" -eq 40 ] || exit 2' \
     '[ "$CANDIDATE_SHA" = "$DISPATCH_SHA" ] || {' \
     'already exists' \
     'E404' \
-    '[ "$(npm view "@praxisbound/core@$CORE_VERSION" version)" = "$CORE_VERSION" ]' \
-    'id-token: write' \
+    '[ "$CORE_PUBLISHED_VERSION" = "$CORE_DEPENDENCY" ] || {' \
     'actions: read' \
     '--workflow verify.yml --commit "$CANDIDATE_SHA"' \
     '[ "$verification" = '\''completed success'\'' ] || {' \
-    'npm publish "./packages/$PACKAGE" --tag next --access public --provenance'
+    'npm publish "$TARBALL" --tag next --access public --provenance'
   do
     grep -Fq -- "$forgeflow_guard" "$forgeflow_workflow" ||
       fail "publish.yml lost a publication guard: $forgeflow_guard"
   done
 
-  # publish.yml reruns make verify, and the release-check rollback case archives
-  # a historical revision. A shallow checkout lacks it, so every publication
-  # would fail before npm publish; verify.yml already fetches full history.
+  # publish.yml's pack job reruns make verify, and the release-check rollback
+  # case archives a historical revision. A shallow checkout lacks it, so every
+  # publication would fail before npm publish; verify.yml already fetches full
+  # history. The publish job itself has no checkout at all (PB005-AC-003).
   for forgeflow_verifying_workflow in publish.yml verify.yml
   do
     grep -Fq -- 'fetch-depth: 0' \
@@ -1000,6 +1029,224 @@ publication_workflow_keeps_its_guards() {
   do
     if grep -Fq -- "$forgeflow_credential" "$forgeflow_workflow"; then
       fail "publish.yml references a stored npm credential: $forgeflow_credential"
+    fi
+  done
+}
+
+# Extracts one top-level job's block from a workflow file by indentation: a
+# job header is a line indented by exactly two spaces, and the block runs
+# until the next such line or end of file. Job-scoped assertions (which job
+# holds id-token, which job checks out or installs anything) cannot be proven
+# by a whole-file grep once a workflow has more than one job.
+forgeflow_job_block() {
+  awk -v forgeflow_job_header="  $2:" '
+    $0 == forgeflow_job_header { forgeflow_in_job = 1; next }
+    forgeflow_in_job && /^  [A-Za-z0-9_-]+:$/ { forgeflow_in_job = 0 }
+    forgeflow_in_job
+  ' "$1"
+}
+
+# PB005-AC-001. publish.yml is a pack job and a publish job; only the publish
+# job may hold id-token: write, and the workflow-level permissions must never
+# grant it, or a job other than the publish job could mint an OIDC credential.
+publish_workflow_isolates_id_token_to_the_publish_job() {
+  forgeflow_workflow="$forgeflow_repo/.github/workflows/publish.yml"
+  forgeflow_pack_block=$(forgeflow_job_block "$forgeflow_workflow" pack)
+  forgeflow_publish_block=$(forgeflow_job_block "$forgeflow_workflow" publish)
+
+  [ -n "$forgeflow_pack_block" ] || fail 'publish.yml has no pack job'
+  [ -n "$forgeflow_publish_block" ] || fail 'publish.yml has no publish job'
+
+  printf '%s\n' "$forgeflow_pack_block" | grep -Fq "if: github.ref == 'refs/heads/main'" ||
+    fail 'pack job is not conditioned on refs/heads/main'
+  printf '%s\n' "$forgeflow_publish_block" | grep -Fq "if: github.ref == 'refs/heads/main'" ||
+    fail 'publish job is not conditioned on refs/heads/main'
+
+  if printf '%s\n' "$forgeflow_pack_block" | grep -Fq 'id-token: write'; then
+    fail 'pack job holds id-token: write'
+  fi
+  printf '%s\n' "$forgeflow_publish_block" | grep -Fq 'id-token: write' ||
+    fail 'publish job does not hold id-token: write'
+
+  forgeflow_workflow_level=$(awk '/^jobs:$/ { exit } { print }' "$forgeflow_workflow")
+  if printf '%s\n' "$forgeflow_workflow_level" | grep -Fq 'id-token'; then
+    fail 'workflow-level permissions grant id-token'
+  fi
+
+  printf '%s\n' "$forgeflow_publish_block" | grep -Fq 'environment: npm-publication' ||
+    fail 'publish job does not run in environment npm-publication'
+}
+
+# PB005-AC-002. The pack job must prove the candidate before installing
+# anything, disable the pnpm cache, rerun make verify, pack one package, and
+# publish its digest and tarball so the publish job can prove it downloaded
+# exactly that artifact.
+pack_job_proves_the_candidate_before_packing() {
+  forgeflow_workflow="$forgeflow_repo/.github/workflows/publish.yml"
+  forgeflow_pack_block=$(forgeflow_job_block "$forgeflow_workflow" pack)
+
+  for forgeflow_pack_term in \
+    '[ "$CANDIDATE_SHA" = "$DISPATCH_SHA" ] || {' \
+    '--workflow verify.yml --commit "$CANDIDATE_SHA"' \
+    'uses: ./.github/actions/setup-verification' \
+    'cache: false' \
+    'pnpm install --frozen-lockfile' \
+    'make verify' \
+    'npm pack "./packages/$PACKAGE"' \
+    'digest=%s' \
+    'uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1'
+  do
+    printf '%s\n' "$forgeflow_pack_block" | grep -Fq -- "$forgeflow_pack_term" ||
+      fail "pack job is missing: $forgeflow_pack_term"
+  done
+
+  forgeflow_pack_numbered=$(printf '%s\n' "$forgeflow_pack_block" | grep -n .)
+  forgeflow_line_of() {
+    printf '%s\n' "$forgeflow_pack_numbered" | grep -F -- "$1" | head -n1 | cut -d: -f1
+  }
+
+  forgeflow_l_candidate=$(forgeflow_line_of '[ "$CANDIDATE_SHA" = "$DISPATCH_SHA" ] || {')
+  forgeflow_l_verify_guard=$(forgeflow_line_of '--workflow verify.yml --commit "$CANDIDATE_SHA"')
+  forgeflow_l_setup=$(forgeflow_line_of 'uses: ./.github/actions/setup-verification')
+  forgeflow_l_verify=$(forgeflow_line_of 'make verify')
+  forgeflow_l_pack=$(forgeflow_line_of 'npm pack "./packages/$PACKAGE"')
+  forgeflow_l_upload=$(forgeflow_line_of 'uses: actions/upload-artifact')
+
+  if [ "$forgeflow_l_candidate" -ge "$forgeflow_l_verify_guard" ] ||
+    [ "$forgeflow_l_verify_guard" -ge "$forgeflow_l_setup" ] ||
+    [ "$forgeflow_l_setup" -ge "$forgeflow_l_verify" ] ||
+    [ "$forgeflow_l_verify" -ge "$forgeflow_l_pack" ] ||
+    [ "$forgeflow_l_pack" -ge "$forgeflow_l_upload" ]; then
+    fail 'pack job does not order its guards, setup, verify, pack and upload steps'
+  fi
+
+  printf '%s\n' "$forgeflow_pack_block" | grep -Fq 'outputs:' ||
+    fail 'pack job declares no outputs'
+  printf '%s\n' "$forgeflow_pack_block" | grep -Fq 'digest: ${{ steps.pack.outputs.digest }}' ||
+    fail 'pack job does not expose its tarball digest as a job output'
+}
+
+# PB005-AC-003. The publish job must never check out, install, or run
+# repository or dependency code; it only downloads, verifies and publishes the
+# pack job's artifact, then compares registry integrity and records both
+# digests in the run summary.
+publish_job_executes_no_repository_code() {
+  forgeflow_workflow="$forgeflow_repo/.github/workflows/publish.yml"
+  forgeflow_publish_block=$(forgeflow_job_block "$forgeflow_workflow" publish)
+
+  # Allowlist, not a denylist: the publish job may use only these two
+  # actions. A denylist of forbidden actions would miss whichever one nobody
+  # thought to add to it.
+  forgeflow_publish_uses_total=$(
+    printf '%s\n' "$forgeflow_publish_block" | grep -Ec '^[[:space:]]*uses:' || :
+  )
+  forgeflow_publish_uses_allowed=$(
+    printf '%s\n' "$forgeflow_publish_block" |
+      grep -Ec '^[[:space:]]*uses: actions/(setup-node|download-artifact)@[0-9a-f]{40}([[:space:]]|$)' || :
+  )
+  [ "$forgeflow_publish_uses_total" -eq 2 ] &&
+    [ "$forgeflow_publish_uses_total" -eq "$forgeflow_publish_uses_allowed" ] ||
+    fail 'publish job uses an action other than setup-node or download-artifact'
+
+  for forgeflow_forbidden in \
+    'checkout' 'npm ci' 'npm install' 'npx' 'node ./' 'pnpm' 'make' './scripts'
+  do
+    if printf '%s\n' "$forgeflow_publish_block" | grep -Fq -- "$forgeflow_forbidden"; then
+      fail "publish job executes repository code: $forgeflow_forbidden"
+    fi
+  done
+
+  for forgeflow_publish_term in \
+    'uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1' \
+    'ACTUAL_DIGEST="sha512-$(openssl dgst -sha512 -binary "$TARBALL" | openssl base64 -A)"' \
+    '[ "$ACTUAL_DIGEST" = "$EXPECTED_DIGEST" ] || {' \
+    'npm publish "$TARBALL" --tag next --access public --provenance' \
+    '[ "$INTEGRITY" = "$DIGEST" ] || {' \
+    '$GITHUB_STEP_SUMMARY'
+  do
+    printf '%s\n' "$forgeflow_publish_block" | grep -Fq -- "$forgeflow_publish_term" ||
+      fail "publish job is missing: $forgeflow_publish_term"
+  done
+}
+
+# PB005-AC-006. verify.yml's verify job and the pack job set up through the
+# same composite action, the setup lines and the cache rationale live there,
+# and neither workflow nor the action references a stored npm credential.
+# actionlint (docs/checks.md, checked 2026-09-17) validates only workflow
+# files: pointed at a composite action.yml it reports missing jobs/on/runs
+# keys instead of linting the composite steps, and it does not descend into a
+# local action referenced by `uses: ./...` when linting the workflow that uses
+# it, confirmed by injecting a shellcheck-breaking line into the action and
+# observing make verify-actions stay green. The action is therefore YAML- and
+# content-checked here instead, per the Story's Superseded Behavior guidance.
+shared_setup_action_backs_both_workflows() {
+  forgeflow_action="$forgeflow_repo/.github/actions/setup-verification/action.yml"
+  [ -f "$forgeflow_action" ] || fail 'composite action is missing'
+
+  if grep -Fq "$(printf '\t')" "$forgeflow_action"; then
+    fail 'setup-verification action contains a tab character'
+  fi
+
+  for forgeflow_action_term in \
+    'runs:' \
+    'using: composite' \
+    'inputs:' \
+    'cache:' \
+    'node-version-file: .node-version' \
+    'require-lockfile: true' \
+    'pnpm --dir examples/typescript install --frozen-lockfile' \
+    'go-version-file: examples/go/go.mod' \
+    'go -C examples/go mod download' \
+    'shell: bash'
+  do
+    grep -Fq -- "$forgeflow_action_term" "$forgeflow_action" ||
+      fail "setup-verification action is missing: $forgeflow_action_term"
+  done
+
+  # The description is a folded YAML scalar, so its prose may wrap across
+  # source lines; flatten before matching a multi-word phrase.
+  forgeflow_action_flat=$(tr '\n' ' ' <"$forgeflow_action" | tr -s ' ')
+  case "$forgeflow_action_flat" in
+    *'restores no dependency cache at all'*) ;;
+    *) fail 'setup-verification action does not state the no-cache rationale' ;;
+  esac
+
+  # The cache input must govern setup-go too, not only pnpm/setup, or a
+  # publication would still restore a Go module cache written elsewhere.
+  forgeflow_go_step=$(
+    awk '/^    - name: Set up Go$/ { in_step = 1; next }
+         in_step && /^    - name:/ { in_step = 0 }
+         in_step' "$forgeflow_action"
+  )
+  printf '%s\n' "$forgeflow_go_step" | grep -Fq 'cache: ${{ inputs.cache }}' ||
+    fail 'setup-verification action does not pass cache through to setup-go'
+
+  grep -Fq 'uses: ./.github/actions/setup-verification' \
+    "$forgeflow_repo/.github/workflows/verify.yml" ||
+    fail 'verify.yml does not use the shared setup action'
+  grep -Fq 'uses: ./.github/actions/setup-verification' \
+    "$forgeflow_repo/.github/workflows/publish.yml" ||
+    fail 'publish.yml does not use the shared setup action'
+
+  # The verify job (not tooling-compatibility, which keeps its own matrix
+  # setup by design) must no longer hold the setup lines the action now owns.
+  forgeflow_verify_job_block=$(forgeflow_job_block "$forgeflow_repo/.github/workflows/verify.yml" verify)
+  for forgeflow_setup_term in \
+    'node-version-file: .node-version' \
+    'require-lockfile: true' \
+    'pnpm --dir examples/typescript install --frozen-lockfile' \
+    'go-version-file: examples/go/go.mod' \
+    'go -C examples/go mod download'
+  do
+    if printf '%s\n' "$forgeflow_verify_job_block" | grep -Fq -- "$forgeflow_setup_term"; then
+      fail "verify job still holds a setup line the shared action owns: $forgeflow_setup_term"
+    fi
+  done
+
+  for forgeflow_credential in NODE_AUTH_TOKEN NPM_TOKEN
+  do
+    if grep -Fq -- "$forgeflow_credential" "$forgeflow_action"; then
+      fail "setup-verification action references a stored npm credential: $forgeflow_credential"
     fi
   done
 }
@@ -1114,5 +1361,10 @@ run_case 'REL-0.10.0' identity_migration_is_recorded_for_0_10_0
 run_case 'REL-0.8.0' unreleased_0_8_0_is_recorded
 run_case 'PB004-AC-005' subsequent_release_procedure_is_documented
 run_case 'PB004-AC-008' publication_workflow_keeps_its_guards
+run_case 'PB005-AC-001' publish_workflow_isolates_id_token_to_the_publish_job
+run_case 'PB005-AC-002' pack_job_proves_the_candidate_before_packing
+run_case 'PB005-AC-003' publish_job_executes_no_repository_code
+run_case 'PB005-AC-006' shared_setup_action_backs_both_workflows
+run_case 'PB005-AC-008' subsequent_release_procedure_is_documented
 
 printf 'protocol tests passed\n'

@@ -68,6 +68,9 @@ case "$call" in
     [ ! -f "$FAKE_DIR/publishes" ] || cat "$FAKE_DIR/publishes" >>"$FAKE_DIR/published" ;;
   "run watch 4242 --repo $FAKE_REPOSITORY --exit-status") exit "$(cat "$FAKE_DIR/watch")" ;;
   "run view 4242 --repo $FAKE_REPOSITORY --json status,conclusion --jq "*) cat "$FAKE_DIR/view" ;;
+  *"api repos/$FAKE_REPOSITORY/environments/npm-publication --jq "*)
+    [ ! -f "$FAKE_DIR/environment-missing" ] || exit 1
+    cat "$FAKE_DIR/environment-protection-count" ;;
   *) printf 'unexpected gh call: %s\n' "$call" >&2; exit 97 ;;
 esac
 EOF
@@ -105,6 +108,7 @@ reset_world() {
   printf '0\n' >"$FAKE_DIR/appears-after"
   : >"$FAKE_DIR/print-url"
   printf '@praxisbound/core@0.1.0\n@praxisbound/cli@0.1.0\n' >"$FAKE_DIR/published"
+  printf '1\n' >"$FAKE_DIR/environment-protection-count"
   export FAKE_DIR
 }
 
@@ -172,6 +176,24 @@ cli_before_core_is_refused() {
   expect_refusal 1 '@praxisbound/core@0.2.0 is not published'
 }
 
+# PB005-AC-007 (Security Fixture Matrix: publish.environment-approval, helper
+# precondition). GitHub auto-creates a referenced environment without any
+# protection rule, so the helper must refuse before ever dispatching rather
+# than rely on the environment existing and being protected.
+missing_environment_is_refused() {
+  reset_world missing-environment
+  : >"$FAKE_DIR/environment-missing"
+  dispatch '' core
+  expect_refusal 1 'does not exist or is unreachable'
+}
+
+unprotected_environment_is_refused() {
+  reset_world unprotected-environment
+  printf '0\n' >"$FAKE_DIR/environment-protection-count"
+  dispatch '' core
+  expect_refusal 1 'no required-reviewer protection rule'
+}
+
 wrong_confirmation_is_refused() {
   reset_world confirmation
   dispatch 'yes' core
@@ -190,6 +212,21 @@ confirmed_core_dispatch_is_exact() {
     fail 'the dispatched run was not watched'
   grep -Fq 'scripts/publish-dispatch cli' "$FAKE_DIR/stdout" ||
     fail 'a Core publication does not point at the CLI dispatch'
+}
+
+# PB005-AC-007. Every dispatch, including a confirmed one, now waits for a
+# human to approve the GitHub environment npm-publication before the publish
+# job runs; the helper must say so, with the run URL, before it starts
+# watching, so the operator does not mistake the pause for a hang.
+confirmed_dispatch_prints_the_environment_approval_notice() {
+  reset_world approval
+  printf '@praxisbound/core@0.2.0\n' >"$FAKE_DIR/publishes"
+  dispatch 'publish @praxisbound/core@0.2.0' core
+  [ "$status" -eq 0 ] || fail "exited $status: $(cat "$FAKE_DIR/stderr")"
+  grep -Fq 'awaits approval of environment npm-publication' "$FAKE_DIR/stdout" ||
+    fail "stdout does not mention the npm-publication approval: $(cat "$FAKE_DIR/stdout")"
+  grep -Fq "https://github.com/$repository/actions/runs/4242" "$FAKE_DIR/stdout" ||
+    fail "stdout does not print the run URL: $(cat "$FAKE_DIR/stdout")"
 }
 
 confirmed_cli_dispatch_points_at_promotion() {
@@ -281,8 +318,11 @@ run_case 'PB004-AC-009' unverified_candidate_is_refused
 run_case 'PB004-AC-009' concurrent_publication_is_refused
 run_case 'PB004-AC-009' published_version_is_refused
 run_case 'PB004-AC-009' cli_before_core_is_refused
+run_case 'PB005-AC-007' missing_environment_is_refused
+run_case 'PB005-AC-007' unprotected_environment_is_refused
 run_case 'PB004-AC-009' wrong_confirmation_is_refused
 run_case 'PB004-AC-009' confirmed_core_dispatch_is_exact
+run_case 'PB005-AC-007' confirmed_dispatch_prints_the_environment_approval_notice
 run_case 'PB004-AC-009' confirmed_cli_dispatch_points_at_promotion
 run_case 'PB004-AC-009' failed_workflow_is_reported
 run_case 'PB004-AC-009' unpropagated_registry_is_reported
