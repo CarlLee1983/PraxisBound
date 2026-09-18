@@ -8,7 +8,7 @@
 * integration: pass — `review-annotation*.test.mjs run the exact embedded ANNOTATION_SCRIPT with node:vm and drive export, parse, restore, and storage through its pure API; review-render.test.mjs renders pages that embed it`
 * contract: pass — `review-annotation-support.mjs walks revision-sheet.schema.json and defs.schema.json constraint by constraint against every exported sheet; contract §6, §13, and §19 describe the page rules the tests assert`
 * e2e: pass — `Chrome 153.0.8010.52 (headless, Playwright channel chrome) opened a rendered BR-TST-022 batch from a local file and passed 52 of 52 walkthrough checks at 1280 and 390 px, under print media, and with JavaScript disabled`
-* architecture: blocked — `awaiting Human Review of feat/tst-023-annotation`
+* architecture: pass — `Human Review: carl accepted TST-023 in a Claude Code session on 2026-09-18, reviewing feat/tst-023-annotation at b6c0471 after independent code and security reviews whose final pass found no CRITICAL, HIGH, or MEDIUM issue`
 
 ## Evidence
 
@@ -23,7 +23,7 @@
 * `AC-009`: pass — `review-render.test.mjs asserts one script whose sha256 is the only CSP script source and no network sources; the Chrome run recorded zero external requests, no annotation UI with JavaScript disabled, and every .pb-annotation element hidden in print`
 * `AC-010`: pass — `tests cover unavailable and throwing storage, hostile stored values quarantined without overwrite, dangling or draft-targeted supersedes quarantined transitively, the 1000-request page limit on add, supersede, restore, and storage load, and malformed, oversized, two-block, unclosed, and wrong-batchId sheets`
 * `AC-011`: pass — `tests keep reader and restored text as plain data and ban DOM, network, and script-escaping primitives in the embedded script; the Chrome run showed a draft planted in storage by another local page with a persistent notice and a 來自暫存 badge`
-* `AC-012`: blocked — `awaiting Human Review: the Chrome walkthrough passed 52 of 52 checks covering inline entry, multi-target, batch, export, cleared storage, restore, keyboard reach, 390 px, print, disabled JavaScript, and hostile or planted storage`
+* `AC-012`: pass — `Human Review: carl accepted TST-023 on 2026-09-18 with this evidence in hand: the Chrome walkthrough passed 52 of 52 checks covering inline entry, multi-target, batch, export, cleared storage, restore, keyboard reach, 390 px, print, disabled JavaScript, and hostile or planted storage`
 * `AC-013`: pass — `make verify exited 0; VERSION, protocol/, and templates/ are unchanged against origin/main; TST-022 render tests still pass and the CLI envelope is unchanged`
 
 ## Authority Used
