@@ -38,7 +38,7 @@ index → render → （HTML 審閱，可匯出／還原修訂單）
 | Review Projection（HTML） | `render --output` | `review render` | 無；衍生投影 | 可重建，不納入指紋 |
 | 修訂單匯出檔 | 使用者自選 | HTML 審閱頁 | 無；修改提議的載體 | 暫存；不被命令直接採計 |
 | 已匯入修訂單 | `records/revisions-<sheet12>.json` | `review import` | 無；修改提議 | 只新增 |
-| Revision Response 紀錄 | `records/responses-<to12>-<n>.json` | Agent 工作流程 | 歷史 Evidence | 只新增 |
+| Revision Response 紀錄 | `records/responses-<to12>-<n>.json` | Agent 工作流程經 `review respond` 寫入（修訂，R-005） | 歷史 Evidence | 只新增 |
 | Definition Confirmation | `records/confirmation-<fp12>.json` | `review confirm` | 人類聲明（非身份驗證） | 只新增；同指紋只一份 |
 | Semantic Report | 使用者自選，交給 `--semantic-report` | Agent 工作流程 | Agent 觀察 | 輸入；以 sha256 記入預檢紀錄 |
 | Preflight Report | `records/preflight-<fp12>-<n>.json` | `review preflight`／`review packet` | 歷史 Evidence | 只新增 |
@@ -185,6 +185,17 @@ Schema：[`schemas/revision-sheet.schema.json`](schemas/revision-sheet.schema.js
 單獨的 `\r` 視為 `\n`。其餘值逐字比較，有無 `supersedes` 即為不同內容。HTML 閱讀頁的還原（§19）與
 `review import` 使用同一判定。
 
+（修訂，R-005）匯入的補充規則：
+
+- 比對前先讀取全部 `records/revisions-*.json`；任一份不合法（檔名前綴、schema 或 §13 上限）時，`import` 以 `failure`
+  拒絕並回報 `REVIEW_RECORD_INVALID` 與檔案路徑，不寫入任何檔案。去重與衝突判斷必須建立在完整的已匯入紀錄上。
+  讀取 records 的唯讀命令仍依 §2 跳過該檔並回報同一診斷。
+- `data` 在 §12 的最小形狀外另含 `sheet`（`sha256`；寫入時另含 `record` 路徑，全部重複時為 `null`）與 `revisions`：
+  修訂單中每則意見一筆 `{ id, status, targets }`，`status` 為 `new` 或 `duplicate`；`targets` 依原順序，每個 target
+  帶 `match`：`match`（錨點唯一且 `blockSha256` 相同）、`hash-mismatch`、`anchor-missing`（含 `path` 不是批次來源）或
+  `anchor-duplicate`，判定依 §5。`#batch` 只在 `blockSha256` 等於當前指紋字串的雜湊時為 `match`。
+  逐目標結果讓 Agent 先比對差異，永不依錨點名稱或相似段落自行猜測（R-005 AC-004）。
+
 之後所有命令採計**全部**已匯入修訂單中未被 `supersedes` 取代的意見（「有效意見」）；沒有「最新一份」的概念。
 HTML 內的匯出／還原（R-004）仍是閱讀頁功能，與 `review import` 分開。
 
@@ -205,6 +216,18 @@ Schema：[`schemas/revision-responses.schema.json`](schemas/revision-responses.s
   `needs-decision`、`not-incorporated` 或回應綁定舊指紋都不算解決。
 - 以 `route: decision` 處理的意見不得修改 `Status: accepted` 的 ADR 內容；只能新增替代 ADR 或回 `needs-decision`。
   此規則由人審閱差異確認，機械檢查不涵蓋（既有 ADR 的狀態行寫法不一致）。
+
+（修訂，R-005）`praxisbound review respond <manifest> <responses.json>` 是寫入回應紀錄的唯一途徑，依序檢查：
+
+1. schema 與 §13 上限；任一 `records/revisions-*.json` 或 `records/responses-*.json` 不合法：`REVIEW_RECORD_INVALID`。
+2. `revisionSheets` 每一項都對應到已匯入紀錄（`records/revisions-<sheet12>.json` 內容的 sha256）：否則 `REVIEW_RESPONSE_INVALID`。
+3. `fromFingerprint` 等於某份所列修訂單的 `fingerprint`，也就是讀者匯出當下看到的版本：否則 `REVIEW_RESPONSE_INVALID`。
+4. `toFingerprint` 等於寫入當下以當前來源重算的指紋：否則 `REVIEW_RESPONSE_STALE`。回應因此只能描述已存在於來源中的修改。
+5. 所列修訂單中每個有效意見恰好一筆回應：否則 `REVIEW_RESPONSE_MISMATCH`。
+6. 上列欄位規則與兩指紋規則：否則 `REVIEW_RESPONSE_INVALID`。
+
+全部通過時以排他建立把輸入 JSON 原樣寫入 `records/responses-<to12>-<n>.json`；任一檢查失敗為 `failure`，不寫入。
+寫入回應不代表人類核准，也不改變任何來源、確認或授權（ADR-014）。
 
 ## 8. Definition Confirmation
 
@@ -326,6 +349,7 @@ Work Item ID 由 ForgePilot 指派、無冪等鍵、依賴只能在建立時宣�
 | `review index <manifest>` | `success` | `usage-error`、`configuration-error`、`ERROR` |
 | `review render <manifest> --output <file>` | `success` | `failure`（輸出失敗）、`usage-error`、`configuration-error`、`ERROR` |
 | `review import <manifest> <sheet>` | `success` | `failure`（格式錯誤、衝突、過大）、`usage-error`、`configuration-error`、`ERROR` |
+| `review respond <manifest> <responses.json>`（修訂，R-005） | `success` | `failure`（格式錯誤、不完整、指紋不符、過大）、`usage-error`、`configuration-error`、`ERROR` |
 | `review confirm <manifest>` | `success` | `failure`（拒絕或中止確認）、`usage-error`、`configuration-error`、`ERROR` |
 | `review preflight <manifest> ...` | `REVIEW_READY` | `REVIEW_BLOCKED`、`REVIEW_INCOMPLETE`、`REVIEW_STALE`、`usage-error`、`configuration-error`、`ERROR` |
 | `review packet <manifest> ...` | `REVIEW_READY` | 同 `preflight` |
@@ -344,7 +368,8 @@ Work Item ID 由 ForgePilot 指派、無冪等鍵、依賴只能在建立時宣�
 - `index`／`render` 只要 manifest 合法就回 `pass`／`success`，來源缺失與其他缺口以 issues 呈現：草稿可讀，不完整不可交接由 `preflight`／`packet` 判定。
 - envelope `issues[]` 維持現行格式（`code`、`message`、選填 `path`、`subject`），不新增欄位。
   完整定位放在 `data.diagnostics[]`：`{ code, severity, locator? }`，`severity` 為 `blocking` 或 `advisory`，順序與 `issues[]` 一一對應。
-- `data` 最小形狀：`index`、`render`、`import`、`confirm` 為 `{ batchId, fingerprint, sources, diagnostics }`；
+- `data` 最小形狀：`index`、`render`、`import`、`respond`、`confirm` 為 `{ batchId, fingerprint, sources, diagnostics }`；
+  `import` 另含 `sheet`、`revisions`（§6），`respond` 另含 `record`（寫入的紀錄路徑）；
   `preflight` 另含 `preflightRecord`；`packet` 另含 `preflightRecord`、`packetRecord`、`output`。含缺失來源時 `fingerprint` 仍輸出（§4），並有 `REVIEW_SOURCE_MISSING`。
 - 輸出失敗不覆寫上次成功輸出：寫入同目錄暫存檔後原子 rename；失敗時刪除暫存檔。
 - `--output` 解析後落在任一批次來源、manifest、`records/` 內，或本身為 symlink：`configuration-error`、`REVIEW_OUTPUT_CONFLICT`。
