@@ -288,6 +288,84 @@ test("TST022-AC-003: each card lists Requirement then Execution acceptance, then
   assert.match(r2Card, /已在其他卡片顯示/);
 });
 
+test("TST022 readability: a requirement heading that already starts with its own ID is not shown twice", () => {
+  const matrix = html.slice(
+    html.indexOf("需求總覽矩陣"),
+    html.indexOf("批次目標"),
+  );
+  const cardsSection = html.slice(
+    html.indexOf('<section class="cards">'),
+    html.indexOf('<section class="orphan-stories">'),
+  );
+  for (const section of [matrix, cardsSection]) {
+    assert.doesNotMatch(section, /R-001[^\n]{0,3}R-001：/);
+    assert.doesNotMatch(section, /R-002[^\n]{0,3}R-002：/);
+  }
+  assert.match(matrix, /R-001：Fixture Requirement One/);
+  assert.match(
+    cardsSection,
+    /<summary>R-001：Fixture Requirement One<\/summary>/,
+  );
+});
+
+test("TST022 readability: a Story ID is not repeated inside its own title", () => {
+  const matrix = html.slice(
+    html.indexOf("需求總覽矩陣"),
+    html.indexOf("批次目標"),
+  );
+  assert.match(matrix, /RF-SHARED<\/a> Fixture Shared Story/);
+  assert.doesNotMatch(matrix, /Story: RF-SHARED/);
+});
+
+test("TST022 readability: a vocabulary heading with an equivalent visible caption is visually hidden but keeps its locator", () => {
+  const matrix = html.slice(
+    html.indexOf("需求總覽矩陣"),
+    html.indexOf("批次目標"),
+  );
+  assert.match(
+    matrix,
+    /<h6[^>]*data-anchor="R-001\/Goal"[^>]*class="visually-hidden"[^>]*>/,
+  );
+
+  const cardsSection = html.slice(
+    html.indexOf('<section class="cards">'),
+    html.indexOf('<section class="orphan-stories">'),
+  );
+  assert.match(
+    cardsSection,
+    /<h6[^>]*data-anchor="R-001\/Acceptance"[^>]*class="visually-hidden"[^>]*>/,
+  );
+  assert.match(
+    cardsSection,
+    /<h6[^>]*data-anchor="Goal"[^>]*class="visually-hidden"[^>]*>/,
+  );
+});
+
+test("TST022 readability: the matrix link opens the card at its body, not the buried entry heading", () => {
+  const matrix = html.slice(
+    html.indexOf("需求總覽矩陣"),
+    html.indexOf("批次目標"),
+  );
+  const match =
+    /<a href="(#[a-z0-9-]+)">R-001：Fixture Requirement One<\/a>/.exec(matrix);
+  assert.ok(match, "expected a matrix link to the R-001 card");
+  const targetId = match[1].slice(1);
+
+  const cardsSection = html.slice(
+    html.indexOf('<section class="cards">'),
+    html.indexOf('<section class="orphan-stories">'),
+  );
+  const r1Card = cardsSection.slice(
+    cardsSection.indexOf("R-001"),
+    cardsSection.indexOf("R-002"),
+  );
+  assert.match(r1Card, new RegExp(`<section class="req-ac" id="${targetId}">`));
+  assert.ok(
+    r1Card.indexOf(`id="${targetId}"`) < r1Card.indexOf("需求細節"),
+    "the target id must sit before 需求細節, not at the buried entry heading",
+  );
+});
+
 test("TST022-AC-004: every source block renders exactly once outside the raw appendix, and every non-blank line's text is present", () => {
   const withoutRaw = html.replace(
     /<details class="raw no-print">[\s\S]*?<\/details>/,

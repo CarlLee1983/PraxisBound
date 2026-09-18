@@ -41,6 +41,35 @@ export function escapeHtml(value: string): string {
 export const MISSING_SECTION_TEXT = "未寫明";
 export const NO_STORY_TEXT = "無對應 Story";
 
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/**
+ * One requirement's matrix/card label (contract §18, R13). A recognized Spec
+ * entry heading already starts with its own ID (§3), so repeating the ID in
+ * front of it would show it twice; the ID is set apart visually only when
+ * the heading text does not already carry it.
+ */
+export function requirementLabelHtml(id: string, heading: string): string {
+  if (heading.startsWith(id)) return escapeHtml(heading);
+  return `<span class="req-id">${escapeHtml(id)}</span> ${escapeHtml(heading)}`;
+}
+
+/**
+ * The `story.md` H1 is `Story: <ID> <title>` (contract §18 R13); this strips
+ * the `Story:` prefix and the repeated ID, leaving just `<title>`. Returns
+ * `undefined` when the H1 does not follow that shape, so the caller shows it
+ * unchanged instead of guessing at a different one.
+ */
+export function storyTitleWithoutId(
+  h1Text: string,
+  storyId: string,
+): string | undefined {
+  const pattern = new RegExp(`^Story:\\s*${escapeRegExp(storyId)}\\s+(.*)$`);
+  return pattern.exec(h1Text)?.[1];
+}
+
 export interface AppendixSection {
   readonly path: string;
   readonly html: string;
@@ -100,10 +129,29 @@ function injectLabels(html: string, labels: readonly string[]): string {
 const specAcceptanceLinePattern = /^[-*]\s+AC-(\d+)[：:]/;
 
 /**
+ * Same as `locatorAttributes`, but visually hides the element. Used where the
+ * caller already shows an equivalent Chinese caption for this vocabulary
+ * heading, so the source heading stays in the DOM (locator, accessibility
+ * tree) without displaying the same label a second time on screen or print.
+ */
+function hiddenLocatorAttributes(
+  lookup: LocatorLookup,
+  path: string,
+  anchor: string,
+): Record<string, string> | undefined {
+  const attributes = locatorAttributes(lookup, path, anchor);
+  return attributes === undefined
+    ? undefined
+    : { ...attributes, class: "visually-hidden" };
+}
+
+/**
  * Renders one recognized vocabulary heading's own block, including the
  * heading itself (demoted, since the caller already labels the slot in
  * Chinese): the heading text is still verbatim source content (R11), and its
  * Locator has to attach to the element that carries it (R-005 second half).
+ * `hideHeading` visually hides that heading when the caller's own caption
+ * already names the same field (contract §18).
  */
 function renderVocabBlock(
   bytes: Uint8Array,
@@ -112,6 +160,7 @@ function renderVocabBlock(
   path: string,
   anchor: string,
   lookup: LocatorLookup,
+  hideHeading = false,
 ): string | undefined {
   if (heading === undefined) return undefined;
   return renderMarkdownHtml(
@@ -120,7 +169,10 @@ function renderVocabBlock(
     boundedEnd(headings, heading),
     {
       headingLevelOffset: 4,
-      headingAttributes: () => locatorAttributes(lookup, path, anchor),
+      headingAttributes: () =>
+        hideHeading
+          ? hiddenLocatorAttributes(lookup, path, anchor)
+          : locatorAttributes(lookup, path, anchor),
     },
   );
 }
@@ -155,7 +207,7 @@ function renderEntryAcceptance(
     {
       headingLevelOffset: 4,
       headingAttributes: () =>
-        locatorAttributes(lookup, specPath, `${entryId}/Acceptance`),
+        hiddenLocatorAttributes(lookup, specPath, `${entryId}/Acceptance`),
       listItemAttributes: (line) => {
         const match = specAcceptanceLinePattern.exec(line.trimmed);
         if (match === null) return undefined;
@@ -289,6 +341,7 @@ export function partitionSpecDocument(
           spec.path,
           `${entry.id}/Goal`,
           lookup,
+          true,
         ) ?? `<p class="muted">${MISSING_SECTION_TEXT}</p>`,
       nonGoalsCellHtml:
         renderVocabBlock(
@@ -298,6 +351,7 @@ export function partitionSpecDocument(
           spec.path,
           `${entry.id}/Non-goals`,
           lookup,
+          true,
         ) ?? `<p class="muted">${MISSING_SECTION_TEXT}</p>`,
       acceptanceHtml: renderEntryAcceptance(
         spec.path,
@@ -425,7 +479,8 @@ export function partitionStoryDocument(
       boundedEnd(headings, heading),
       {
         headingLevelOffset: 4,
-        headingAttributes: () => locatorAttributes(lookup, storyPath, field),
+        headingAttributes: () =>
+          hiddenLocatorAttributes(lookup, storyPath, field),
       },
     );
     return `<section class="focus-field"><h4>${escapeHtml(

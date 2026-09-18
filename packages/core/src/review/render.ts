@@ -25,6 +25,8 @@ import {
   partitionSpecDocument,
   partitionStoryDocument,
   renderAdrAppendix,
+  requirementLabelHtml,
+  storyTitleWithoutId,
   type AcceptanceContent,
   type AppendixSection,
   type SpecDocumentContent,
@@ -114,7 +116,10 @@ function renderMatrixAndCards(
     const key = `${spec.path}#${entry.id}`;
     const trace = traceByKey.get(key);
     const storyIds = trace?.stories.map((story) => story.storyId) ?? [];
-    const targetId = elementId(spec.path, entry.id);
+    // The card's own navigation target: the first element of its body, not
+    // the entry heading buried at the end in 需求細節 (contract §18), so
+    // opening a card from the matrix lands above 需求驗收 rather than past it.
+    const targetId = `card-${elementId(spec.path, entry.id)}`;
     const content = specContent.get(spec.path);
     const entryContent = content?.entries.get(entry.id);
     const missing = `<p class="muted">${MISSING_SECTION_TEXT}</p>`;
@@ -136,8 +141,12 @@ function renderMatrixAndCards(
                 story === undefined
                   ? undefined
                   : storyDocuments.get(story.path)?.title;
+              const displayTitle =
+                title === undefined
+                  ? undefined
+                  : (storyTitleWithoutId(title, storyId) ?? title);
               const home = homeOf.get(storyId) ?? targetId;
-              return `<a href="#${home}">${escapeHtml(storyId)}</a>${title === undefined ? "" : ` ${escapeHtml(title)}`}`;
+              return `<a href="#${home}">${escapeHtml(storyId)}</a>${displayTitle === undefined ? "" : ` ${escapeHtml(displayTitle)}`}`;
             })
             .join("、");
 
@@ -148,7 +157,7 @@ function renderMatrixAndCards(
     );
 
     matrixRows.push(
-      `<tr><th scope="row"><a href="#${targetId}">${escapeHtml(entry.id)} ${escapeHtml(entry.heading)}</a></th>` +
+      `<tr><th scope="row"><a href="#${targetId}">${requirementLabelHtml(entry.id, entry.heading)}</a></th>` +
         `<td>${entryContent?.goalCellHtml ?? missing}</td>` +
         `<td>${storyCell}</td>` +
         `<td class="num">${requirementAcceptanceCount}</td>` +
@@ -186,9 +195,9 @@ function renderMatrixAndCards(
       .join("");
 
     cards.push(
-      `<details class="card"><summary><span class="req-id">${escapeHtml(entry.id)}</span> ${escapeHtml(entry.heading)}</summary>` +
+      `<details class="card"><summary>${requirementLabelHtml(entry.id, entry.heading)}</summary>` +
         `<div class="card-body">` +
-        `<section class="req-ac"><h3>需求驗收</h3>${entryContent?.acceptanceHtml ?? missing}</section>` +
+        `<section class="req-ac" id="${targetId}"><h3>需求驗收</h3>${entryContent?.acceptanceHtml ?? missing}</section>` +
         `<section class="exec-ac"><h3>執行驗收</h3>${executionAcceptance}</section>` +
         `<section class="story-focus"><h3>Story 重點</h3>${storyFocus || `<p class="muted">${NO_STORY_TEXT}</p>`}</section>` +
         `<section class="detail"><h3>需求細節</h3>${entryContent?.detailHtml || `<p class="muted">${MISSING_SECTION_TEXT}</p>`}</section>` +
@@ -203,8 +212,12 @@ function renderMatrixAndCards(
     )
     .map((story) => {
       const documents = storyDocuments.get(story.path);
+      const displayTitle =
+        documents?.title === undefined
+          ? undefined
+          : (storyTitleWithoutId(documents.title, story.id) ?? documents.title);
       return (
-        `<section class="orphan-story"><h3>${escapeHtml(story.id)}${documents?.title === undefined ? "" : ` ${escapeHtml(documents.title)}`}</h3>` +
+        `<section class="orphan-story"><h3>${escapeHtml(story.id)}${displayTitle === undefined ? "" : ` ${escapeHtml(displayTitle)}`}</h3>` +
         `<section><h4>執行驗收</h4>${documents?.acceptance?.acceptanceGroupsHtml ?? `<p class="muted">${MISSING_SECTION_TEXT}</p>`}</section>` +
         `<section><h4>Story 重點</h4>${documents?.story?.focusHtml ?? `<p class="muted">${MISSING_SECTION_TEXT}</p>`}</section>` +
         `</section>`
@@ -463,7 +476,7 @@ ${PAGE_CSS}
 ${prefaceHtml}
 </header>
 <section class="matrix"><h2>需求總覽矩陣</h2><div class="table-scroll"><table>
-<thead><tr><th scope="col">需求</th><th scope="col">目標</th><th scope="col">Story</th><th scope="col">需求驗收</th><th scope="col">執行驗收</th><th scope="col">不包含</th></tr></thead>
+<thead><tr><th scope="col">需求</th><th scope="col">目標</th><th scope="col">Story</th><th scope="col" class="num">需求驗收</th><th scope="col" class="num">執行驗收</th><th scope="col">不包含</th></tr></thead>
 <tbody>${matrixRows}</tbody>
 </table></div></section>
 <section><h2>批次目標</h2>${goalSections}</section>
@@ -496,7 +509,9 @@ h3 { margin-top: 1.4rem; }
 .meta { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: .3rem 1rem; font-family: ui-sans-serif, system-ui, sans-serif; overflow-wrap: anywhere; }
 .fingerprint { overflow-wrap: anywhere; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
 .preface { margin-top: 1.5rem; padding: .2rem 1.2rem .8rem; border-left: 4px solid #8a5a2b; background: #fffaf0; }
+.preface h2 { border-top: none; margin-top: .2rem; padding-top: 0; }
 .preface .label { font: .8rem ui-sans-serif, system-ui, sans-serif; color: #6f675c; margin: 0; }
+.visually-hidden { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
 .doc-path { display: inline-block; font: .72rem/1.4 ui-monospace, Menlo, monospace; color: #6f675c; border: 1px solid #d8d0c3; border-radius: 3px; padding: .05rem .4rem; overflow-wrap: anywhere; }
 .digest { overflow-wrap: anywhere; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
 .doc-group { margin: 1rem 0; }
@@ -506,12 +521,13 @@ pre { max-width: 100%; overflow: auto; padding: 1rem; background: #ece6da; white
 table { width: 100%; border-collapse: collapse; font-size: .92rem; }
 th, td { padding: .6rem; border-bottom: 1px solid #d8d0c3; text-align: left; vertical-align: top; }
 td.num, th.num { text-align: center; }
+th.num { white-space: nowrap; min-width: 6rem; }
 .checkbox-glyph { font-size: 1em; }
 .ac-id { display: inline-block; font: 600 .8rem ui-monospace, Menlo, monospace; color: #7a4b1f; margin-right: .4rem; }
 .diagnostics { padding-left: 1.2rem; }
 .card { border: 1px solid #d8d0c3; background: #fff; border-radius: 6px; padding: .8rem 1.2rem; margin: 1.2rem 0; }
 .card > summary { cursor: pointer; font: 600 1rem ui-sans-serif, system-ui, sans-serif; }
-.card .req-id { color: #8a5a2b; }
+.req-id { color: #8a5a2b; }
 .card-body section { margin-top: 1.2rem; }
 .orphan-story { border-top: 1px dashed #d8d0c3; padding-top: 1rem; margin-top: 1.5rem; }
 .adr-list { padding-left: 1.2rem; }
