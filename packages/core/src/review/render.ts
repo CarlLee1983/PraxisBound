@@ -1,5 +1,6 @@
 /**
- * The requirement-organized Review Projection page (contract §18).
+ * The requirement-organized Review Projection page (contract §18) and its
+ * embedded annotation layer script (contract §19, Story TST-023 R1).
  *
  * Assembles the page order §18 specifies — title, Review Preface, overview
  * matrix, batch goal/non-goals, ADR constraints, diagnostic summary,
@@ -7,8 +8,15 @@
  * already-read source bytes. All partitioning (which byte range plays which
  * role) lives in `render-source.ts`; this module only assembles the page and
  * its inline CSS. Pure: no I/O, no globals, no mutation of its inputs.
+ *
+ * `node:crypto` is a pure hashing primitive here too (as in `fingerprint.ts`,
+ * Story TST-021 R9/AC-011): it pins the one embedded script with its own
+ * `sha256`, never touches the filesystem, process, or clock.
  */
 
+import { createHash } from "node:crypto";
+
+import { ANNOTATION_SCRIPT } from "./annotation-script.js";
 import { renderMarkdownHtml, scanMarkdownDocument } from "./markdown-html.js";
 import {
   buildLocatorLookup,
@@ -428,10 +436,17 @@ function renderAppendix(
  * Produces an inert, self-contained reading projection. The caller owns
  * source acquisition and output publication; this function accepts only
  * immutable index data and source text, and performs no I/O.
+ *
+ * `manifestPath` is the batch target's `path` (contract §5 rule 3, §19): the
+ * page's annotation script needs it, plus `batchId` and `fingerprint`, to
+ * build the `#batch` target and the storage key, so it is emitted as a
+ * `data-*` attribute on the page root rather than read from any other
+ * rendered content.
  */
 export function renderReviewProjection(
   index: ReviewIndex,
   documents: readonly ReviewProjectionDocument[],
+  manifestPath: string,
 ): string {
   const documentsByPath = new Map(
     documents.map((document) => [document.path, document]),
@@ -561,18 +576,24 @@ export function renderReviewProjection(
 
   const title = index.title ?? index.batchId;
 
+  // The one embedded script's exact bytes are pinned by their own sha256
+  // (contract §19 R1); every other script source stays forbidden.
+  const scriptHash = createHash("sha256")
+    .update(ANNOTATION_SCRIPT, "utf8")
+    .digest("base64");
+
   return `<!doctype html>
 <html lang="zh-Hant">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src 'none'; media-src 'none'; object-src 'none'; frame-src 'none'; connect-src 'none'; base-uri 'none'; form-action 'none'; style-src 'unsafe-inline'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-${scriptHash}'; img-src 'none'; media-src 'none'; object-src 'none'; frame-src 'none'; connect-src 'none'; base-uri 'none'; form-action 'none'; style-src 'unsafe-inline'">
 <title>${escapeHtml(title)} — Review Projection</title>
 <style>
 ${PAGE_CSS}
 </style>
 </head>
-<body>
+<body data-pb-batch-id="${escapeHtml(index.batchId)}" data-pb-manifest-path="${escapeHtml(manifestPath)}" data-pb-fingerprint="${escapeHtml(index.fingerprint)}">
 <main class="page">
 <header class="cover">
 <p class="kicker">離線閱讀快照</p>
@@ -596,6 +617,7 @@ ${missingSourcesHtml}
 <section class="orphan-stories"><h2>未對應需求的 Story</h2>${orphanStories || `<p class="muted">沒有未對應需求的 Story。</p>`}</section>
 ${appendixHtml}
 </main>
+<script>${ANNOTATION_SCRIPT}</script>
 </body>
 </html>`;
 }
@@ -652,5 +674,6 @@ th.num { white-space: nowrap; min-width: 6rem; }
   details > summary { list-style: none; }
   details > summary::-webkit-details-marker { display: none; }
   a { color: inherit; text-decoration: none; }
+  .pb-annotation { display: none !important; }
 }
 `;

@@ -73,7 +73,7 @@ function project(path, text) {
     path: source.path,
     bytes: observations.get(source.path)?.bytes,
   }));
-  return renderReviewProjection(result.index, documents);
+  return renderReviewProjection(result.index, documents, "manifest.json");
 }
 
 function timed(path, text) {
