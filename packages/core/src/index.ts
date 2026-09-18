@@ -167,6 +167,7 @@ export type {
 } from "./story.js";
 
 export { indexReviewBatch } from "./review/index.js";
+export { renderMarkdownHtml } from "./review/markdown-html.js";
 export { planReviewBatch } from "./review/manifest.js";
 export { renderReviewProjection } from "./review/render.js";
 export type {
@@ -193,3 +194,4 @@ export type {
   TraceStoryEntry,
 } from "./review/types.js";
 export type { ReviewProjectionDocument } from "./review/render.js";
+export type { MarkdownHtmlOptions } from "./review/markdown-html.js";

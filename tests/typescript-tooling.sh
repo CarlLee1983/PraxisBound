@@ -133,6 +133,8 @@ packed_packages_have_the_bounded_public_contract() {
     './dist/review/index.js' \
     './dist/review/manifest.d.ts' \
     './dist/review/manifest.js' \
+    './dist/review/markdown-html.d.ts' \
+    './dist/review/markdown-html.js' \
     './dist/review/markdown.d.ts' \
     './dist/review/markdown.js' \
     './dist/review/path.d.ts' \
