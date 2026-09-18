@@ -827,3 +827,31 @@ test("TST023-AC-010/Q19: requests loaded from browser storage carry a 來自暫�
     false,
   );
 });
+
+test("TST023-AC-006/§6: restoring a sheet that holds a page draft D and its successor E marks D exported instead of rejecting", () => {
+  const draft = addOk(api.emptyState(), {});
+  const d = draft.request;
+  const e = createOk({ supersedes: d.id, proposal: "新版" });
+  const restored = restoreSheet(draft.state, [d, e]);
+  assert.equal(restored.ok, true, restored.message);
+  assert.equal(restored.skipped, 1);
+  assert.equal(restored.added, 1);
+  const [pageD] = restored.state.requests;
+  assert.equal(pageD.exported, true);
+  assert.equal(api.unexportedCount(restored.state), 0);
+  assert.deepEqual(draft.state.requests[0].exported, false, "input untouched");
+});
+
+test("TST023-AC-010/Q19: the 來自暫存 badge clears when the reader edits, exports, or restores the draft from their own sheet", () => {
+  const entry = storedEntry({});
+  const loaded = api.loadState(stored([entry])).state;
+  const hasBadge = (state) =>
+    api.requestBadges(state, state.requests[0]).includes("來自暫存");
+  assert.equal(hasBadge(loaded), true);
+  assert.equal(
+    hasBadge(edit(loaded, entry.id, { proposal: "改" }).state),
+    false,
+  );
+  assert.equal(hasBadge(api.markExported(loaded, [entry.id])), false);
+  assert.equal(hasBadge(restoreSheet(loaded, [entry]).state), false);
+});

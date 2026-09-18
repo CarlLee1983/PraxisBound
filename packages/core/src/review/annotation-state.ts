@@ -369,16 +369,22 @@ export const ANNOTATION_STATE = String.raw`
   }
 
   function restore(state, sheet, pageFingerprint, pageLocators) {
-    var existing = stateRequests(state);
     var revisions = isPlainObject(sheet) && Array.isArray(sheet.revisions) ? sheet.revisions : [];
     var conflictIds = [];
     var fresh = [];
+    var inSheet = Object.create(null);
     var skipped = 0;
     revisions.forEach(function (revision) {
       var found = findRequest(state, revision.id);
       if (!found) fresh.push(revision);
-      else if (sameRevisionContent(found, revision)) skipped++;
-      else conflictIds.push(revision.id);
+      else if (sameRevisionContent(found, revision)) {
+        skipped++;
+        inSheet[revision.id] = true;
+      } else conflictIds.push(revision.id);
+    });
+    // 修訂單裡的意見必定已匯出過：頁面上的同內容意見改標為已匯出、不再標示「來自暫存」。
+    var existing = stateRequests(state).map(function (request) {
+      return inSheet[request.id] ? withFlags(request, true, request.pending) : request;
     });
     if (conflictIds.length > 0)
       return rejectRestore(state, '還原失敗，以下 id 內容衝突：' + conflictIds.join('、'), conflictIds);
