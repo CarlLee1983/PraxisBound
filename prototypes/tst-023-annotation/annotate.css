@@ -1,0 +1,114 @@
+/* PROTOTYPE styling — throwaway, not production. */
+.pb-ui, .pb-ui * { box-sizing: border-box; font-family: ui-sans-serif, system-ui, sans-serif; }
+.pb-ui { font-size: .85rem; }
+.pb-ui button {
+  cursor: pointer; border: 1px solid #8a5a2b; background: #fffaf0; color: #4a3418;
+  border-radius: 4px; padding: .25rem .55rem; font-size: .82rem;
+}
+.pb-ui button:hover { background: #f3e6cf; }
+.pb-ui textarea, .pb-ui select, .pb-ui input[type="text"] {
+  font-family: inherit; font-size: .85rem; width: 100%; padding: .35rem .5rem;
+  border: 1px solid #b7ac98; border-radius: 4px; margin: .2rem 0 .5rem;
+}
+.pb-ui textarea { min-height: 4.5rem; resize: vertical; }
+.pb-ui h3, .pb-ui h4 { margin: .2rem 0 .5rem; font-size: 1rem; }
+
+/* 頂部工具列 */
+#pb-toolbar {
+  position: fixed; top: .6rem; right: .6rem; z-index: 500;
+  display: flex; gap: .4rem; align-items: center;
+  background: #fff; border: 1px solid #d8d0c3; border-radius: 8px;
+  padding: .4rem .6rem; box-shadow: 0 2px 8px rgba(0,0,0,.12);
+}
+#pb-unexported-indicator { font-size: .78rem; color: #4a6b3a; }
+#pb-unexported-indicator.pb-warn { color: #8a251e; font-weight: 600; }
+
+/* 底部變體切換列 */
+#pb-switcher {
+  position: fixed; bottom: .6rem; left: 50%; transform: translateX(-50%); z-index: 500;
+  display: flex; gap: .6rem; align-items: center;
+  background: #24211c; color: #f7f4ee; border-radius: 999px;
+  padding: .4rem .9rem; box-shadow: 0 2px 10px rgba(0,0,0,.25);
+}
+#pb-switcher button { background: #3a352c; color: #f7f4ee; border-color: #5a4f3c; }
+#pb-switcher-label { font-size: .82rem; min-width: 9rem; text-align: center; }
+
+/* 儲存失敗橫幅 */
+#pb-storage-banner {
+  position: fixed; top: 0; left: 0; right: 0; z-index: 600;
+  background: #8a251e; color: #fff; text-align: center; padding: .4rem;
+  font-size: .82rem;
+}
+
+/* dialog */
+.pb-dialog {
+  border: 1px solid #d8d0c3; border-radius: 8px; padding: 1rem 1.2rem;
+  max-width: 40rem; width: 90vw; max-height: 80vh; overflow: auto;
+}
+.pb-dialog::backdrop { background: rgba(0,0,0,.35); }
+.pb-list-row { margin: .3rem 0; }
+.pb-list-row button { width: 100%; text-align: left; }
+
+/* 意見卡片（各變體共用） */
+.pb-note {
+  border: 1px solid #d8d0c3; border-radius: 6px; padding: .5rem .7rem;
+  margin: .4rem 0; background: #fbf9f5; font-size: .82rem;
+}
+.pb-note.pb-pending { border-color: #c98a2b; background: #fff6e6; }
+.pb-note-head { display: flex; gap: .4rem; align-items: center; flex-wrap: wrap; margin-bottom: .3rem; }
+.pb-note-id { font-family: ui-monospace, Menlo, monospace; color: #8a5a2b; font-size: .78rem; }
+.pb-note-kind { font-weight: 600; }
+.pb-badge-blocking, .pb-badge-exported {
+  font-size: .7rem; border-radius: 8px; padding: 0 .5em; border: 1px solid #b7ac98;
+}
+.pb-badge-blocking { color: #8a251e; border-color: #8a251e; }
+.pb-badge-exported { color: #4a6b3a; border-color: #4a6b3a; }
+.pb-note-original, .pb-note-proposal, .pb-note-rationale { margin: .2rem 0; white-space: pre-wrap; }
+.pb-note-actions { margin-top: .3rem; display: flex; gap: .3rem; }
+.pb-targets-info, .pb-quote-preview { font-size: .76rem; color: #6f675c; margin: .2rem 0 .5rem; white-space: pre-wrap; }
+
+/* 變體 A：行內按鈕 */
+.pb-a-target { position: relative; }
+.pb-a-add-btn {
+  margin-inline-start: .5rem; opacity: .18; transition: opacity .15s;
+  font-size: .72rem; padding: .05rem .4rem;
+}
+.pb-a-target:hover .pb-a-add-btn, .pb-a-add-btn:focus { opacity: 1; }
+.pb-a-form, .pb-a-note { display: block; margin: .4rem 0 .8rem; }
+
+/* 變體 B：右側抽屜 */
+#pb-drawer-toggle { position: fixed; top: 50%; right: 0; transform: translateY(-50%); z-index: 480; border-radius: 6px 0 0 6px; }
+#pb-drawer {
+  position: fixed; top: 0; right: -22rem; width: 22rem; height: 100vh; z-index: 490;
+  background: #fff; border-left: 1px solid #d8d0c3; padding: 1rem; overflow-y: auto;
+  transition: right .2s; box-shadow: -4px 0 12px rgba(0,0,0,.12);
+}
+#pb-drawer.pb-drawer-open { right: 0; }
+.pb-b-selectable { cursor: pointer; }
+.pb-b-selected { outline: 3px solid #c98a2b; outline-offset: 2px; background: #fff6e6; }
+.pb-b-selected-info { margin: .3rem 0; font-size: .8rem; color: #6f675c; }
+
+/* 變體 C：選取文字後彈出 */
+.pb-c-anchor { position: relative; }
+.pb-c-marker {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 1.2rem; height: 1.2rem; border-radius: 50%; margin-inline-end: .3rem;
+  background: #8a5a2b; color: #fff; font-size: .68rem; border: none; padding: 0;
+  vertical-align: middle;
+}
+.pb-c-popover {
+  position: absolute; z-index: 520; padding: .3rem .6rem; font-size: .78rem;
+  box-shadow: 0 2px 8px rgba(0,0,0,.2);
+}
+
+/* 列印：隱藏所有批註 UI，保留原始閱讀頁面 */
+@media print {
+  .pb-ui, .pb-print-hide, #pb-drawer, #pb-drawer-toggle, .pb-a-add-btn,
+  .pb-a-note, .pb-a-form, .pb-note, .pb-c-marker, .pb-c-popover,
+  #pb-toolbar, #pb-switcher, #pb-storage-banner {
+    display: none !important;
+  }
+  .pb-a-target, .pb-b-selectable, .pb-b-selected, .pb-c-anchor {
+    outline: none !important; background: none !important;
+  }
+}
