@@ -381,21 +381,10 @@ test("performance: a long run of unbalanced link-destination parens stays well u
   assert.ok(elapsed < 1000, `expected < 1000ms, took ${elapsed}ms`);
 });
 
-// NOTE: the in-scope fix (a hand-rolled prefix match + `slice` in
-// `parseItemMarker` and `parseCheckbox`, replacing the old `[ \t]+(.*)$`
-// capture) removes the catastrophic backtracking this module's own
-// list-marker/checkbox parsing used to add on top of a long space run
-// followed by a `\r` (which `.` never matches). Verified in isolation, the
-// fixed parsers are O(1) extra work for this input. A *much* longer version
-// of the same input (tens of thousands of spaces) still runs slowly end to
-// end, but that remaining cost is `scanMarkdownLines` / `trimDeclarationText`
-// (`packages/core/src/declarations.ts`) — an out-of-scope dependency with its
-// own, independent catastrophic-backtracking regex on a long `[ \t\r]` run,
-// outside this module and this task's stated file scope. These sizes stay
-// small enough that the out-of-scope cost is negligible, so the bound below
-// actually exercises the in-scope fix rather than the unrelated upstream one.
+// A long space run before a `\r` used to backtrack quadratically in both the
+// list-marker parser and the shared line trim (`trimDeclarationText`).
 test("performance: a list item with an embedded \\r completes quickly, not quadratically", () => {
-  const text = "- " + " ".repeat(4000) + "\r more";
+  const text = "- " + " ".repeat(200_000) + "\r more";
   const bytes = bytesOf(text);
 
   const start = performance.now();
@@ -406,7 +395,7 @@ test("performance: a list item with an embedded \\r completes quickly, not quadr
 });
 
 test("performance: a checkbox item with an embedded \\r completes quickly, not quadratically", () => {
-  const text = "- [ ] " + " ".repeat(3000) + "\r more";
+  const text = "- [ ] " + " ".repeat(200_000) + "\r more";
   const bytes = bytesOf(text);
 
   const start = performance.now();

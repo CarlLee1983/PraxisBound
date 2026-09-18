@@ -38,8 +38,18 @@ const placeholders = new Set([
  * tab, and space. Every other code point, Unicode whitespace included, is
  * content.
  */
+function isDeclarationSpace(character: string | undefined): boolean {
+  return character === " " || character === "\t" || character === "\r";
+}
+
+// Index scans, not `/[ \t\r]+$/`: that regex retries from every position of a
+// long whitespace run followed by other text, which is quadratic.
 export function trimDeclarationText(line: string): string {
-  return line.replace(/^[ \t\r]+/, "").replace(/[ \t\r]+$/, "");
+  let start = 0;
+  let end = line.length;
+  while (start < end && isDeclarationSpace(line[start])) start += 1;
+  while (end > start && isDeclarationSpace(line[end - 1])) end -= 1;
+  return line.slice(start, end);
 }
 
 const trim = trimDeclarationText;
