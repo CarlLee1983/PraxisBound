@@ -93,6 +93,11 @@ A human proposal to change a located part of a Review Batch; it carries no
 authority to change sources or grant work.
 _Avoid_: change order, approval, instruction
 
+**Revision Sheet**:
+One exported file carrying one or more Revision Requests for a Review Batch;
+it counts for nothing until an explicit import records it.
+_Avoid_: feedback file, review export, change list
+
 **Revision Response**:
 An Agent's recorded disposition of one Revision Request against a specific
 Requirement Fingerprint; historical Evidence, never human approval.
