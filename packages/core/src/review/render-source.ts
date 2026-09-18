@@ -11,6 +11,7 @@
  * Pure: no I/O, only the bytes and index facts the caller already holds.
  */
 
+import { escapeHtml } from "./html.js";
 import {
   adrExplicitId,
   ENTRY_SECTION_LABELS,
@@ -18,25 +19,20 @@ import {
   matchTopLevelVocab,
   STORY_FIXED_FIELDS,
 } from "./index.js";
-import { renderMarkdownHtml } from "./markdown-html.js";
+import {
+  renderMarkdownHtml,
+  scanMarkdownDocument,
+  type MarkdownDocument,
+} from "./markdown-html.js";
 import {
   readAcceptanceCheckboxLines,
   readSpecEntryId,
-  scanHeadingBlocks,
-  scanMarkdownLines,
   type HeadingBlock,
 } from "./markdown.js";
 import { locatorAttributes, type LocatorLookup } from "./render-locators.js";
 import type { SpecAcceptanceEntry, SpecIndex } from "./types.js";
 
-export function escapeHtml(value: string): string {
-  return value
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#39;");
-}
+export { escapeHtml } from "./html.js";
 
 export const MISSING_SECTION_TEXT = "未寫明";
 export const NO_STORY_TEXT = "無對應 Story";
@@ -128,18 +124,6 @@ function blockHeadingAttributes(
     heading.startOffset === block.startOffset ? own() : nested(heading);
 }
 
-/** Inserts one label span, in order, at the start of each sequential `<li>` in `html`. */
-function injectLabels(html: string, labels: readonly string[]): string {
-  let index = 0;
-  return html.replace(/<li([^>]*)>/g, (match, attributes: string) => {
-    const label = labels[index];
-    index += 1;
-    return label === undefined
-      ? match
-      : `<li${attributes}><span class="ac-id">${escapeHtml(label)}</span> `;
-  });
-}
-
 const specAcceptanceLinePattern = /^[-*]\s+AC-(\d+)[：:]/;
 
 /**
@@ -168,8 +152,7 @@ function hiddenLocatorAttributes(
  * already names the same field (contract §18).
  */
 function renderVocabBlock(
-  bytes: Uint8Array,
-  headings: readonly HeadingBlock[],
+  document: MarkdownDocument,
   heading: HeadingBlock | undefined,
   path: string,
   anchor: string,
@@ -179,9 +162,9 @@ function renderVocabBlock(
 ): string | undefined {
   if (heading === undefined) return undefined;
   return renderMarkdownHtml(
-    bytes,
+    document,
     heading.startOffset,
-    boundedEnd(headings, heading),
+    boundedEnd(document.headings, heading),
     {
       headingLevelOffset: 4,
       headingAttributes: blockHeadingAttributes(
@@ -202,28 +185,26 @@ function renderEntryAcceptance(
   entryId: string,
   acceptance: readonly SpecAcceptanceEntry[],
   acceptanceHeading: HeadingBlock | undefined,
-  headings: readonly HeadingBlock[],
-  bytes: Uint8Array,
+  document: MarkdownDocument,
   lookup: LocatorLookup,
 ): string {
   if (acceptance.length === 0)
     return `<p class="muted">${MISSING_SECTION_TEXT}</p>`;
-  const labels = acceptance.map((item) => `${entryId}/${item.id}`);
   if (acceptanceHeading === undefined) {
     // No dedicated Acceptance heading recognized; the AC lines are still
     // indexed (§5 scans the whole entry), but this projection labels them
     // without their surrounding prose in that unusual shape.
     return acceptance
       .map(
-        (item, position) =>
-          `<p><span class="ac-id">${escapeHtml(labels[position] as string)}</span> ${escapeHtml(item.id)}</p>`,
+        (item) =>
+          `<p><span class="ac-id">${escapeHtml(`${entryId}/${item.id}`)}</span> ${escapeHtml(item.id)}</p>`,
       )
       .join("");
   }
-  const html = renderMarkdownHtml(
-    bytes,
+  return renderMarkdownHtml(
+    document,
     acceptanceHeading.startOffset,
-    boundedEnd(headings, acceptanceHeading),
+    boundedEnd(document.headings, acceptanceHeading),
     {
       headingLevelOffset: 4,
       headingAttributes: blockHeadingAttributes(
@@ -242,9 +223,15 @@ function renderEntryAcceptance(
         if (match === null) return undefined;
         return locatorAttributes(lookup, specPath, `${entryId}/AC-${match[1]}`);
       },
+      // Computed from the same line `listItemAttributes` just matched, so a
+      // non-AC bullet, a nested sub-bullet, or an out-of-order AC id can
+      // never shift which `<li>` a label lands on (contract §18).
+      listItemPrefix: (line) => {
+        const match = specAcceptanceLinePattern.exec(line.trimmed);
+        return match === null ? undefined : `${entryId}/AC-${match[1]}`;
+      },
     },
   );
-  return injectLabels(html, labels);
 }
 
 function renderEntryDetail(
@@ -254,8 +241,7 @@ function renderEntryDetail(
   entryEnd: number,
   subheadings: readonly HeadingBlock[],
   kept: ReadonlySet<HeadingBlock>,
-  headings: readonly HeadingBlock[],
-  bytes: Uint8Array,
+  document: MarkdownDocument,
   lookup: LocatorLookup,
 ): string {
   const headingAttributes = (heading: HeadingBlock) =>
@@ -266,7 +252,7 @@ function renderEntryDetail(
   // elsewhere (Goal/Acceptance/Non-goals) must never bleed into this span.
   const frontEnd = subheadings[0]?.startOffset ?? entryEnd;
   const blocks = [
-    renderMarkdownHtml(bytes, entryHeading.startOffset, frontEnd, {
+    renderMarkdownHtml(document, entryHeading.startOffset, frontEnd, {
       headingAttributes,
     }),
   ];
@@ -274,9 +260,9 @@ function renderEntryDetail(
     if (!kept.has(heading)) continue;
     blocks.push(
       renderMarkdownHtml(
-        bytes,
+        document,
         heading.startOffset,
-        boundedEnd(headings, heading),
+        boundedEnd(document.headings, heading),
         {
           headingAttributes,
         },
@@ -306,8 +292,8 @@ export function partitionSpecDocument(
   bytes: Uint8Array,
   lookup: LocatorLookup,
 ): SpecDocumentContent {
-  const lines = scanMarkdownLines(bytes);
-  const headings = scanHeadingBlocks(bytes, lines);
+  const document = scanMarkdownDocument(bytes);
+  const headings = document.headings;
 
   const goalHeading = headings.find(
     (heading) =>
@@ -364,8 +350,7 @@ export function partitionSpecDocument(
     entries.set(entry.id, {
       goalCellHtml:
         renderVocabBlock(
-          bytes,
-          headings,
+          document,
           entryGoal,
           spec.path,
           `${entry.id}/Goal`,
@@ -375,8 +360,7 @@ export function partitionSpecDocument(
         ) ?? `<p class="muted">${MISSING_SECTION_TEXT}</p>`,
       nonGoalsCellHtml:
         renderVocabBlock(
-          bytes,
-          headings,
+          document,
           entryNonGoals,
           spec.path,
           `${entry.id}/Non-goals`,
@@ -389,8 +373,7 @@ export function partitionSpecDocument(
         entry.id,
         entry.acceptance,
         entryAcceptance,
-        headings,
-        bytes,
+        document,
         lookup,
       ),
       detailHtml: renderEntryDetail(
@@ -400,8 +383,7 @@ export function partitionSpecDocument(
         entryEnd,
         subheadings,
         kept,
-        headings,
-        bytes,
+        document,
         lookup,
       ),
     });
@@ -423,7 +405,7 @@ export function partitionSpecDocument(
     if (heading.level > 2) continue;
     if (consumedTopLevel.has(heading)) continue;
     const html = renderMarkdownHtml(
-      bytes,
+      document,
       heading.startOffset,
       boundedEnd(headings, heading),
       {
@@ -440,8 +422,7 @@ export function partitionSpecDocument(
 
   return {
     goalHtml: renderVocabBlock(
-      bytes,
-      headings,
+      document,
       goalHeading,
       spec.path,
       "Goal",
@@ -449,8 +430,7 @@ export function partitionSpecDocument(
       undefined,
     ),
     nonGoalsHtml: renderVocabBlock(
-      bytes,
-      headings,
+      document,
       nonGoalsHeading,
       spec.path,
       "Non-goals",
@@ -489,8 +469,8 @@ export function partitionStoryDocument(
   bytes: Uint8Array,
   lookup: LocatorLookup,
 ): StoryContent {
-  const lines = scanMarkdownLines(bytes);
-  const headings = scanHeadingBlocks(bytes, lines);
+  const document = scanMarkdownDocument(bytes);
+  const headings = document.headings;
 
   const focusHeadings = new Map<string, HeadingBlock>();
   for (const heading of headings) {
@@ -507,7 +487,7 @@ export function partitionStoryDocument(
     // The Chinese caption is interface text (R13); the source heading itself
     // still renders (demoted) so its own text and Locator are not dropped.
     const body = renderMarkdownHtml(
-      bytes,
+      document,
       heading.startOffset,
       boundedEnd(headings, heading),
       {
@@ -534,7 +514,7 @@ export function partitionStoryDocument(
     if (heading.level > 2) continue;
     if (focusHeadings.get(heading.text) === heading) continue;
     const html = renderMarkdownHtml(
-      bytes,
+      document,
       heading.startOffset,
       boundedEnd(headings, heading),
       {
@@ -568,9 +548,9 @@ export function partitionAcceptanceDocument(
   bytes: Uint8Array,
   lookup: LocatorLookup,
 ): AcceptanceContent {
-  const lines = scanMarkdownLines(bytes);
-  const headings = scanHeadingBlocks(bytes, lines);
-  const checkboxLines = readAcceptanceCheckboxLines(lines);
+  const document = scanMarkdownDocument(bytes);
+  const headings = document.headings;
+  const checkboxLines = readAcceptanceCheckboxLines(document.lines);
 
   const consumed = new Set<HeadingBlock>();
   const groups: string[] = [];
@@ -584,16 +564,16 @@ export function partitionAcceptanceDocument(
     );
     if (withinLines.length === 0) continue;
     consumed.add(heading);
-    const labels = withinLines.map((line) => `${storyId}/${line.id}`);
-    const body = renderMarkdownHtml(bytes, heading.startOffset, end, {
+    const stripBullet = (trimmed: string): string | undefined =>
+      trimmed.startsWith("* ") || trimmed.startsWith("- ")
+        ? trimmed.slice(2)
+        : undefined;
+    const body = renderMarkdownHtml(document, heading.startOffset, end, {
       headingLevelOffset: 2,
       headingAttributes: (candidate) =>
         locatorAttributes(lookup, acceptancePath, candidate.headingPath),
       listItemAttributes: (line) => {
-        const stripped =
-          line.trimmed.startsWith("* ") || line.trimmed.startsWith("- ")
-            ? line.trimmed.slice(2)
-            : undefined;
+        const stripped = stripBullet(line.trimmed);
         const match =
           stripped === undefined
             ? null
@@ -601,10 +581,18 @@ export function partitionAcceptanceDocument(
         if (match === null) return undefined;
         return locatorAttributes(lookup, acceptancePath, match[2] as string);
       },
+      // Computed from the same line `listItemAttributes` just matched, so
+      // the label always names its own `<li>` (contract §18).
+      listItemPrefix: (line) => {
+        const stripped = stripBullet(line.trimmed);
+        const match =
+          stripped === undefined
+            ? null
+            : acceptanceCheckboxLinePattern.exec(stripped);
+        return match === null ? undefined : `${storyId}/${match[2]}`;
+      },
     });
-    groups.push(
-      `<section class="acceptance-group">${injectLabels(body, labels)}</section>`,
-    );
+    groups.push(`<section class="acceptance-group">${body}</section>`);
   }
 
   const acceptanceGroupsHtml =
@@ -617,7 +605,7 @@ export function partitionAcceptanceDocument(
     if (heading.level > 2) continue;
     if (consumed.has(heading)) continue;
     const html = renderMarkdownHtml(
-      bytes,
+      document,
       heading.startOffset,
       boundedEnd(headings, heading),
       {
@@ -651,14 +639,15 @@ export function renderAdrAppendix(
   bytes: Uint8Array,
   lookup: LocatorLookup,
 ): string {
-  const lines = scanMarkdownLines(bytes);
-  const headings = scanHeadingBlocks(bytes, lines);
-  return renderMarkdownHtml(bytes, 0, bytes.length, {
+  const document = scanMarkdownDocument(bytes);
+  const position = new Map(
+    document.headings.map((heading, index) => [heading.startOffset, index]),
+  );
+  return renderMarkdownHtml(document, 0, bytes.length, {
     headingAttributes: (heading) => {
-      const position = headings.findIndex(
-        (candidate) => candidate.startOffset === heading.startOffset,
-      );
-      const anchor = adrExplicitId(heading, position) ?? heading.headingPath;
+      const anchor =
+        adrExplicitId(heading, position.get(heading.startOffset) ?? -1) ??
+        heading.headingPath;
       return locatorAttributes(lookup, path, anchor);
     },
   });

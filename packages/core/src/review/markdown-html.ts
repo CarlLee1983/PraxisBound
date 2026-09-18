@@ -3,11 +3,15 @@
  *
  * Built on `scanMarkdownLines` / `scanHeadingBlocks` (`markdown.ts`) so index
  * and projection agree on every heading and fence boundary; this module adds
- * no second line/fence scanner of its own. Pure: no I/O, no globals, no
- * mutation of its inputs. Source text is always escaped; only `http:`,
- * `https:` and in-page fragment links ever carry an `href` (contract §18).
+ * no second line/fence scanner of its own. A caller scans a document once
+ * with `scanMarkdownDocument` and passes the result to every
+ * `renderMarkdownHtml` call for that document, so rendering many blocks from
+ * the same source never rescans it. Pure: no I/O, no globals, no mutation of
+ * its inputs. Source text is always escaped; only `http:`, `https:` and
+ * in-page fragment links ever carry an `href` (contract §18).
  */
 
+import { escapeHtml } from "./html.js";
 import {
   scanHeadingBlocks,
   scanMarkdownLines,
@@ -15,11 +19,27 @@ import {
   type MarkdownLine,
 } from "./markdown.js";
 
+/** One document scanned once; share this across every `renderMarkdownHtml` call for it. */
+export interface MarkdownDocument {
+  readonly bytes: Uint8Array;
+  readonly lines: readonly MarkdownLine[];
+  readonly headings: readonly HeadingBlock[];
+  readonly headingByStart: ReadonlyMap<number, HeadingBlock>;
+}
+
+/** Scans `bytes` once for lines and headings; reuse the result across calls. */
+export function scanMarkdownDocument(bytes: Uint8Array): MarkdownDocument {
+  const lines = scanMarkdownLines(bytes);
+  const headings = scanHeadingBlocks(bytes, lines);
+  const headingByStart = new Map(
+    headings.map((heading) => [heading.startOffset, heading]),
+  );
+  return { bytes, lines, headings, headingByStart };
+}
+
 export interface MarkdownHtmlOptions {
   /** Added to every source heading level (clamped to 6). */
   readonly headingLevelOffset?: number;
-  /** Omit the heading line at exactly `start`, when the caller renders that heading itself. */
-  readonly omitLeadingHeading?: boolean;
   /** Extra attributes for a heading, keyed by its HeadingBlock; values are escaped by you. */
   readonly headingAttributes?: (
     heading: HeadingBlock,
@@ -28,15 +48,13 @@ export interface MarkdownHtmlOptions {
   readonly listItemAttributes?: (
     line: MarkdownLine,
   ) => Readonly<Record<string, string>> | undefined;
-}
-
-function escapeHtml(value: string): string {
-  return value
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#39;");
+  /**
+   * A plain-text label to show at the start of a list item, keyed by the
+   * MarkdownLine that starts it (e.g. an `R-NNN/AC-NNN` id). Rendered as an
+   * escaped `<span class="ac-id">` this module owns, so the caller never
+   * builds HTML around a rendered fragment by hand.
+   */
+  readonly listItemPrefix?: (line: MarkdownLine) => string | undefined;
 }
 
 function renderAttributes(
@@ -89,22 +107,43 @@ function canOpenEmphasis(text: string, index: number): boolean {
   );
 }
 
-function findEmphasisClose(
+/**
+ * Every index in `text` where `delimiter` could close emphasis, ascending.
+ * Computed once per `renderInline` call so each opener's search below is a
+ * binary search rather than a fresh linear scan (avoids the O(n^2) blowup a
+ * long run of unmatched openers, e.g. `" _a".repeat(n)`, would otherwise cause).
+ */
+function emphasisClosePositions(
   text: string,
   delimiter: string,
-  from: number,
-): number {
-  for (let index = from; index < text.length; index += 1) {
+): readonly number[] {
+  const positions: number[] = [];
+  for (let index = 0; index < text.length; index += 1) {
     if (text[index] !== delimiter) continue;
     const previous = text[index - 1];
     if (previous === undefined || whitespace.test(previous)) continue;
     const next = text[index + 1];
     if (delimiter === "_" && next !== undefined && wordCharacter.test(next))
       continue;
-    return index;
+    positions.push(index);
   }
-  return -1;
+  return positions;
 }
+
+/** First entry of the ascending `positions` that is `>= from`, or -1. */
+function findEmphasisClose(positions: readonly number[], from: number): number {
+  let low = 0;
+  let high = positions.length;
+  while (low < high) {
+    const mid = (low + high) >>> 1;
+    if ((positions[mid] as number) < from) low = mid + 1;
+    else high = mid;
+  }
+  return low < positions.length ? (positions[low] as number) : -1;
+}
+
+/** A link destination's parenthesis nesting gives up past this depth (CommonMark-style cap). */
+const MAX_LINK_PAREN_DEPTH = 32;
 
 /** Code spans, links, strong and em; every other character is escaped text. */
 function renderInline(text: string): string {
@@ -115,6 +154,9 @@ function renderInline(text: string): string {
     output += escapeHtml(plain);
     plain = "";
   };
+
+  const underscoreCloses = emphasisClosePositions(text, "_");
+  const asteriskCloses = emphasisClosePositions(text, "*");
 
   let index = 0;
   while (index < text.length) {
@@ -139,6 +181,7 @@ function renderInline(text: string): string {
           if (text[cursor] === "(") depth += 1;
           else if (text[cursor] === ")") depth -= 1;
           cursor += 1;
+          if (depth > MAX_LINK_PAREN_DEPTH) break;
         }
         if (depth === 0) {
           flush();
@@ -165,7 +208,10 @@ function renderInline(text: string): string {
       (character === "*" || character === "_") &&
       canOpenEmphasis(text, index)
     ) {
-      const end = findEmphasisClose(text, character, index + 1);
+      const end = findEmphasisClose(
+        character === "_" ? underscoreCloses : asteriskCloses,
+        index + 1,
+      );
       if (end !== -1 && end > index + 1) {
         flush();
         output += `<em>${renderInline(text.slice(index + 1, end))}</em>`;
@@ -180,13 +226,6 @@ function renderInline(text: string): string {
 
   flush();
   return output;
-}
-
-/** Exposes the shared inline renderer so callers composing labels around a
- * rendered fragment (e.g. an `R-NNN/AC-NNN` prefix) reuse the same escaping,
- * code-span, link, and emphasis rules rather than re-implementing them. */
-export function renderMarkdownInline(text: string): string {
-  return renderInline(text);
 }
 
 function isAsciiVisible(character: string): boolean {
@@ -252,7 +291,28 @@ function stripBlockQuote(trimmed: string): string {
   return trimmed.replace(/^>[ \t]?/, "");
 }
 
-function renderBlockQuote(group: readonly MarkdownLine[]): string {
+/**
+ * A block quote whose stripped first line starts a list renders that list
+ * (the simplest correct behavior for the common case); anything else still
+ * renders as one joined paragraph, as before. Full block-quote nesting
+ * (mixed prose and lists, nested quotes) is out of scope here.
+ */
+function renderBlockQuote(
+  group: readonly MarkdownLine[],
+  headingByStart: ReadonlyMap<number, HeadingBlock>,
+  options: MarkdownHtmlOptions,
+): string {
+  const stripped = group.map((line) => ({
+    ...line,
+    text: stripBlockQuote(line.trimmed),
+    trimmed: stripBlockQuote(line.trimmed),
+    fenced: false,
+  }));
+  const first = stripped[0];
+  if (first !== undefined && parseItemMarker(first.trimmed) !== undefined) {
+    const list = parseList(stripped, 0, headingByStart, options);
+    return `<blockquote>${list.html}</blockquote>`;
+  }
   const texts = group.map((line) => stripBlockQuote(line.trimmed));
   return `<blockquote><p>${joinInline(texts)}</p></blockquote>`;
 }
@@ -261,8 +321,26 @@ function renderParagraph(group: readonly MarkdownLine[]): string {
   return `<p>${joinInline(group.map((line) => line.trimmed))}</p>`;
 }
 
+function isThematicBreak(trimmed: string): boolean {
+  if (trimmed.length < 3) return false;
+  const character = trimmed[0];
+  if (character !== "-" && character !== "_" && character !== "*") return false;
+  let count = 0;
+  for (const candidate of trimmed) {
+    if (candidate === character) {
+      count += 1;
+      continue;
+    }
+    if (candidate === " " || candidate === "\t") continue;
+    return false;
+  }
+  return count >= 3;
+}
+
+// A single column still has one leading and one trailing `-{3,}` run with no
+// further `|`-separated repeats, so the repeated group is optional.
 function isTableDivider(trimmed: string): boolean {
-  return /^\s*\|?\s*:?-{3,}:?\s*(?:\|\s*:?-{3,}:?\s*)+\|?\s*$/.test(trimmed);
+  return /^\s*\|?\s*:?-{3,}:?\s*(?:\|\s*:?-{3,}:?\s*)*\|?\s*$/.test(trimmed);
 }
 
 /** Splits one pipe-table row into cells; `\|` stays a literal pipe rather than a separator. */
@@ -330,29 +408,63 @@ function indentOf(line: MarkdownLine): number {
   return match === null ? 0 : match[0].length;
 }
 
-const itemPattern = /^([-*]|\d+\.)[ \t]+(.*)$/;
-const checkboxPattern = /^\[([ xX])\][ \t]+(.*)$/;
-
+/**
+ * Matches an unordered (`-`, `*`, `+`) or ordered (`1.`, `1)`) list marker at
+ * the start of `trimmed`, returning the unconsumed rest. A hand-rolled
+ * prefix match plus `slice` rather than a single `(.*)$` capture group, so a
+ * line holding a stray `\r` (which `.` never matches) cannot force the regex
+ * engine to backtrack across the whole line looking for a split that works.
+ */
 function parseItemMarker(
   trimmed: string,
 ): { readonly ordered: boolean; readonly rest: string } | undefined {
-  const match = itemPattern.exec(trimmed);
+  const bullet = /^[-*+][ \t]+/.exec(trimmed);
+  if (bullet !== null)
+    return { ordered: false, rest: trimmed.slice(bullet[0].length) };
+  const ordered = /^\d+[.)][ \t]+/.exec(trimmed);
+  if (ordered !== null)
+    return { ordered: true, rest: trimmed.slice(ordered[0].length) };
+  return undefined;
+}
+
+/** Same hand-rolled-prefix approach as `parseItemMarker`, for the same reason. */
+function parseCheckbox(
+  text: string,
+): { readonly glyph: string; readonly rest: string } | undefined {
+  const match = /^\[([ xX])\][ \t]+/.exec(text);
   if (match === null) return undefined;
-  return { ordered: /\d/.test(match[1] as string), rest: match[2] as string };
+  return { glyph: match[1] as string, rest: text.slice(match[0].length) };
 }
 
 /** A `[ ]`/`[x]`/`[X]` at item start renders as a non-interactive glyph, never a control (AC-009). */
 function renderItemText(text: string): string {
-  const checkbox = checkboxPattern.exec(text);
-  if (checkbox === null) return renderInline(text);
-  const glyph = checkbox[1] === " " ? "☐" : "☑";
-  return `<span class="checkbox-glyph" aria-hidden="true">${glyph}</span> ${renderInline(checkbox[2] as string)}`;
+  const checkbox = parseCheckbox(text);
+  if (checkbox === undefined) return renderInline(text);
+  const glyph = checkbox.glyph === " " ? "☐" : "☑";
+  return `<span class="checkbox-glyph" aria-hidden="true">${glyph}</span> ${renderInline(checkbox.rest)}`;
 }
 
-/** Parses one list level starting at `start`; one further level of nesting comes from recursion. */
+function listItemPrefixHtml(
+  options: MarkdownHtmlOptions,
+  line: MarkdownLine,
+): string {
+  const label = options.listItemPrefix?.(line);
+  return label === undefined
+    ? ""
+    : `<span class="ac-id">${escapeHtml(label)}</span> `;
+}
+
+/**
+ * Parses one list level starting at `start`. Every line at deeper indent
+ * gets consumed either as this item's continuation text or as a further
+ * nested list (recursing one level at a time, however many levels or
+ * indentation shapes the source actually uses) — never dropped, however
+ * irregular the indentation (AC-004).
+ */
 function parseList(
   lines: readonly MarkdownLine[],
   start: number,
+  headingByStart: ReadonlyMap<number, HeadingBlock>,
   options: MarkdownHtmlOptions,
 ): { html: string; consumed: number } {
   const baseIndent = indentOf(lines[start] as MarkdownLine);
@@ -386,35 +498,40 @@ function parseList(
       index += 1;
     }
 
-    let splitAt = nested.length;
-    for (let position = 0; position < nested.length; position += 1) {
-      if (
-        parseItemMarker((nested[position] as MarkdownLine).trimmed) !==
-        undefined
-      ) {
-        splitAt = position;
-        break;
+    let body = renderItemText(marker.rest);
+    let lastPlain: string | undefined = marker.rest;
+    let cursor = 0;
+    while (cursor < nested.length) {
+      const candidate = nested[cursor] as MarkdownLine;
+      const nestedHeading = headingByStart.get(candidate.start);
+      if (nestedHeading !== undefined) {
+        body += renderHeading(nestedHeading, options);
+        lastPlain = undefined;
+        cursor += 1;
+        continue;
       }
+      if (parseItemMarker(candidate.trimmed) === undefined) {
+        const text = candidate.trimmed;
+        const separator =
+          lastPlain !== undefined &&
+          isAsciiVisible(lastPlain.slice(-1)) &&
+          isAsciiVisible(text.slice(0, 1))
+            ? " "
+            : "";
+        body += separator + renderInline(text);
+        lastPlain = text;
+        cursor += 1;
+        continue;
+      }
+      const sub = parseList(nested, cursor, headingByStart, options);
+      body += sub.html;
+      lastPlain = undefined;
+      cursor += Math.max(sub.consumed, 1);
     }
-    const continuation = nested.slice(0, splitAt).map((line) => line.trimmed);
-    const texts = [marker.rest, ...continuation];
 
-    let body = renderItemText(texts[0] as string);
-    for (let position = 1; position < texts.length; position += 1) {
-      const previous = texts[position - 1] as string;
-      const current = texts[position] as string;
-      const separator =
-        isAsciiVisible(previous.slice(-1)) &&
-        isAsciiVisible(current.slice(0, 1))
-          ? " "
-          : "";
-      body += separator + renderInline(current);
-    }
-
-    const nestedHtml =
-      splitAt < nested.length ? parseList(nested, splitAt, options).html : "";
     const attributes = options.listItemAttributes?.(itemLine);
-    items.push(`<li${renderAttributes(attributes)}>${body}${nestedHtml}</li>`);
+    const prefix = listItemPrefixHtml(options, itemLine);
+    items.push(`<li${renderAttributes(attributes)}>${prefix}${body}</li>`);
   }
 
   const tag = ordered ? "ol" : "ul";
@@ -424,24 +541,38 @@ function parseList(
   };
 }
 
+/** First index in the ascending-by-`start` `lines` whose `start` is `>= value`. */
+function lowerBoundByStart(
+  lines: readonly MarkdownLine[],
+  value: number,
+): number {
+  let low = 0;
+  let high = lines.length;
+  while (low < high) {
+    const mid = (low + high) >>> 1;
+    if ((lines[mid] as MarkdownLine).start < value) low = mid + 1;
+    else high = mid;
+  }
+  return low;
+}
+
 /**
  * Renders the Markdown lines whose `start` lies in `[start, end)` as HTML,
- * sharing block boundaries with `scanMarkdownLines` / `scanHeadingBlocks` so
- * index and projection locators agree (contract §18).
+ * sharing block boundaries with `scanMarkdownLines` / `scanHeadingBlocks` (via
+ * `document`) so index and projection locators agree (contract §18). Scan
+ * `document` once per source with `scanMarkdownDocument` and reuse it across
+ * every call for that source; this function itself never rescans.
  */
 export function renderMarkdownHtml(
-  bytes: Uint8Array,
+  document: MarkdownDocument,
   start: number,
   end: number,
   options: MarkdownHtmlOptions = {},
 ): string {
-  const allLines = scanMarkdownLines(bytes);
-  const headings = scanHeadingBlocks(bytes, allLines);
-  const headingByStart = new Map(
-    headings.map((heading) => [heading.startOffset, heading]),
-  );
-  const lines = allLines.filter(
-    (line) => line.start >= start && line.start < end,
+  const { headingByStart } = document;
+  const lines = document.lines.slice(
+    lowerBoundByStart(document.lines, start),
+    lowerBoundByStart(document.lines, end),
   );
 
   const blocks: string[] = [];
@@ -451,26 +582,49 @@ export function renderMarkdownHtml(
     const line = lines[index] as MarkdownLine;
 
     if (line.fenced) {
-      const group: MarkdownLine[] = [];
+      // A maximal run of fenced lines may hold more than one fence: split it
+      // on every fence-marker line so two adjacent fences render as two
+      // separate blocks instead of one, with the second fence's opener
+      // showing up as literal text (AC-005).
       while (index < lines.length && (lines[index] as MarkdownLine).fenced) {
-        group.push(lines[index] as MarkdownLine);
+        const group: MarkdownLine[] = [lines[index] as MarkdownLine];
         index += 1;
+        while (
+          index < lines.length &&
+          (lines[index] as MarkdownLine).fenced &&
+          !isFenceMarkerLine((lines[index] as MarkdownLine).trimmed)
+        ) {
+          group.push(lines[index] as MarkdownLine);
+          index += 1;
+        }
+        if (
+          index < lines.length &&
+          (lines[index] as MarkdownLine).fenced &&
+          isFenceMarkerLine((lines[index] as MarkdownLine).trimmed)
+        ) {
+          group.push(lines[index] as MarkdownLine);
+          index += 1;
+        }
+        blocks.push(renderFence(group));
       }
-      blocks.push(renderFence(group));
       continue;
     }
 
     const heading = headingByStart.get(line.start);
     if (heading !== undefined) {
       index += 1;
-      if (options.omitLeadingHeading === true && heading.startOffset === start)
-        continue;
       blocks.push(renderHeading(heading, options));
       continue;
     }
 
     if (line.trimmed === "") {
       index += 1;
+      continue;
+    }
+
+    if (isThematicBreak(line.trimmed)) {
+      index += 1;
+      blocks.push("<hr>");
       continue;
     }
 
@@ -497,12 +651,12 @@ export function renderMarkdownHtml(
         group.push(lines[index] as MarkdownLine);
         index += 1;
       }
-      blocks.push(renderBlockQuote(group));
+      blocks.push(renderBlockQuote(group, headingByStart, options));
       continue;
     }
 
     if (parseItemMarker(line.trimmed) !== undefined) {
-      const list = parseList(lines, index, options);
+      const list = parseList(lines, index, headingByStart, options);
       blocks.push(list.html);
       index += list.consumed;
       continue;
@@ -514,6 +668,7 @@ export function renderMarkdownHtml(
       if (candidate.fenced) break;
       if (headingByStart.has(candidate.start)) break;
       if (candidate.trimmed === "") break;
+      if (isThematicBreak(candidate.trimmed)) break;
       if (isBlockQuoteLine(candidate.trimmed)) break;
       if (parseItemMarker(candidate.trimmed) !== undefined) break;
       const following = lines[index + 1];

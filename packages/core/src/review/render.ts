@@ -9,7 +9,7 @@
  * its inline CSS. Pure: no I/O, no globals, no mutation of its inputs.
  */
 
-import { renderMarkdownHtml } from "./markdown-html.js";
+import { renderMarkdownHtml, scanMarkdownDocument } from "./markdown-html.js";
 import {
   buildLocatorLookup,
   elementId,
@@ -45,6 +45,12 @@ export interface ReviewProjectionDocument {
 }
 
 const MISSING_SOURCE_TEXT = "產生本次離線快照時，此來源無法讀取。";
+
+function renderPreface(preface: string): string {
+  const bytes = new TextEncoder().encode(preface);
+  const document = scanMarkdownDocument(bytes);
+  return renderMarkdownHtml(document, 0, bytes.length);
+}
 
 function firstH1Text(bytes: Uint8Array): string | undefined {
   const text = new TextDecoder("utf-8").decode(bytes);
@@ -436,11 +442,7 @@ export function renderReviewProjection(
   const prefaceHtml =
     index.preface === undefined
       ? ""
-      : `<section class="preface"><h2>審閱導言</h2><p class="label">由批次作者撰寫（Review Preface）</p>${renderMarkdownHtml(
-          new TextEncoder().encode(index.preface),
-          0,
-          new TextEncoder().encode(index.preface).length,
-        )}</section>`;
+      : `<section class="preface"><h2>審閱導言</h2><p class="label">由批次作者撰寫（Review Preface）</p>${renderPreface(index.preface)}</section>`;
 
   const appendixHtml = renderAppendix(
     index,

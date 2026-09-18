@@ -129,6 +129,8 @@ packed_packages_have_the_bounded_public_contract() {
     './dist/result.js' \
     './dist/review/fingerprint.d.ts' \
     './dist/review/fingerprint.js' \
+    './dist/review/html.d.ts' \
+    './dist/review/html.js' \
     './dist/review/index.d.ts' \
     './dist/review/index.js' \
     './dist/review/manifest.d.ts' \

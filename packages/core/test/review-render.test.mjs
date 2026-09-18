@@ -35,8 +35,10 @@ Entry one goal sentence GOAL_SENTENCE_R001 <script>alert(1)</script><img src=x o
 
 ### Acceptance
 
-- AC-001：Entry one acceptance sentence AC_SENTENCE_R001_1.
+- Not an AC bullet, prose only NOTANAC_SENTENCE_R001.
 - AC-002：Entry one acceptance sentence AC_SENTENCE_R001_2.
+ - Nested detail sentence NESTED_AC_SENTENCE_R001.
+- AC-001：Entry one acceptance sentence AC_SENTENCE_R001_1.
 
 ### Out of Scope
 
@@ -386,8 +388,10 @@ test("TST022-AC-004: every source block renders exactly once outside the raw app
     "NONGOALS_SENTENCE_SPEC",
     "UNRECOGNIZED_SENTENCE_SPEC",
     "GOAL_SENTENCE_R001",
+    "NOTANAC_SENTENCE_R001",
     "AC_SENTENCE_R001_1",
     "AC_SENTENCE_R001_2",
+    "NESTED_AC_SENTENCE_R001",
     "NONGOALS_SENTENCE_R001",
     "DEPENDENCIES_SENTENCE_R001",
     "GOAL_SENTENCE_R002",
@@ -422,7 +426,7 @@ test("TST022-AC-004: every source block renders exactly once outside the raw app
     for (const rawLine of text.split("\n")) {
       const stripped = rawLine
         .replace(/^#{1,6}\s+/, "")
-        .replace(/^[-*]\s+(?:\[[ xX]\]\s+)?/, "")
+        .replace(/^\s*[-*]\s+(?:\[[ xX]\]\s+)?/, "")
         .replace(/^\*\s+Status:\s*/, "")
         .trim();
       if (stripped === "") continue;
@@ -485,6 +489,32 @@ function escapeAttribute(value) {
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#39;");
 }
+
+test("TST022-AC-004: an AC label always names its own <li>'s data-anchor, even with a non-AC bullet, a nested sub-bullet, and out-of-order ids", () => {
+  const acListItem =
+    /<li[^>]*><span class="ac-id">([^<]+)<\/span>[\s\S]*?<\/li>/g;
+  const withAnchor = /data-anchor="([^"]+)"/;
+  let sawAny = false;
+  for (const match of html.matchAll(acListItem)) {
+    const label = match[1];
+    const anchor = withAnchor.exec(match[0])?.[1];
+    if (anchor === undefined) continue;
+    sawAny = true;
+    const decodedAnchor = anchor.replaceAll("&gt;", ">");
+    // The label is the qualified form of its own `<li>`'s anchor: identical
+    // when the anchor is already qualified (Spec `R-NNN/AC-NNN`), or the
+    // anchor prefixed with its Story id when the source Locator itself is
+    // only path-scoped (`acceptance.md`'s bare `AC-NNN`).
+    assert.ok(
+      label === decodedAnchor || label.endsWith(`/${decodedAnchor}`),
+      `label ${label} must be the qualified form of its own <li>'s data-anchor ${decodedAnchor}`,
+    );
+  }
+  assert.ok(
+    sawAny,
+    "expected at least one labeled <li> with a locator to check",
+  );
+});
 
 test("TST022-AC-009: the projection never claims PASS, completion, or approval; checkboxes are glyphs only", () => {
   assert.doesNotMatch(html, /<input/i);
