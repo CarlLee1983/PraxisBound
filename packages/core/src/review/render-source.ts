@@ -18,7 +18,7 @@ import {
   matchEntrySectionVocab,
   matchTopLevelVocab,
   STORY_FIXED_FIELDS,
-} from "./index.js";
+} from "./vocabulary.js";
 import {
   renderMarkdownHtml,
   scanMarkdownDocument,
@@ -26,10 +26,15 @@ import {
 } from "./markdown-html.js";
 import {
   readAcceptanceCheckboxLines,
+  readSpecAcceptanceLines,
   readSpecEntryId,
   type HeadingBlock,
 } from "./markdown.js";
-import { locatorAttributes, type LocatorLookup } from "./render-locators.js";
+import {
+  headingBlockLocatorAttributes,
+  locatorAttributes,
+  type LocatorLookup,
+} from "./render-locators.js";
 import type { SpecAcceptanceEntry, SpecIndex } from "./types.js";
 
 export { escapeHtml } from "./html.js";
@@ -92,6 +97,22 @@ function boundedEnd(
     : Math.min(heading.endOffset, next.startOffset);
 }
 
+/**
+ * The document's own leading text, before its first heading (any level or
+ * none at all counts as "no leading text"). Contract §18 places every source
+ * block somewhere in the projection; a document can carry prose above its
+ * first heading that no heading-anchored partition ever reaches, so this
+ * span is appended to that document's own appendix group.
+ */
+function leadingAppendixSection(
+  document: MarkdownDocument,
+  path: string,
+): AppendixSection | undefined {
+  const firstStart = document.headings[0]?.startOffset;
+  if (firstStart === undefined || firstStart === 0) return undefined;
+  return { path, html: renderMarkdownHtml(document, 0, firstStart) };
+}
+
 /** The anchor `index.ts` would assign this Spec heading (contract §5). */
 function specHeadingAnchor(
   heading: HeadingBlock,
@@ -127,17 +148,26 @@ function blockHeadingAttributes(
 const specAcceptanceLinePattern = /^[-*]\s+AC-(\d+)[：:]/;
 
 /**
- * Same as `locatorAttributes`, but visually hides the element. Used where the
- * caller already shows an equivalent Chinese caption for this vocabulary
- * heading, so the source heading stays in the DOM (locator, accessibility
- * tree) without displaying the same label a second time on screen or print.
+ * Same as `headingBlockLocatorAttributes`, but visually hides the element.
+ * Used where the caller already shows an equivalent Chinese caption for this
+ * vocabulary heading, so the source heading stays in the DOM (locator,
+ * accessibility tree) without displaying the same label a second time on
+ * screen or print.
  */
 function hiddenLocatorAttributes(
   lookup: LocatorLookup,
   path: string,
   anchor: string,
+  bytes: Uint8Array,
+  heading: HeadingBlock,
 ): Record<string, string> | undefined {
-  const attributes = locatorAttributes(lookup, path, anchor);
+  const attributes = headingBlockLocatorAttributes(
+    lookup,
+    path,
+    anchor,
+    bytes,
+    heading,
+  );
   return attributes === undefined
     ? undefined
     : { ...attributes, class: "visually-hidden" };
@@ -171,13 +201,36 @@ function renderVocabBlock(
         heading,
         () =>
           hideHeading
-            ? hiddenLocatorAttributes(lookup, path, anchor)
-            : locatorAttributes(lookup, path, anchor),
+            ? hiddenLocatorAttributes(
+                lookup,
+                path,
+                anchor,
+                document.bytes,
+                heading,
+              )
+            : headingBlockLocatorAttributes(
+                lookup,
+                path,
+                anchor,
+                document.bytes,
+                heading,
+              ),
         (nested) =>
-          locatorAttributes(lookup, path, specHeadingAnchor(nested, entryId)),
+          headingBlockLocatorAttributes(
+            lookup,
+            path,
+            specHeadingAnchor(nested, entryId),
+            document.bytes,
+            nested,
+          ),
       ),
     },
   );
+}
+
+/** Strips a `parseList`-generated `<ul>…</ul>`/`<ol>…</ol>` wrapper, keeping only its `<li>`s. */
+function unwrapListItems(html: string): string {
+  return html.replace(/^<(ul|ol)>([\s\S]*)<\/\1>$/, "$2");
 }
 
 function renderEntryAcceptance(
@@ -185,6 +238,8 @@ function renderEntryAcceptance(
   entryId: string,
   acceptance: readonly SpecAcceptanceEntry[],
   acceptanceHeading: HeadingBlock | undefined,
+  entryHeading: HeadingBlock,
+  entryEnd: number,
   document: MarkdownDocument,
   lookup: LocatorLookup,
 ): string {
@@ -192,14 +247,29 @@ function renderEntryAcceptance(
     return `<p class="muted">${MISSING_SECTION_TEXT}</p>`;
   if (acceptanceHeading === undefined) {
     // No dedicated Acceptance heading recognized; the AC lines are still
-    // indexed (§5 scans the whole entry), but this projection labels them
-    // without their surrounding prose in that unusual shape.
-    return acceptance
-      .map(
-        (item) =>
-          `<p><span class="ac-id">${escapeHtml(`${entryId}/${item.id}`)}</span> ${escapeHtml(item.id)}</p>`,
-      )
-      .join("");
+    // indexed (§5 scans the whole entry, each AC's own block is its own
+    // line), so each is rendered here from its own line, verbatim, as its
+    // own list — the same lines 需求細節 must then skip (contract §18).
+    const byId = new Map(
+      readSpecAcceptanceLines(
+        document.lines,
+        entryHeading.startOffset,
+        entryEnd,
+      ).map((line) => [line.id, line] as const),
+    );
+    return `<ul>${acceptance
+      .map((item) => {
+        const line = byId.get(item.id);
+        if (line === undefined) return "";
+        return unwrapListItems(
+          renderMarkdownHtml(document, line.start, line.end, {
+            listItemAttributes: () =>
+              locatorAttributes(lookup, specPath, item.locator.anchor),
+            listItemPrefix: () => item.locator.anchor,
+          }),
+        );
+      })
+      .join("")}</ul>`;
   }
   return renderMarkdownHtml(
     document,
@@ -210,12 +280,20 @@ function renderEntryAcceptance(
       headingAttributes: blockHeadingAttributes(
         acceptanceHeading,
         () =>
-          hiddenLocatorAttributes(lookup, specPath, `${entryId}/Acceptance`),
+          hiddenLocatorAttributes(
+            lookup,
+            specPath,
+            `${entryId}/Acceptance`,
+            document.bytes,
+            acceptanceHeading,
+          ),
         (nested) =>
-          locatorAttributes(
+          headingBlockLocatorAttributes(
             lookup,
             specPath,
             specHeadingAnchor(nested, entryId),
+            document.bytes,
+            nested,
           ),
       ),
       listItemAttributes: (line) => {
@@ -243,9 +321,24 @@ function renderEntryDetail(
   kept: ReadonlySet<HeadingBlock>,
   document: MarkdownDocument,
   lookup: LocatorLookup,
+  /**
+   * True when the entry has no dedicated Acceptance heading: its AC lines
+   * are labelled directly in 需求驗收 (`renderEntryAcceptance`), so this
+   * function must omit exactly those lines rather than render them a second
+   * time (contract §18: every source block renders exactly once).
+   */
+  omitAcceptanceLines: boolean,
 ): string {
   const headingAttributes = (heading: HeadingBlock) =>
-    locatorAttributes(lookup, specPath, specHeadingAnchor(heading, entryId));
+    headingBlockLocatorAttributes(
+      lookup,
+      specPath,
+      specHeadingAnchor(heading, entryId),
+      document.bytes,
+      heading,
+    );
+  const omitListItem = (line: { readonly trimmed: string }): boolean =>
+    omitAcceptanceLines && specAcceptanceLinePattern.test(line.trimmed);
 
   // The front chunk (entry heading line + preamble) ends at the first
   // subheading of any kind, consumed or not — a subheading consumed
@@ -253,7 +346,9 @@ function renderEntryDetail(
   const frontEnd = subheadings[0]?.startOffset ?? entryEnd;
   const blocks = [
     renderMarkdownHtml(document, entryHeading.startOffset, frontEnd, {
+      headingLevelOffset: 4,
       headingAttributes,
+      omitListItem,
     }),
   ];
   for (const heading of subheadings) {
@@ -264,7 +359,9 @@ function renderEntryDetail(
         heading.startOffset,
         boundedEnd(document.headings, heading),
         {
+          headingLevelOffset: 4,
           headingAttributes,
+          omitListItem,
         },
       ),
     );
@@ -373,6 +470,8 @@ export function partitionSpecDocument(
         entry.id,
         entry.acceptance,
         entryAcceptance,
+        entryHeading,
+        entryEnd,
         document,
         lookup,
       ),
@@ -385,6 +484,7 @@ export function partitionSpecDocument(
         kept,
         document,
         lookup,
+        entryAcceptance === undefined,
       ),
     });
   }
@@ -401,6 +501,8 @@ export function partitionSpecDocument(
     ].filter((heading): heading is HeadingBlock => heading !== undefined),
   );
   const appendixSections: AppendixSection[] = [];
+  const leading = leadingAppendixSection(document, spec.path);
+  if (leading !== undefined) appendixSections.push(leading);
   for (const heading of headings) {
     if (heading.level > 2) continue;
     if (consumedTopLevel.has(heading)) continue;
@@ -409,11 +511,14 @@ export function partitionSpecDocument(
       heading.startOffset,
       boundedEnd(headings, heading),
       {
+        headingLevelOffset: 3,
         headingAttributes: (candidate) =>
-          locatorAttributes(
+          headingBlockLocatorAttributes(
             lookup,
             spec.path,
             specHeadingAnchor(candidate, undefined),
+            document.bytes,
+            candidate,
           ),
       },
     );
@@ -494,8 +599,22 @@ export function partitionStoryDocument(
         headingLevelOffset: 4,
         headingAttributes: blockHeadingAttributes(
           heading,
-          () => hiddenLocatorAttributes(lookup, storyPath, field),
-          (nested) => locatorAttributes(lookup, storyPath, nested.headingPath),
+          () =>
+            hiddenLocatorAttributes(
+              lookup,
+              storyPath,
+              field,
+              document.bytes,
+              heading,
+            ),
+          (nested) =>
+            headingBlockLocatorAttributes(
+              lookup,
+              storyPath,
+              nested.headingPath,
+              document.bytes,
+              nested,
+            ),
         ),
       },
     );
@@ -510,6 +629,8 @@ export function partitionStoryDocument(
       : focusBlocks;
 
   const appendixSections: AppendixSection[] = [];
+  const leading = leadingAppendixSection(document, storyPath);
+  if (leading !== undefined) appendixSections.push(leading);
   for (const heading of headings) {
     if (heading.level > 2) continue;
     if (focusHeadings.get(heading.text) === heading) continue;
@@ -518,13 +639,16 @@ export function partitionStoryDocument(
       heading.startOffset,
       boundedEnd(headings, heading),
       {
+        headingLevelOffset: 3,
         headingAttributes: (candidate) =>
-          locatorAttributes(
+          headingBlockLocatorAttributes(
             lookup,
             storyPath,
             STORY_FIXED_FIELDS.has(candidate.text) && candidate.level === 2
               ? candidate.text
               : candidate.headingPath,
+            document.bytes,
+            candidate,
           ),
       },
     );
@@ -543,7 +667,7 @@ const acceptanceCheckboxLinePattern = /^\[([ xX])] (AC-[0-9]+):/;
 
 /** Splits one `acceptance.md` into its AC groups and the rest (contract §18). */
 export function partitionAcceptanceDocument(
-  storyId: string,
+  storyId: string | undefined,
   acceptancePath: string,
   bytes: Uint8Array,
   lookup: LocatorLookup,
@@ -571,7 +695,13 @@ export function partitionAcceptanceDocument(
     const body = renderMarkdownHtml(document, heading.startOffset, end, {
       headingLevelOffset: 2,
       headingAttributes: (candidate) =>
-        locatorAttributes(lookup, acceptancePath, candidate.headingPath),
+        headingBlockLocatorAttributes(
+          lookup,
+          acceptancePath,
+          candidate.headingPath,
+          document.bytes,
+          candidate,
+        ),
       listItemAttributes: (line) => {
         const stripped = stripBullet(line.trimmed);
         const match =
@@ -589,7 +719,10 @@ export function partitionAcceptanceDocument(
           stripped === undefined
             ? null
             : acceptanceCheckboxLinePattern.exec(stripped);
-        return match === null ? undefined : `${storyId}/${match[2]}`;
+        if (match === null) return undefined;
+        return storyId === undefined
+          ? (match[2] as string)
+          : `${storyId}/${match[2]}`;
       },
     });
     groups.push(`<section class="acceptance-group">${body}</section>`);
@@ -601,6 +734,8 @@ export function partitionAcceptanceDocument(
       : groups.join("");
 
   const appendixSections: AppendixSection[] = [];
+  const leading = leadingAppendixSection(document, acceptancePath);
+  if (leading !== undefined) appendixSections.push(leading);
   for (const heading of headings) {
     if (heading.level > 2) continue;
     if (consumed.has(heading)) continue;
@@ -609,8 +744,15 @@ export function partitionAcceptanceDocument(
       heading.startOffset,
       boundedEnd(headings, heading),
       {
+        headingLevelOffset: 3,
         headingAttributes: (candidate) =>
-          locatorAttributes(lookup, acceptancePath, candidate.headingPath),
+          headingBlockLocatorAttributes(
+            lookup,
+            acceptancePath,
+            candidate.headingPath,
+            document.bytes,
+            candidate,
+          ),
       },
     );
     appendixSections.push({ path: acceptancePath, html });
@@ -619,16 +761,25 @@ export function partitionAcceptanceDocument(
   return { acceptanceGroupsHtml, appendixSections };
 }
 
+/**
+ * A document's first `#` heading text, verbatim (contract §18: a Story's
+ * displayed title and an ADR's own title both come from this same line).
+ * `undefined` when the document has no top-level heading at all.
+ */
+export function firstH1Text(bytes: Uint8Array): string | undefined {
+  const text = new TextDecoder("utf-8").decode(bytes);
+  return /^#\s+(.*)$/m.exec(text)?.[1]?.trim();
+}
+
 /** An ADR's title and `Status` line text, as plain labels (contract §18 "決策約束"). */
 export function adrSummary(bytes: Uint8Array): {
   readonly title: string;
   readonly status: string;
 } {
   const text = new TextDecoder("utf-8").decode(bytes);
-  const titleMatch = /^#\s+(.*)$/m.exec(text);
   const statusMatch = /^\*\s+Status:\s*(.*)$/m.exec(text);
   return {
-    title: titleMatch?.[1]?.trim() ?? "",
+    title: firstH1Text(bytes) ?? "",
     status: statusMatch?.[1]?.trim() ?? "",
   };
 }
@@ -644,11 +795,18 @@ export function renderAdrAppendix(
     document.headings.map((heading, index) => [heading.startOffset, index]),
   );
   return renderMarkdownHtml(document, 0, bytes.length, {
+    headingLevelOffset: 3,
     headingAttributes: (heading) => {
       const anchor =
         adrExplicitId(heading, position.get(heading.startOffset) ?? -1) ??
         heading.headingPath;
-      return locatorAttributes(lookup, path, anchor);
+      return headingBlockLocatorAttributes(
+        lookup,
+        path,
+        anchor,
+        document.bytes,
+        heading,
+      );
     },
   });
 }

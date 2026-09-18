@@ -125,7 +125,8 @@ version `1.0.0`; `success`, `failure`, `usage-error`,
 ## Outputs
 
 * From `review index`, the Spec vocabulary anchors in `data` and fewer
-  `REVIEW_SECTION_UNRECOGNIZED` advisories; the `data` shape is unchanged.
+  `REVIEW_SECTION_UNRECOGNIZED` advisories; the `data` shape gains additive
+  fields only (`docs/typescript-tooling/cli-contract.md`).
 * On success, one self-contained UTF-8 HTML file at the requested safe output
   path and a schema-valid `success` envelope whose `data` includes the batch
   identity, fingerprint, sources, diagnostics, and output path.

@@ -538,6 +538,42 @@ test("code review item 7: a heading nested under a recognized Spec entry is not 
   );
 });
 
+test("TST022 review finding 16: a heading nested under a recognized top-level Goal/Non-goals block is not an unrecognized section, and keeps its own locator", () => {
+  const manifestPath = "specs/batches/TST-929-fixture/batch.json";
+  const specPath = "specs/features/fixture/spec.md";
+  const story = "specs/stories/RF-929-fixture";
+
+  const plan = planOf(manifestPath, {
+    schemaVersion: "1.0.0",
+    batchId: "TST-929-fixture",
+    sources: { adrs: [], specs: [specPath], stories: [story] },
+    requirements: [{ spec: specPath, anchor: "R-001", stories: ["RF-929"] }],
+    dependencies: [],
+  });
+
+  const result = indexReviewBatch(
+    plan,
+    observations({
+      [specPath]:
+        "## Goal\n\n### Sub Goal Detail\n\ncontent\n\n## R-001：Fixture\n",
+      [`${story}/story.md`]: "# Story: RF-929\n",
+      [`${story}/acceptance.md`]:
+        "# Acceptance Criteria\n\n* [ ] AC-001: done.\n",
+    }),
+  );
+
+  assert.equal(result.kind, "ok");
+  assert.ok(
+    !result.index.diagnostics.some(
+      (d) => d.code === "REVIEW_SECTION_UNRECOGNIZED",
+    ),
+  );
+  const nested = result.index.specs[0].sections.find(
+    (section) => section.headingPath === "Goal > Sub Goal Detail",
+  );
+  assert.ok(nested, "expected the nested heading to keep its own locator");
+});
+
 test("code review item 8: overlapping declared paths across source kinds are rejected outright", () => {
   const manifest = {
     schemaVersion: "1.0.0",

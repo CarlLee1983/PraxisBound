@@ -55,6 +55,13 @@ export interface MarkdownHtmlOptions {
    * builds HTML around a rendered fragment by hand.
    */
   readonly listItemPrefix?: (line: MarkdownLine) => string | undefined;
+  /**
+   * When true for a list item's starting line, that `<li>` is omitted
+   * entirely. Used when the same line is rendered as a labelled item
+   * elsewhere in the page, so it is not duplicated (contract §18: every
+   * source block renders exactly once).
+   */
+  readonly omitListItem?: (line: MarkdownLine) => boolean;
 }
 
 function renderAttributes(
@@ -529,14 +536,16 @@ function parseList(
       cursor += Math.max(sub.consumed, 1);
     }
 
-    const attributes = options.listItemAttributes?.(itemLine);
-    const prefix = listItemPrefixHtml(options, itemLine);
-    items.push(`<li${renderAttributes(attributes)}>${prefix}${body}</li>`);
+    if (!(options.omitListItem?.(itemLine) ?? false)) {
+      const attributes = options.listItemAttributes?.(itemLine);
+      const prefix = listItemPrefixHtml(options, itemLine);
+      items.push(`<li${renderAttributes(attributes)}>${prefix}${body}</li>`);
+    }
   }
 
   const tag = ordered ? "ol" : "ul";
   return {
-    html: `<${tag}>${items.join("")}</${tag}>`,
+    html: items.length === 0 ? "" : `<${tag}>${items.join("")}</${tag}>`,
     consumed: index - start,
   };
 }

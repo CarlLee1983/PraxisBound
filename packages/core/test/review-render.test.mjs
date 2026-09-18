@@ -5,9 +5,11 @@ import { TextEncoder } from "node:util";
 import { indexReviewBatch, renderReviewProjection } from "../dist/index.js";
 
 const SPEC_PATH = "specs/features/fixture/spec.md";
+const MISSING_SPEC_PATH = "specs/features/fixture/missing-spec.md";
 const ADR_PATH = "specs/decisions/ADR-014-fixture.md";
 const SHARED_DIR = "specs/stories/RF-SHARED-fixture";
 const ORPHAN_DIR = "specs/stories/RF-ORPHAN-fixture";
+const NOID_DIR = "specs/stories/no-id-fixture";
 
 const encoder = new TextEncoder();
 
@@ -67,6 +69,17 @@ Entry three goal sentence GOAL_SENTENCE_R003.
 ### Acceptance
 
 - AC-001：Entry three acceptance sentence AC_SENTENCE_R003_1.
+
+## R-004：Fixture Requirement Four No Acceptance Heading
+
+Entry four intro sentence INTRO_SENTENCE_R004.
+
+- AC-001：Entry four acceptance sentence AC_SENTENCE_R004_1.
+- AC-002：Entry four acceptance sentence AC_SENTENCE_R004_2.
+
+### Dependencies
+
+Entry four dependency sentence DEPENDENCIES_SENTENCE_R004.
 `;
 
 const SHARED_STORY_MD = `# Story: RF-SHARED Fixture Shared Story
@@ -113,7 +126,11 @@ const SHARED_ACCEPTANCE_MD = `# Acceptance Criteria
 
 ## Notes
 
-Shared story notes sentence NOTES_SENTENCE_SHARED.
+Shared story notes sentence NOTES_SENTENCE_SHARED_FIRST.
+
+## Notes
+
+Shared story second notes sentence NOTES_SENTENCE_SHARED_SECOND.
 `;
 
 const ORPHAN_STORY_MD = `# Story: RF-ORPHAN Fixture Orphan Story
@@ -123,9 +140,23 @@ const ORPHAN_STORY_MD = `# Story: RF-ORPHAN Fixture Orphan Story
 Orphan story goal sentence GOAL_SENTENCE_ORPHAN.
 `;
 
-const ORPHAN_ACCEPTANCE_MD = `# Acceptance Criteria
+const ORPHAN_ACCEPTANCE_MD = `Leading text before any heading, sentinel LEADING_TEXT_SENTENCE_ORPHAN.
+
+# Acceptance Criteria
 
 * [ ] AC-001: Orphan story acceptance sentence ACCEPTANCE_SENTENCE_ORPHAN_1.
+`;
+
+const NOID_STORY_MD = `# Story: No ID Fixture Story
+
+## Goal
+
+No-ID story goal sentence GOAL_SENTENCE_NOID.
+`;
+
+const NOID_ACCEPTANCE_MD = `# Acceptance Criteria
+
+* [ ] AC-001: No-ID story acceptance sentence ACCEPTANCE_SENTENCE_NOID_1.
 `;
 
 const ADR_MD = `# ADR-014: Fixture Decision Title
@@ -159,10 +190,17 @@ function buildFixture() {
         storyPath: `${ORPHAN_DIR}/story.md`,
         acceptancePath: `${ORPHAN_DIR}/acceptance.md`,
       },
+      {
+        directory: NOID_DIR,
+        storyId: undefined,
+        storyPath: `${NOID_DIR}/story.md`,
+        acceptancePath: `${NOID_DIR}/acceptance.md`,
+      },
     ],
     requirements: [
       { spec: SPEC_PATH, anchor: "R-001", stories: ["RF-SHARED"] },
       { spec: SPEC_PATH, anchor: "R-002", stories: ["RF-SHARED"] },
+      { spec: MISSING_SPEC_PATH, anchor: "R-999", stories: ["RF-SHARED"] },
     ],
     dependencies: [{ story: "RF-SHARED", dependsOn: [] }],
     sources: [
@@ -172,6 +210,8 @@ function buildFixture() {
       `${ORPHAN_DIR}/story.md`,
       `${SHARED_DIR}/acceptance.md`,
       `${SHARED_DIR}/story.md`,
+      `${NOID_DIR}/acceptance.md`,
+      `${NOID_DIR}/story.md`,
     ].sort(),
     diagnostics: [],
     ambiguousStoryIds: [],
@@ -184,6 +224,8 @@ function buildFixture() {
     [`${SHARED_DIR}/acceptance.md`]: SHARED_ACCEPTANCE_MD,
     [`${ORPHAN_DIR}/story.md`]: ORPHAN_STORY_MD,
     [`${ORPHAN_DIR}/acceptance.md`]: ORPHAN_ACCEPTANCE_MD,
+    [`${NOID_DIR}/story.md`]: NOID_STORY_MD,
+    [`${NOID_DIR}/acceptance.md`]: NOID_ACCEPTANCE_MD,
   };
 
   const observations = new Map(
@@ -293,9 +335,36 @@ test("TST022-AC-003: each card lists Requirement then Execution acceptance, then
   }
 
   // The second card sharing the same Story links back instead of repeating its content.
-  const r2Card = cardsSection.slice(cardsSection.indexOf("R-002"));
+  const r2Card = cardsSection.slice(
+    cardsSection.indexOf("R-002"),
+    cardsSection.indexOf("R-003"),
+  );
   assert.doesNotMatch(r2Card, /GOAL_SENTENCE_SHARED/);
   assert.match(r2Card, /已在其他卡片顯示/);
+});
+
+test("TST022 review finding 1: a later card links to a shared Story's focus instead of showing 「無對應 Story」", () => {
+  const cardsSection = html.slice(
+    html.indexOf('<section class="cards">'),
+    html.indexOf('<section class="orphan-stories">'),
+  );
+  const r2Card = cardsSection.slice(
+    cardsSection.indexOf("R-002"),
+    cardsSection.indexOf("R-003"),
+  );
+  const storyFocus = r2Card.slice(
+    r2Card.indexOf('class="story-focus"'),
+    r2Card.indexOf('class="detail"'),
+  );
+  assert.doesNotMatch(
+    storyFocus,
+    /無對應 Story/,
+    "R-002 does have a Story; it must not read 「無對應 Story」",
+  );
+  assert.match(
+    storyFocus,
+    /<a href="#card-[a-z0-9-]+">RF-SHARED 已在其他卡片顯示<\/a>/,
+  );
 });
 
 test("TST022 readability: a requirement heading that already starts with its own ID is not shown twice", () => {
@@ -398,6 +467,10 @@ test("TST022-AC-004: every source block renders exactly once outside the raw app
     "AC_SENTENCE_R002_1",
     "GOAL_SENTENCE_R003",
     "AC_SENTENCE_R003_1",
+    "INTRO_SENTENCE_R004",
+    "AC_SENTENCE_R004_1",
+    "AC_SENTENCE_R004_2",
+    "DEPENDENCIES_SENTENCE_R004",
     "GOAL_SENTENCE_SHARED",
     "SCOPE_SENTENCE_SHARED",
     "RULES_SENTENCE_SHARED",
@@ -406,9 +479,13 @@ test("TST022-AC-004: every source block renders exactly once outside the raw app
     "DEPENDENCIES_SENTENCE_SHARED",
     "ACCEPTANCE_SENTENCE_SHARED_1",
     "ACCEPTANCE_SENTENCE_SHARED_2",
-    "NOTES_SENTENCE_SHARED",
+    "NOTES_SENTENCE_SHARED_FIRST",
+    "NOTES_SENTENCE_SHARED_SECOND",
     "GOAL_SENTENCE_ORPHAN",
     "ACCEPTANCE_SENTENCE_ORPHAN_1",
+    "LEADING_TEXT_SENTENCE_ORPHAN",
+    "GOAL_SENTENCE_NOID",
+    "ACCEPTANCE_SENTENCE_NOID_1",
     "ADR_BODY_SENTENCE",
   ];
   for (const sentinel of onceOutsideRaw) {
@@ -420,10 +497,18 @@ test("TST022-AC-004: every source block renders exactly once outside the raw app
     );
   }
 
-  // Every non-blank source line's text (Markdown markers stripped) is present somewhere,
-  // including the raw appendix.
+  // Every non-blank source line's text (Markdown markers stripped) is present
+  // somewhere outside the raw-Markdown appendix (TST022 review finding 15: a
+  // check against the whole page always passes, since the raw appendix is a
+  // verbatim copy of every source).
   for (const text of Object.values(files)) {
     for (const rawLine of text.split("\n")) {
+      // A line with an inline Markdown link renders each link's text inside
+      // its own element (an `<a>`, or inert text for an unsafe scheme,
+      // contract §18 R4/AC-010), so the line's plain text is no longer one
+      // contiguous run; that transformation is covered by the dedicated
+      // AC-010 security test instead of this literal substring check.
+      if (/\[[^\]]*]\([^)]*\)/.test(rawLine)) continue;
       const stripped = rawLine
         .replace(/^#{1,6}\s+/, "")
         .replace(/^\s*[-*]\s+(?:\[[ xX]\]\s+)?/, "")
@@ -431,11 +516,75 @@ test("TST022-AC-004: every source block renders exactly once outside the raw app
         .trim();
       if (stripped === "") continue;
       assert.ok(
-        html.includes(stripped) || html.includes(require_escape(stripped)),
-        `line text missing from projection: ${stripped}`,
+        withoutRaw.includes(stripped) ||
+          withoutRaw.includes(require_escape(stripped)),
+        `line text missing from projection outside raw Markdown: ${stripped}`,
       );
     }
   }
+});
+
+test("TST022 review finding 2: a manifest requirement whose Spec is missing from the batch still gets a matrix row and card", () => {
+  const matrix = html.slice(
+    html.indexOf("需求總覽矩陣"),
+    html.indexOf("批次目標"),
+  );
+  assert.match(matrix, /R-999/);
+  const matrixRow = matrix.slice(matrix.indexOf("R-999"));
+  assert.match(matrixRow, /未寫明/);
+
+  const cardsSection = html.slice(
+    html.indexOf('<section class="cards">'),
+    html.indexOf('<section class="orphan-stories">'),
+  );
+  assert.match(cardsSection, /<summary>R-999<\/summary>/);
+  const r999Card = cardsSection.slice(cardsSection.indexOf("R-999"));
+  // Its Stories still come from the manifest's own declared list, even
+  // though there is no resolved Spec entry or trace entry for it.
+  assert.match(r999Card, /RF-SHARED/);
+});
+
+test("TST022 review finding 12: the ADR status badge is styled the same regardless of status", () => {
+  assert.doesNotMatch(
+    html,
+    /\.adr-list \.status \{[^}]*#2e6b3a/,
+    "the status badge must not single out a status (e.g. Accepted) with an approving color",
+  );
+  const decisions = html.slice(
+    html.indexOf("決策約束"),
+    html.indexOf("診斷摘要"),
+  );
+  assert.match(decisions, /<span class="status">Accepted<\/span>/);
+});
+
+test("TST022 review finding 7: text before a document's first heading appears in its appendix group", () => {
+  const appendix = html.slice(html.indexOf('<section class="appendix"'));
+  assert.match(appendix, /LEADING_TEXT_SENTENCE_ORPHAN/);
+  // It renders exactly once outside the raw appendix, same as any other block.
+  const withoutRaw = html.replace(
+    /<details class="raw no-print">[\s\S]*?<\/details>/,
+    "",
+  );
+  const count = withoutRaw.split("LEADING_TEXT_SENTENCE_ORPHAN").length - 1;
+  assert.equal(count, 1);
+});
+
+test("TST022 review finding 11: the page keeps a single <h1>, and card/appendix headings sit below their section heading", () => {
+  const h1Count = (html.match(/<h1[ >]/g) ?? []).length;
+  assert.equal(h1Count, 1, "the page must keep exactly one <h1>");
+});
+
+test("TST022 review finding 6: a Story directory with no Story ID renders in 未對應需求的 Story, titled by its directory path", () => {
+  const orphanSection = html.slice(
+    html.indexOf('<section class="orphan-stories">'),
+    html.indexOf('<section class="appendix"'),
+  );
+  assert.match(
+    orphanSection,
+    new RegExp(`<h3>${"specs/stories/no-id-fixture".replace(/\//g, "\\/")}`),
+  );
+  assert.match(orphanSection, /GOAL_SENTENCE_NOID/);
+  assert.match(orphanSection, /ACCEPTANCE_SENTENCE_NOID_1/);
 });
 
 // A very small helper: text rendered through the HTML escaper for the raw-Markdown
@@ -574,8 +723,28 @@ test("TST022-AC-004/005: a heading nested in a promoted block keeps its own loca
       `${text} carries its own locator`,
     );
   }
-  const anchors = [
-    ...html.matchAll(/data-path="([^"]+)" data-anchor="([^"]+)"/g),
-  ].map((match) => `${match[1]}#${match[2]}`);
-  assert.equal(new Set(anchors).size, anchors.length, "no locator repeats");
+  // Two headings can legitimately share the same `(path, anchor)` when the
+  // index has no explicit ID for either (contract §5 rule 2, e.g. duplicate
+  // `## Notes`): what must stay unique is the HTML `id` each gets, and each
+  // must keep its own `data-block-sha256` (TST022 review finding 4).
+  const ids = [...html.matchAll(/\sid="(loc-[^"]+)"/g)].map(
+    (match) => match[1],
+  );
+  assert.equal(new Set(ids).size, ids.length, "no duplicate ids");
+});
+
+test("TST022 review finding 4: two headings sharing the same heading-path anchor get distinct ids and their own block hash", () => {
+  const notesHeadings = [
+    ...html.matchAll(
+      /<h[1-6]([^>]*data-anchor="Acceptance Criteria &gt; Notes"[^>]*)>Notes<\/h[1-6]>/g,
+    ),
+  ];
+  assert.equal(notesHeadings.length, 2, "both duplicate Notes headings render");
+  const [firstAttrs, secondAttrs] = notesHeadings.map((match) => match[1]);
+  const idOf = (attrs) => /\sid="([^"]+)"/.exec(attrs)?.[1];
+  const shaOf = (attrs) => /data-block-sha256="([^"]+)"/.exec(attrs)?.[1];
+  assert.notEqual(idOf(firstAttrs), idOf(secondAttrs));
+  assert.notEqual(shaOf(firstAttrs), shaOf(secondAttrs));
+  assert.match(html, /NOTES_SENTENCE_SHARED_FIRST/);
+  assert.match(html, /NOTES_SENTENCE_SHARED_SECOND/);
 });

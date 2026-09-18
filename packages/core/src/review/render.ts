@@ -19,6 +19,7 @@ import {
 import {
   adrSummary,
   escapeHtml,
+  firstH1Text,
   MISSING_SECTION_TEXT,
   NO_STORY_TEXT,
   partitionAcceptanceDocument,
@@ -37,6 +38,7 @@ import type {
   ReviewIndex,
   SpecEntryIndex,
   SpecIndex,
+  TraceEntry,
 } from "./types.js";
 
 export interface ReviewProjectionDocument {
@@ -52,11 +54,6 @@ function renderPreface(preface: string): string {
   return renderMarkdownHtml(document, 0, bytes.length);
 }
 
-function firstH1Text(bytes: Uint8Array): string | undefined {
-  const text = new TextDecoder("utf-8").decode(bytes);
-  return /^#\s+(.*)$/m.exec(text)?.[1]?.trim();
-}
-
 interface StoryDocuments {
   readonly title: string | undefined;
   readonly story: StoryContent | undefined;
@@ -64,33 +61,62 @@ interface StoryDocuments {
 }
 
 interface MatrixEntry {
-  readonly spec: SpecIndex;
-  readonly entry: SpecEntryIndex;
+  /** The requirement's Spec, when the manifest's `spec` names one in the batch. */
+  readonly spec: SpecIndex | undefined;
+  /** The requirement's Spec entry, when its `anchor` resolves to a recognized, non-duplicate entry. */
+  readonly entry: SpecEntryIndex | undefined;
+  /** `spec.path` when resolved, else the manifest requirement's own declared path (§18.3). */
+  readonly specPath: string;
+  /** `entry.id` when resolved, else the manifest requirement's own declared anchor (§18.3). */
+  readonly anchor: string;
+  /**
+   * The manifest `requirements` entry's own `stories`, used only when `entry`
+   * did not resolve (no `trace` entry can exist for it either, so the row's
+   * Stories come straight from the manifest instead of the trace).
+   */
+  readonly requirementStories: readonly string[] | undefined;
 }
 
-/** Manifest `requirements` order first, then remaining entries in Spec order (R10). */
+/**
+ * Manifest `requirements` order first, then remaining Spec entries in Spec
+ * order (R10). A `requirements` entry whose Spec or anchor does not resolve
+ * to a recognized entry still gets a row (contract §18.3: one row per
+ * manifest `requirements` item), carrying its declared anchor and Stories
+ * instead of a resolved entry.
+ */
 function buildMatrixOrder(index: ReviewIndex): readonly MatrixEntry[] {
   const specsByPath = new Map(index.specs.map((spec) => [spec.path, spec]));
   const seen = new Set<string>();
   const order: MatrixEntry[] = [];
 
   for (const requirement of index.requirements) {
+    const key = `${requirement.spec}#${requirement.anchor}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
     const spec = specsByPath.get(requirement.spec);
     const entry = spec?.entries.find(
       (candidate) => candidate.id === requirement.anchor,
     );
-    if (spec === undefined || entry === undefined) continue;
-    const key = `${spec.path}#${entry.id}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    order.push({ spec, entry });
+    order.push({
+      spec,
+      entry,
+      specPath: requirement.spec,
+      anchor: requirement.anchor,
+      requirementStories: requirement.stories,
+    });
   }
   for (const spec of index.specs) {
     for (const entry of spec.entries) {
       const key = `${spec.path}#${entry.id}`;
       if (seen.has(key)) continue;
       seen.add(key);
-      order.push({ spec, entry });
+      order.push({
+        spec,
+        entry,
+        specPath: spec.path,
+        anchor: entry.id,
+        requirementStories: undefined,
+      });
     }
   }
   return order;
@@ -98,6 +124,166 @@ function buildMatrixOrder(index: ReviewIndex): readonly MatrixEntry[] {
 
 function missingSourceArticle(path: string): string {
   return `<p class="muted missing">${escapeHtml(path)}：${MISSING_SOURCE_TEXT}</p>`;
+}
+
+interface MatrixRenderContext {
+  readonly index: ReviewIndex;
+  readonly specContent: ReadonlyMap<string, SpecDocumentContent | undefined>;
+  readonly storyDocuments: ReadonlyMap<string, StoryDocuments>;
+}
+
+/**
+ * The Stories serving one matrix row/card, in first-occurrence order. A
+ * resolved entry's Stories come from the `trace` (built from the same
+ * `requirements`); an unresolved requirement (missing/duplicated Spec or
+ * entry, contract §18.3) has no trace entry, so its Stories come straight
+ * from the manifest's own declared list instead.
+ */
+function resolveStoryIds(
+  entry: SpecEntryIndex | undefined,
+  trace: TraceEntry | undefined,
+  requirementStories: readonly string[] | undefined,
+): readonly string[] {
+  if (trace !== undefined)
+    return [...new Set(trace.stories.map((story) => story.storyId))];
+  if (entry === undefined) return [...new Set(requirementStories ?? [])];
+  return [];
+}
+
+function renderMatrixRow(
+  ctx: MatrixRenderContext,
+  matrixEntry: MatrixEntry,
+  storyIds: readonly string[],
+  targetId: string,
+  homeOf: ReadonlyMap<string, string>,
+  trace: TraceEntry | undefined,
+): string {
+  const { index, specContent, storyDocuments } = ctx;
+  const { entry, specPath, anchor } = matrixEntry;
+  const content = specContent.get(specPath);
+  const entryContent = content?.entries.get(anchor);
+  const missing = `<p class="muted">${MISSING_SECTION_TEXT}</p>`;
+  const label = requirementLabelHtml(anchor, entry?.heading ?? anchor);
+
+  const storyCell =
+    storyIds.length === 0
+      ? `<span class="muted">${NO_STORY_TEXT}</span>`
+      : storyIds
+          .map((storyId) => {
+            const story = index.stories.find(
+              (candidate) => candidate.id === storyId,
+            );
+            const title =
+              story === undefined
+                ? undefined
+                : storyDocuments.get(story.path)?.title;
+            const displayTitle =
+              title === undefined
+                ? undefined
+                : (storyTitleWithoutId(title, storyId) ?? title);
+            const home = homeOf.get(storyId) ?? targetId;
+            return `<a href="#${home}">${escapeHtml(storyId)}</a>${displayTitle === undefined ? "" : ` ${escapeHtml(displayTitle)}`}`;
+          })
+          .join("、");
+
+  const requirementAcceptanceCount = entry?.acceptance.length ?? 0;
+  const executionAcceptanceCount = (trace?.stories ?? []).reduce(
+    (sum, story) => sum + story.acceptanceIds.length,
+    0,
+  );
+
+  return (
+    `<tr><th scope="row"><a href="#${targetId}">${label}</a></th>` +
+    `<td>${entryContent?.goalCellHtml ?? missing}</td>` +
+    `<td>${storyCell}</td>` +
+    `<td class="num">${requirementAcceptanceCount}</td>` +
+    `<td class="num">${executionAcceptanceCount}</td>` +
+    `<td>${entryContent?.nonGoalsCellHtml ?? missing}</td></tr>`
+  );
+}
+
+function renderRequirementCard(
+  ctx: MatrixRenderContext,
+  matrixEntry: MatrixEntry,
+  storyIds: readonly string[],
+  targetId: string,
+  homeOf: ReadonlyMap<string, string>,
+): string {
+  const { index, specContent, storyDocuments } = ctx;
+  const { entry, specPath, anchor } = matrixEntry;
+  const content = specContent.get(specPath);
+  const entryContent = content?.entries.get(anchor);
+  const missing = `<p class="muted">${MISSING_SECTION_TEXT}</p>`;
+  const label = requirementLabelHtml(anchor, entry?.heading ?? anchor);
+
+  const executionAcceptance =
+    storyIds.length === 0
+      ? `<p class="muted">${NO_STORY_TEXT}</p>`
+      : storyIds
+          .map((storyId) => {
+            const story = index.stories.find(
+              (candidate) => candidate.id === storyId,
+            );
+            if (story === undefined) return "";
+            const home = homeOf.get(storyId);
+            if (home !== targetId)
+              return `<p><a href="#${home}">${escapeHtml(storyId)} 執行驗收已在其他卡片顯示</a></p>`;
+            const acceptance = storyDocuments.get(story.path)?.acceptance;
+            return `<section><h4>${escapeHtml(storyId)}</h4>${acceptance?.acceptanceGroupsHtml ?? missing}</section>`;
+          })
+          .join("");
+
+  const storyFocus =
+    storyIds.length === 0
+      ? `<p class="muted">${NO_STORY_TEXT}</p>`
+      : storyIds
+          .map((storyId) => {
+            const story = index.stories.find(
+              (candidate) => candidate.id === storyId,
+            );
+            if (story === undefined) return "";
+            const home = homeOf.get(storyId);
+            if (home !== targetId)
+              return `<p><a href="#${home}">${escapeHtml(storyId)} 已在其他卡片顯示</a></p>`;
+            const focus = storyDocuments.get(story.path)?.story;
+            return `<section><h4>${escapeHtml(storyId)}</h4>${focus?.focusHtml ?? missing}</section>`;
+          })
+          .join("");
+
+  return (
+    `<details class="card"><summary>${label}</summary>` +
+    `<div class="card-body">` +
+    `<section class="req-ac" id="${targetId}"><h3>需求驗收</h3>${entryContent?.acceptanceHtml ?? missing}</section>` +
+    `<section class="exec-ac"><h3>執行驗收</h3>${executionAcceptance}</section>` +
+    `<section class="story-focus"><h3>Story 重點</h3>${storyFocus}</section>` +
+    `<section class="detail"><h3>需求細節</h3>${entryContent?.detailHtml || `<p class="muted">${MISSING_SECTION_TEXT}</p>`}</section>` +
+    `</div></details>`
+  );
+}
+
+/** Stories no requirement references (contract §18 §7): a Story with no recognized ID is always one of them, titled by its directory path (R11). */
+function renderOrphanStories(
+  index: ReviewIndex,
+  storyDocuments: ReadonlyMap<string, StoryDocuments>,
+  referenced: ReadonlySet<string>,
+): string {
+  return index.stories
+    .filter((story) => story.id === undefined || !referenced.has(story.id))
+    .map((story) => {
+      const documents = storyDocuments.get(story.path);
+      const displayTitle =
+        story.id === undefined || documents?.title === undefined
+          ? undefined
+          : (storyTitleWithoutId(documents.title, story.id) ?? documents.title);
+      const heading = escapeHtml(story.id ?? story.path);
+      return (
+        `<section class="orphan-story"><h3>${heading}${displayTitle === undefined ? "" : ` ${escapeHtml(displayTitle)}`}</h3>` +
+        `<section><h4>執行驗收</h4>${documents?.acceptance?.acceptanceGroupsHtml ?? `<p class="muted">${MISSING_SECTION_TEXT}</p>`}</section>` +
+        `<section><h4>Story 重點</h4>${documents?.story?.focusHtml ?? `<p class="muted">${MISSING_SECTION_TEXT}</p>`}</section>` +
+        `</section>`
+      );
+    })
+    .join("");
 }
 
 function renderMatrixAndCards(
@@ -110,6 +296,7 @@ function renderMatrixAndCards(
   readonly cards: string;
   readonly orphanStories: string;
 } {
+  const ctx: MatrixRenderContext = { index, specContent, storyDocuments };
   const traceByKey = new Map(
     index.trace.map((trace) => [`${trace.spec}#${trace.anchor}`, trace]),
   );
@@ -118,123 +305,32 @@ function renderMatrixAndCards(
   const matrixRows: string[] = [];
   const cards: string[] = [];
 
-  for (const { spec, entry } of matrixOrder) {
-    const key = `${spec.path}#${entry.id}`;
-    const trace = traceByKey.get(key);
-    const storyIds = trace?.stories.map((story) => story.storyId) ?? [];
+  for (const matrixEntry of matrixOrder) {
+    const { entry, specPath, anchor, requirementStories } = matrixEntry;
+    const trace = traceByKey.get(`${specPath}#${anchor}`);
+    const storyIds = resolveStoryIds(entry, trace, requirementStories);
     // The card's own navigation target: the first element of its body, not
     // the entry heading buried at the end in 需求細節 (contract §18), so
     // opening a card from the matrix lands above 需求驗收 rather than past it.
-    const targetId = `card-${elementId(spec.path, entry.id)}`;
-    const content = specContent.get(spec.path);
-    const entryContent = content?.entries.get(entry.id);
-    const missing = `<p class="muted">${MISSING_SECTION_TEXT}</p>`;
+    const targetId = `card-${elementId(specPath, anchor)}`;
 
     for (const storyId of storyIds) {
       referenced.add(storyId);
       if (!homeOf.has(storyId)) homeOf.set(storyId, targetId);
     }
 
-    const storyCell =
-      storyIds.length === 0
-        ? `<span class="muted">${NO_STORY_TEXT}</span>`
-        : storyIds
-            .map((storyId) => {
-              const story = index.stories.find(
-                (candidate) => candidate.id === storyId,
-              );
-              const title =
-                story === undefined
-                  ? undefined
-                  : storyDocuments.get(story.path)?.title;
-              const displayTitle =
-                title === undefined
-                  ? undefined
-                  : (storyTitleWithoutId(title, storyId) ?? title);
-              const home = homeOf.get(storyId) ?? targetId;
-              return `<a href="#${home}">${escapeHtml(storyId)}</a>${displayTitle === undefined ? "" : ` ${escapeHtml(displayTitle)}`}`;
-            })
-            .join("、");
-
-    const requirementAcceptanceCount = entry.acceptance.length;
-    const executionAcceptanceCount = (trace?.stories ?? []).reduce(
-      (sum, story) => sum + story.acceptanceIds.length,
-      0,
-    );
-
     matrixRows.push(
-      `<tr><th scope="row"><a href="#${targetId}">${requirementLabelHtml(entry.id, entry.heading)}</a></th>` +
-        `<td>${entryContent?.goalCellHtml ?? missing}</td>` +
-        `<td>${storyCell}</td>` +
-        `<td class="num">${requirementAcceptanceCount}</td>` +
-        `<td class="num">${executionAcceptanceCount}</td>` +
-        `<td>${entryContent?.nonGoalsCellHtml ?? missing}</td></tr>`,
+      renderMatrixRow(ctx, matrixEntry, storyIds, targetId, homeOf, trace),
     );
-
-    const executionAcceptance =
-      storyIds.length === 0
-        ? `<p class="muted">${NO_STORY_TEXT}</p>`
-        : storyIds
-            .map((storyId) => {
-              const story = index.stories.find(
-                (candidate) => candidate.id === storyId,
-              );
-              if (story === undefined) return "";
-              const home = homeOf.get(storyId);
-              if (home !== targetId)
-                return `<p><a href="#${home}">${escapeHtml(storyId)} 執行驗收已在其他卡片顯示</a></p>`;
-              const acceptance = storyDocuments.get(story.path)?.acceptance;
-              return `<section><h4>${escapeHtml(storyId)}</h4>${acceptance?.acceptanceGroupsHtml ?? missing}</section>`;
-            })
-            .join("");
-
-    const storyFocus = storyIds
-      .map((storyId) => {
-        const story = index.stories.find(
-          (candidate) => candidate.id === storyId,
-        );
-        if (story === undefined) return "";
-        if (homeOf.get(storyId) !== targetId) return "";
-        const focus = storyDocuments.get(story.path)?.story;
-        return `<section><h4>${escapeHtml(storyId)}</h4>${focus?.focusHtml ?? missing}</section>`;
-      })
-      .join("");
-
     cards.push(
-      `<details class="card"><summary>${requirementLabelHtml(entry.id, entry.heading)}</summary>` +
-        `<div class="card-body">` +
-        `<section class="req-ac" id="${targetId}"><h3>需求驗收</h3>${entryContent?.acceptanceHtml ?? missing}</section>` +
-        `<section class="exec-ac"><h3>執行驗收</h3>${executionAcceptance}</section>` +
-        `<section class="story-focus"><h3>Story 重點</h3>${storyFocus || `<p class="muted">${NO_STORY_TEXT}</p>`}</section>` +
-        `<section class="detail"><h3>需求細節</h3>${entryContent?.detailHtml || `<p class="muted">${MISSING_SECTION_TEXT}</p>`}</section>` +
-        `</div></details>`,
+      renderRequirementCard(ctx, matrixEntry, storyIds, targetId, homeOf),
     );
   }
-
-  const orphanStories = index.stories
-    .filter(
-      (story): story is typeof story & { readonly id: string } =>
-        story.id !== undefined && !referenced.has(story.id),
-    )
-    .map((story) => {
-      const documents = storyDocuments.get(story.path);
-      const displayTitle =
-        documents?.title === undefined
-          ? undefined
-          : (storyTitleWithoutId(documents.title, story.id) ?? documents.title);
-      return (
-        `<section class="orphan-story"><h3>${escapeHtml(story.id)}${displayTitle === undefined ? "" : ` ${escapeHtml(displayTitle)}`}</h3>` +
-        `<section><h4>執行驗收</h4>${documents?.acceptance?.acceptanceGroupsHtml ?? `<p class="muted">${MISSING_SECTION_TEXT}</p>`}</section>` +
-        `<section><h4>Story 重點</h4>${documents?.story?.focusHtml ?? `<p class="muted">${MISSING_SECTION_TEXT}</p>`}</section>` +
-        `</section>`
-      );
-    })
-    .join("");
 
   return {
     matrixRows: matrixRows.join(""),
     cards: cards.join(""),
-    orphanStories,
+    orphanStories: renderOrphanStories(index, storyDocuments, referenced),
   };
 }
 
@@ -364,7 +460,7 @@ export function renderReviewProjection(
         ? undefined
         : partitionStoryDocument(storyPath, storyBytes, lookup);
     const acceptanceContent =
-      story.id === undefined || acceptanceBytes === undefined
+      acceptanceBytes === undefined
         ? undefined
         : partitionAcceptanceDocument(
             story.id,
@@ -423,7 +519,7 @@ export function renderReviewProjection(
           ? escapeHtml(adr.path)
           : escapeHtml(summary.title);
       const status =
-        summary === undefined
+        summary === undefined || summary.status === ""
           ? MISSING_SECTION_TEXT
           : escapeHtml(summary.status);
       return `<li>${href === undefined ? label : `<a href="${href}">${label}</a>`} <span class="status">${status}</span></li>`;
@@ -534,7 +630,7 @@ th.num { white-space: nowrap; min-width: 6rem; }
 .card-body section { margin-top: 1.2rem; }
 .orphan-story { border-top: 1px dashed #d8d0c3; padding-top: 1rem; margin-top: 1.5rem; }
 .adr-list { padding-left: 1.2rem; }
-.adr-list .status { font: 600 .75rem ui-sans-serif, system-ui, sans-serif; color: #2e6b3a; border: 1px solid #9cc3a4; border-radius: 10px; padding: 0 .5em; }
+.adr-list .status { font: 600 .75rem ui-sans-serif, system-ui, sans-serif; color: #6f675c; border: 1px solid #d8d0c3; border-radius: 10px; padding: 0 .5em; }
 .raw-doc { border: 1px solid #d8d0c3; border-radius: 4px; padding: .4rem .9rem; margin: .8rem 0; background: #fbf9f5; }
 .raw-doc > summary, .raw > summary { cursor: pointer; font: 600 .9rem ui-sans-serif, system-ui, sans-serif; color: #6f675c; }
 @media (max-width: 24.375em) { .page { padding: 1rem .75rem; } }

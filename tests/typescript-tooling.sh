@@ -149,6 +149,8 @@ packed_packages_have_the_bounded_public_contract() {
     './dist/review/render.js' \
     './dist/review/types.d.ts' \
     './dist/review/types.js' \
+    './dist/review/vocabulary.d.ts' \
+    './dist/review/vocabulary.js' \
     './dist/story-decision.d.ts' \
     './dist/story-decision.js' \
     './dist/story-governance.d.ts' \

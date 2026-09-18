@@ -1,7 +1,22 @@
 import { constants } from "node:fs";
-import { lstat, open, rename, unlink } from "node:fs/promises";
+import {
+  lstat,
+  open,
+  readdir,
+  realpath,
+  rename,
+  unlink,
+} from "node:fs/promises";
 import { randomUUID } from "node:crypto";
-import { basename, dirname, isAbsolute, relative, resolve } from "node:path";
+import {
+  basename,
+  dirname,
+  isAbsolute,
+  join,
+  relative,
+  resolve,
+  sep,
+} from "node:path";
 
 import {
   IMPLEMENTED_PROTOCOL_VERSION,
@@ -576,6 +591,93 @@ function isOutputConflict(
   return outputPath === recordsPath || outputPath.startsWith(`${recordsPath}/`);
 }
 
+/** The realpath of `target`, or of its deepest existing ancestor when `target` itself does not exist yet. */
+async function realpathOfDeepestExistingAncestor(
+  target: string,
+): Promise<string | undefined> {
+  let current = target;
+  for (;;) {
+    try {
+      return await realpath(current);
+    } catch {
+      const parent = dirname(current);
+      if (parent === current) return undefined;
+      current = parent;
+    }
+  }
+}
+
+/** Every regular file under `directory`, recursively, as absolute paths; empty when `directory` does not exist. */
+async function listFilesRecursively(
+  directory: string,
+): Promise<readonly string[]> {
+  let entries;
+  try {
+    entries = await readdir(directory, { withFileTypes: true });
+  } catch {
+    return [];
+  }
+  const files: string[] = [];
+  for (const entry of entries) {
+    const full = join(directory, entry.name);
+    if (entry.isDirectory()) files.push(...(await listFilesRecursively(full)));
+    else files.push(full);
+  }
+  return files;
+}
+
+/**
+ * True when `outputAbsolute` would land inside the batch `records/`
+ * directory, resolved by real filesystem identity rather than lexical path
+ * comparison: a case-folded or otherwise differently-spelled path that
+ * `isOutputConflict`'s string comparison cannot catch still resolves to the
+ * same real parent directory on a case-insensitive filesystem, and an
+ * existing destination that hard-links or aliases a file already inside
+ * `records/` is caught by dev+ino even when no path segment matches at all.
+ */
+async function isRecordsDirectoryConflict(
+  root: string,
+  outputAbsolute: string,
+  manifestPath: string,
+): Promise<boolean> {
+  const recordsAbsolute = resolve(root, dirname(manifestPath), "records");
+  let recordsReal: string | undefined;
+  try {
+    recordsReal = await realpath(recordsAbsolute);
+  } catch {
+    recordsReal = undefined;
+  }
+  if (recordsReal !== undefined) {
+    const ancestorReal = await realpathOfDeepestExistingAncestor(
+      dirname(outputAbsolute),
+    );
+    if (
+      ancestorReal === recordsReal ||
+      (ancestorReal !== undefined &&
+        ancestorReal.startsWith(`${recordsReal}${sep}`))
+    )
+      return true;
+  }
+
+  if (recordsReal === undefined) return false;
+  let outputStats;
+  try {
+    outputStats = await lstat(outputAbsolute);
+  } catch {
+    return false;
+  }
+  for (const file of await listFilesRecursively(recordsReal)) {
+    try {
+      const stats = await lstat(file);
+      if (stats.dev === outputStats.dev && stats.ino === outputStats.ino)
+        return true;
+    } catch {
+      // A record that disappeared mid-check is not an alias to guard.
+    }
+  }
+  return false;
+}
+
 /**
  * Compares the existing destination inode to protected files. This catches
  * hard links and case-folded aliases that lexical repository paths cannot
@@ -613,6 +715,7 @@ async function publishProjection(
   output: { readonly absolute: string; readonly relativePath: string },
   html: string,
   protectedPaths: readonly string[],
+  manifestPath: string,
   filesystem: ReviewRenderFilesystem,
 ): Promise<"success" | "conflict" | "missing-directory" | "failure"> {
   const outputDirectory = dirname(output.absolute);
@@ -640,6 +743,8 @@ async function publishProjection(
     if ((await findUnsafeSourcePath(root, [output.relativePath])) !== undefined)
       return "conflict";
     if (await isProtectedOutputAlias(root, output.absolute, protectedPaths))
+      return "conflict";
+    if (await isRecordsDirectoryConflict(root, output.absolute, manifestPath))
       return "conflict";
 
     await filesystem.rename(stage, output.absolute);
@@ -730,7 +835,12 @@ export async function runReviewRender(
       (await isProtectedOutputAlias(root, output.absolute, [
         loaded.loaded.manifestPath,
         ...loaded.loaded.index.sources.map((source) => source.path),
-      ]))
+      ])) ||
+      (await isRecordsDirectoryConflict(
+        root,
+        output.absolute,
+        loaded.loaded.manifestPath,
+      ))
     ) {
       return {
         mode: parsed.mode,
@@ -759,6 +869,7 @@ export async function runReviewRender(
         loaded.loaded.manifestPath,
         ...loaded.loaded.index.sources.map((source) => source.path),
       ],
+      loaded.loaded.manifestPath,
       filesystem,
     );
     if (publication === "conflict") {
@@ -802,8 +913,13 @@ export async function runReviewRender(
         output.relativePath,
       ),
     };
-  } catch {
-    process.stderr.write("praxisbound review render: internal error\n");
+  } catch (error) {
+    // The cause is never discarded: a sanitized, single-line rendering of it
+    // always reaches stderr, even in JSON mode; the envelope's own issue
+    // message stays generic and never exposes an absolute path.
+    process.stderr.write(
+      `praxisbound review render: internal error: ${sanitizeInternalError(error)}\n`,
+    );
     return {
       mode: parsed.mode,
       result: envelope("error", "ERROR", 3, [

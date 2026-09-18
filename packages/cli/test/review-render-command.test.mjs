@@ -31,7 +31,34 @@ function runCli(args, cwd) {
   });
 }
 
-async function fixture(build) {
+function baseRenderManifest(batchId) {
+  return {
+    schemaVersion: "1.0.0",
+    batchId,
+    title: "Renderer fixture",
+    sources: {
+      adrs: [],
+      specs: ["specs/features/fixture/spec.md"],
+      stories: ["specs/stories/RF-001-fixture"],
+    },
+    requirements: [
+      {
+        spec: "specs/features/fixture/spec.md",
+        anchor: "R-001",
+        stories: ["RF-001"],
+      },
+    ],
+    dependencies: [],
+  };
+}
+
+/**
+ * Builds the same fixture repository as `fixture`, but lets the caller
+ * replace the manifest entirely: `manifestText`, when given, is written
+ * verbatim (invalid JSON, an edited `preface`, …) instead of the default
+ * manifest object.
+ */
+async function fixtureWithManifest(manifestText, build) {
   const root = await mkdtemp(join(tmpdir(), "review-render-"));
   try {
     const batchId = "TST-922-fixture";
@@ -45,24 +72,7 @@ async function fixture(build) {
     });
     await writeFile(
       join(batch, "batch.json"),
-      JSON.stringify({
-        schemaVersion: "1.0.0",
-        batchId,
-        title: "Renderer fixture",
-        sources: {
-          adrs: [],
-          specs: ["specs/features/fixture/spec.md"],
-          stories: ["specs/stories/RF-001-fixture"],
-        },
-        requirements: [
-          {
-            spec: "specs/features/fixture/spec.md",
-            anchor: "R-001",
-            stories: ["RF-001"],
-          },
-        ],
-        dependencies: [],
-      }),
+      manifestText ?? JSON.stringify(baseRenderManifest(batchId)),
     );
     await writeFile(
       join(root, "specs", "features", "fixture", "spec.md"),
@@ -82,6 +92,10 @@ async function fixture(build) {
   }
 }
 
+function fixture(build) {
+  return fixtureWithManifest(undefined, build);
+}
+
 function assertEnvelope(execution) {
   assert.deepEqual(validateResultEnvelope(execution.result), {
     ok: true,
@@ -89,7 +103,7 @@ function assertEnvelope(execution) {
   });
 }
 
-test("TST022-AC-001/006: review render atomically writes an offline projection from a readable draft", async () => {
+test("TST022-AC-001/011: review render atomically writes an offline projection from a readable draft", async () => {
   await fixture(async (root, manifest) => {
     const execution = await runReviewRender(
       [manifest, "--output", "review.html", "--json"],
@@ -106,7 +120,7 @@ test("TST022-AC-001/006: review render atomically writes an offline projection f
   });
 });
 
-test("TST022-AC-009: the built CLI emits one schema-valid JSON envelope and a human result", async () => {
+test("TST022-AC-014: the built CLI emits one schema-valid JSON envelope and a human result", async () => {
   await fixture(async (root, manifest) => {
     const json = runCli(
       ["review", "render", manifest, "--output", "cli.json.html", "--json"],
@@ -129,7 +143,7 @@ test("TST022-AC-009: the built CLI emits one schema-valid JSON envelope and a hu
   });
 });
 
-test("TST022-AC-007: review render refuses every protected output alias without modifying it", async () => {
+test("TST022-AC-012: review render refuses every protected output alias without modifying it", async () => {
   await fixture(async (root, manifest) => {
     const source = join(root, "specs", "stories", "RF-001-fixture", "story.md");
     const before = await readFile(source, "utf8");
@@ -181,7 +195,7 @@ test("TST022-AC-007: review render refuses every protected output alias without 
   });
 });
 
-test("TST022-AC-006: readable drafts with a missing source keep their diagnostic in the projection", async () => {
+test("TST022-AC-011: readable drafts with a missing source keep their diagnostic in the projection", async () => {
   await fixture(async (root, manifest) => {
     await unlink(join(root, "specs", "features", "fixture", "spec.md"));
     const execution = await runReviewRender(
@@ -199,7 +213,7 @@ test("TST022-AC-006: readable drafts with a missing source keep their diagnostic
   });
 });
 
-test("TST022-AC-008/009: render failure keeps a prior projection and cleans the staging file", async () => {
+test("TST022-AC-013/014: render failure keeps a prior projection and cleans the staging file", async () => {
   await fixture(async (root, manifest) => {
     const priorOutput = join(root, "prior.html");
     const initial = await runReviewRender(
@@ -236,7 +250,7 @@ test("TST022-AC-008/009: render failure keeps a prior projection and cleans the 
   });
 });
 
-test("TST022-AC-008/009: a missing output directory is named instead of reported as a generic write failure", async () => {
+test("TST022-AC-013/014: a missing output directory is named instead of reported as a generic write failure", async () => {
   await fixture(async (root, manifest) => {
     await writeFile(join(root, "plain-file"), "not a directory\n");
     for (const [output, directory] of [
@@ -269,6 +283,144 @@ test("TST022-AC-008/009: a missing output directory is named instead of reported
     assert.equal(
       human.stderr,
       "FAIL REVIEW_OUTPUT_WRITE_FAILED: output directory does not exist (gone\\x1b[2J)\n",
+    );
+  });
+});
+
+test("TST022-AC-007: a 1.1.0 manifest's preface renders labelled as author-written, and changing only the preface changes the fingerprint", async () => {
+  await fixtureWithManifest(
+    JSON.stringify({
+      ...baseRenderManifest("TST-922-fixture"),
+      schemaVersion: "1.1.0",
+      preface: "Preface sentence PREFACE_SENTENCE_ONE.",
+    }),
+    async (root, manifest) => {
+      const first = await runReviewRender(
+        [manifest, "--output", "first.html", "--json"],
+        root,
+      );
+      assertEnvelope(first);
+      assert.equal(first.result.outcome, "success");
+      const html = await readFile(join(root, "first.html"), "utf8");
+      assert.match(html, /由批次作者撰寫（Review Preface）/);
+      assert.match(html, /PREFACE_SENTENCE_ONE/);
+
+      await writeFile(
+        join(root, "specs", "batches", "TST-922-fixture", "batch.json"),
+        JSON.stringify({
+          ...baseRenderManifest("TST-922-fixture"),
+          schemaVersion: "1.1.0",
+          preface: "Preface sentence PREFACE_SENTENCE_TWO.",
+        }),
+      );
+      const second = await runReviewRender(
+        [manifest, "--output", "second.html", "--json"],
+        root,
+      );
+      assertEnvelope(second);
+      assert.equal(second.result.outcome, "success");
+      assert.notEqual(
+        first.result.data.fingerprint,
+        second.result.data.fingerprint,
+        "changing only the preface must change the Requirement Fingerprint",
+      );
+    },
+  );
+});
+
+test("TST022-AC-014: review render returns documented, schema-valid configuration-error envelopes", async () => {
+  await fixtureWithManifest("{ not valid json", async (root, manifest) => {
+    const execution = await runReviewRender(
+      [manifest, "--output", "review.html", "--json"],
+      root,
+    );
+    assertEnvelope(execution);
+    assert.equal(execution.result.outcome, "configuration-error");
+    assert.equal(execution.result.exit, 2);
+    assert.ok(
+      execution.result.issues.some((i) => i.code === "REVIEW_MANIFEST_INVALID"),
+    );
+  });
+
+  await fixtureWithManifest(
+    JSON.stringify({
+      ...baseRenderManifest("TST-922-fixture"),
+      preface: "Not allowed under 1.0.0.",
+    }),
+    async (root, manifest) => {
+      const execution = await runReviewRender(
+        [manifest, "--output", "review.html", "--json"],
+        root,
+      );
+      assertEnvelope(execution);
+      assert.equal(execution.result.outcome, "configuration-error");
+      assert.equal(execution.result.exit, 2);
+      assert.ok(
+        execution.result.issues.some(
+          (i) => i.code === "REVIEW_MANIFEST_INVALID",
+        ),
+      );
+    },
+  );
+
+  await fixtureWithManifest(
+    JSON.stringify({
+      ...baseRenderManifest("TST-922-fixture"),
+      schemaVersion: "1.1.0",
+      preface: "a".repeat(4097),
+    }),
+    async (root, manifest) => {
+      const execution = await runReviewRender(
+        [manifest, "--output", "review.html", "--json"],
+        root,
+      );
+      assertEnvelope(execution);
+      assert.equal(execution.result.outcome, "configuration-error");
+      assert.equal(execution.result.exit, 2);
+      assert.ok(
+        execution.result.issues.some(
+          (i) => i.code === "REVIEW_INPUT_TOO_LARGE",
+        ),
+      );
+    },
+  );
+});
+
+test("TST022 review finding 5: an output path that case-differs into the batch records/ directory is still rejected", async (t) => {
+  await fixture(async (root, manifest) => {
+    const batchDir = join(root, "specs", "batches", "TST-922-fixture");
+    const recordsDir = join(batchDir, "records");
+    await mkdir(recordsDir, { recursive: true });
+    await writeFile(join(recordsDir, "existing.html"), "kept\n");
+
+    // Detect whether this temp filesystem is case-sensitive by probing it
+    // directly, rather than assuming the platform default.
+    const probePath = join(batchDir, "CaseProbe.txt");
+    await writeFile(probePath, "probe\n");
+    const caseSensitive = await readFile(join(batchDir, "caseprobe.txt")).then(
+      () => false,
+      () => true,
+    );
+    await unlink(probePath);
+
+    if (caseSensitive) {
+      t.skip(
+        "this temporary filesystem is case-sensitive; the case-variant alias cannot be exercised here",
+      );
+      return;
+    }
+
+    const conflict = await runReviewRender(
+      [manifest, "--output", "specs/batches/TST-922-fixture/RECORDS/new.html"],
+      root,
+    );
+    assertEnvelope(conflict);
+    assert.equal(conflict.result.outcome, "configuration-error");
+    assert.equal(conflict.result.exit, 2);
+    assert.equal(conflict.result.issues[0].code, "REVIEW_OUTPUT_CONFLICT");
+    assert.equal(
+      await readFile(join(recordsDir, "existing.html"), "utf8"),
+      "kept\n",
     );
   });
 });

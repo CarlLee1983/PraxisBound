@@ -166,6 +166,14 @@ Requirement Fingerprint, stable locators, and the Spec requirement -> Story
 | `configuration-error`  | `error` | `2`  | The manifest is unreadable, not JSON, fails the schema, names an unsupported `schemaVersion`, its `batchId` does not match its directory, a declared path is unsafe, or an input exceeds contract §13's limits. |
 | `ERROR`                | `error` | `3`  | An unexpected internal failure.                                                   |
 
+Story TST-022 adds the contract §5 Spec section vocabulary to `data`: each
+`data.specs[]` entry gains optional `goal`/`nonGoals` locators (the Spec's own
+`Goal`/`Non-goals` heading, when recognized), and each of its `entries[]`
+gains a `sections` object with optional `goal`/`acceptance`/`nonGoals`/
+`dependencies` locators for that entry's recognized `R-NNN/*` subheadings.
+These are additive fields only: every field `review index` reported before
+Story TST-022 keeps its same shape and meaning.
+
 Issue codes this command can emit: `REVIEW_MANIFEST_INVALID`,
 `REVIEW_SCHEMA_UNSUPPORTED`, `REVIEW_PATH_UNSAFE`, `REVIEW_INPUT_TOO_LARGE`,
 `REVIEW_SOURCE_MISSING`, `REVIEW_STORY_UNKNOWN`, `REVIEW_REQUIREMENT_UNMAPPED`,
