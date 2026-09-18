@@ -8,7 +8,7 @@
 * integration: pass — `packages/cli/test/review-render-command.test.mjs and review-index-command.test.mjs exercised the built CLI against temporary repositories in JSON and human modes`
 * contract: pass — `validateResultEnvelope accepted every tested index and render envelope at schema 1.0.0; cli-contract.md documents manifest 1.1.0, the render layout, and additive index data fields`
 * e2e: pass — `Chrome 153.0.8010.52 via Playwright opened a rendered BR-TST-022 batch from a local file at 1280 and 390 px, followed a matrix link by keyboard, and printed A4 under print media`
-* architecture: pass — `independent code and security reviews over three fix rounds; the final review approved the branch for human review with no CRITICAL or HIGH findings`
+* architecture: pass — `Human Review: carl accepted TST-022 in a Claude Code session on 2026-09-18, reviewing feat/tst-022-review-render at 29a10bb after independent code and security reviews over three fix rounds whose final pass found no CRITICAL or HIGH issue`
 
 ## Evidence
 
@@ -19,7 +19,7 @@
 * `AC-005`: pass — `review-markdown.test.mjs covers the Markdown subset without literal markers; render tests assert every locator attribute equals the index locator once, unique ids, and every in-page href resolving`
 * `AC-006`: pass — `review-index.test.mjs covers zh and en vocabulary, case-insensitive English, duplicates as blocking REVIEW_ANCHOR_DUPLICATE, and unlisted headings keeping their advisory`
 * `AC-007`: pass — `core and CLI tests render a 1.1.0 preface labelled as author-written, show that changing only the preface changes the fingerprint, and keep 1.0.0 manifests working`
-* `AC-008`: blocked — `automated Chrome 153 observation passed (no page-level horizontal scroll at 1280 and 390 px, keyboard Enter on a matrix link opened its card, print media expanded all collapsed sections, hid raw Markdown and fixed controls, 53-page A4 PDF); the human-method observation of the A4 print preview is pending`
+* `AC-008`: pass — `Human Review: carl accepted TST-022 on 2026-09-18 with the rendered BR-TST-022 page and this Chrome 153 evidence in hand: no page-level horizontal scroll at 1280 and 390 px, keyboard Enter on a matrix link opened its card, print media expanded all collapsed sections, hid raw Markdown and fixed controls, 53-page A4 PDF`
 * `AC-009`: pass — `render tests assert the reading-snapshot marker, checkbox glyphs without controls, and no PASS, completion, or approval wording`
 * `AC-010`: pass — `tests assert inline CSS, a restrictive CSP, no external URLs, and href only for http, https, and fragments; the Chrome run recorded zero external requests; the security review found no injection or href bypass`
 * `AC-011`: pass — `CLI tests render drafts with missing sources and trace gaps as success with every diagnostic preserved`
@@ -33,10 +33,10 @@
 * plan
 * modify
 * commit
+* push
 
 ## Residual Risks
 
-* `AC-008 stays blocked until a human opens the rendered file in Chrome and inspects the A4 print preview; the automated run is supporting evidence only.`
 * `Author-written in-page fragment links that name no rendered id keep their href as R4 requires and do nothing when followed.`
 * `A concurrent local replacement of the output directory between the conflict checks and rename cannot be made fully race-free with portable Node path APIs.`
 * `Chrome is the only browser observed; no pixel parity with other browsers is claimed.`
