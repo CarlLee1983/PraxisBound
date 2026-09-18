@@ -60,14 +60,32 @@ A requirements baseline that Stories are derived from; an input to batch review,
 not a Protocol artifact and not execution authority.
 _Avoid_: feature doc, requirements Story
 
+**Requirement Acceptance**:
+The acceptance criteria a Spec states for one of its requirements; what the
+requirement must achieve, identified as `R-<n>/AC-<n>`. Not an execution
+boundary.
+_Avoid_: Spec AC, story acceptance
+
+**Execution Acceptance**:
+The acceptance criteria in a Story's acceptance file; the approved boundary of
+the work that Story executes, identified as `<STORY-ID>/AC-<n>`. It may differ
+from the Requirement Acceptance it serves, and that difference is what a review
+exists to surface.
+_Avoid_: AC (unqualified, when both kinds are in view), test cases
+
+**Review Preface**:
+An optional, human-written introduction declared with a Review Batch; the only
+prose in a Review Projection not taken verbatim from a source document.
+_Avoid_: summary, generated overview
+
 **Requirement Fingerprint**:
 The content identity of a Review Batch, covering its declaration and every
 source it selects, including uncommitted changes and excluding derived views.
 _Avoid_: batch version, Git HEAD, snapshot time
 
 **Review Projection**:
-A derived, read-only rendering of a Review Batch for human reading; never a
-source of definitions.
+A derived, read-only rendering of a Review Batch for human reading, organized
+by requirement; never a source of definitions.
 _Avoid_: review document, HTML source
 
 **Revision Request**:

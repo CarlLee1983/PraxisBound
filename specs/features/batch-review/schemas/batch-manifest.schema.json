@@ -5,10 +5,17 @@
   "type": "object",
   "additionalProperties": false,
   "required": ["schemaVersion", "batchId", "sources", "requirements", "dependencies"],
+  "if": { "properties": { "schemaVersion": { "const": "1.0.0" } } },
+  "then": { "not": { "required": ["preface"] } },
   "properties": {
-    "schemaVersion": { "const": "1.0.0" },
+    "schemaVersion": { "enum": ["1.0.0", "1.1.0"] },
     "batchId": { "$ref": "urn:praxisbound:batch-review:defs:1#/$defs/batchId" },
     "title": { "type": "string", "maxLength": 256 },
+    "preface": {
+      "description": "Review Preface (schemaVersion 1.1.0 only). Markdown; the tool enforces UTF-8 <= 4 KiB, maxLength is a code-point bound.",
+      "type": "string",
+      "maxLength": 4096
+    },
     "sources": {
       "type": "object",
       "additionalProperties": false,

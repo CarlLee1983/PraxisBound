@@ -1,6 +1,7 @@
 # Contract：整批審閱與執行交接
 
 Contract ID：`SPEC-BATCH-REVIEW/R-001`。狀態：已接受（accepted，人類審閱並合併 #94）。日期：2026-09-17。
+修訂：2026-09-18，Review Projection 以需求為主軸的呈現（§18）、manifest `preface`（§3）與 Spec 章節詞彙（§5）；已接受（人類審閱 #100）。
 
 本文件定稿 [spec.md](spec.md) R-001 要求的產物格式、指紋、定位、命令結果與授權邊界。
 取捨與不可靜默推翻的邊界記錄於
@@ -70,6 +71,12 @@ Schema：[`schemas/batch-manifest.schema.json`](schemas/batch-manifest.schema.js
 - 不允許額外欄位、glob、repo 外路徑、`..`、絕對路徑或控制字元（`REVIEW_MANIFEST_INVALID`）；任一路徑段為 symlink 即 `REVIEW_PATH_UNSAFE`。
 - 同一路徑出現兩次、Story ID 重複：`REVIEW_MANIFEST_INVALID`。`requirements`／`dependencies` 引用不在批次內的 Story：`REVIEW_STORY_UNKNOWN`。
 
+- （修訂，R-003）`schemaVersion` 為 `1.0.0` 或 `1.1.0`；讀取端兩者皆接受，寫出的新 manifest 使用 `1.1.0`。
+  `1.1.0` 只新增選填 `preface`：人撰寫的審閱導言（Review Preface），Markdown 字串，UTF-8 ≤ 4 KiB，
+  超出為 `REVIEW_INPUT_TOO_LARGE`。它是 Review Projection 中唯一不取自來源文件的散文，
+  屬 manifest 內容而隨之納入指紋（§4）；它不是摘要、不是定義來源，也不授予任何操作權。
+  `1.0.0` manifest 出現 `preface` 為 `REVIEW_MANIFEST_INVALID`。
+
 批次只包含 manifest 明確列出的檔案；工具不自動加入其他 ADR、Story 或歷史資料。
 
 ### 定義衝突與追溯
@@ -108,6 +115,23 @@ fingerprint = sha256(UTF-8(canonicalJson({
 
 （修訂性澄清，R-002）沒有顯式 ID、也不落在任何已辨識錨點區塊內的 heading，仍以其 heading 路徑
 （規則 2）納入索引，並回報一次非阻擋診斷 `REVIEW_SECTION_UNRECOGNIZED`；不因此從索引中省略任何來源內容。
+
+（修訂，R-003）Spec 章節詞彙。下列 heading 視為已辨識，得到固定顯式錨點，不再回報
+`REVIEW_SECTION_UNRECOGNIZED`；比對的是去除前後空白後的 heading 文字，不做大小寫以外的正規化：
+
+| 位置 | heading 文字 | 錨點 | 投影用途 |
+| --- | --- | --- | --- |
+| Spec 第二級、非條目 | 以 `目標` 或 `Goal` 開頭 | `Goal` | 批次目標 |
+| Spec 第二級、非條目 | 含 `非目標`，或以 `不包含`、`Non-goals`、`Out of Scope` 開頭 | `Non-goals` | 批次不包含 |
+| Spec 條目內第三級 | `目標`／`Goal` | `R-NNN/Goal` | 需求目標 |
+| Spec 條目內第三級 | `驗收條件`／`Acceptance` | `R-NNN/Acceptance` | 需求驗收所在區塊 |
+| Spec 條目內第三級 | `不包含`／`Out of Scope` | `R-NNN/Non-goals` | 需求不包含 |
+| Spec 條目內第三級 | `依賴`／`Dependencies` | `R-NNN/Dependencies` | 需求細節 |
+
+`Goal`、`Non-goals` 在同一 Spec 出現一次以上，或同一條目內任一條目錨點重複時，依上一段回報
+`REVIEW_ANCHOR_DUPLICATE`。未列入本表的第二級 heading 維持 heading 路徑錨點與 advisory 診斷；
+條目內未列入本表的第三級 heading 仍是該條目的內容，以 heading 路徑定位，不產生診斷。
+Spec AC `R-NNN/AC-NNN` 的解析不變。
 
 `blockSha256` 是該錨點區塊原始 bytes 的 SHA-256：heading 錨點為該 heading 行起至下一個同級或更高級 heading 前；
 AC 為其所在列；`#document` 為整檔；`#batch` 為當時批次指紋字串的 UTF-8 bytes。
@@ -320,6 +344,7 @@ Work Item ID 由 ForgePilot 指派、無冪等鍵、依賴只能在建立時宣�
 
 - manifest、修訂單、Semantic Report、回應紀錄與其他 `records/` JSON：單檔 ≤ 1 MiB；巢狀深度 ≤ 32；單一字串 ≤ 64 KiB；單份 ≤ 1000 則意見、回應或語義 issues。
 - 批次 ≤ 200 張 Story、≤ 200 份 ADR 與 ≤ 200 份 Spec；單一來源 Markdown ≤ 4 MiB。
+- manifest `preface`：UTF-8 ≤ 4 KiB（§3）。
 - Preflight Report 的診斷總數 ≤ 10000；超過判 `ERROR`（exit 3）而非截斷，因為批次上限內不應發生。
 
 ForgePilot 輸出是觀察而非輸入：每個 stdout／stderr 保存前 1 MiB，超過時該步 `truncated: true` 並記錄原始 byte 長度。
@@ -330,6 +355,9 @@ ForgePilot 輸出是觀察而非輸入：每個 stdout／stderr 保存前 1 MiB�
 - `protocol/`、`templates/`、Protocol `VERSION`：本功能不修改。舊 Stories、PASS、Human Review、DONE 語義不變，不需補欄位。
 - CLI：新增 `review` 命令群組與四個 outcome 值，分類 **Additive**；`schemaVersion` 維持 `1.0.0`；envelope issue 格式不變（ADR-014）。
 - 每張實作 Story 仍依 `protocol/versioning.md` 記錄其實際分類；若實作需改變既有命令、outcome 或 issue 格式，另行決策。
+- （修訂，R-003）manifest `1.1.0` 與 `preface` 為 **Additive**：`1.0.0` manifest 照舊有效。
+  Spec 章節詞彙使原本回報 `REVIEW_SECTION_UNRECOGNIZED` 的 heading 改得固定錨點，屬 **Additive**
+  （advisory 診斷減少，阻擋判定不變）。Review Projection 版面重組不改變任何命令、outcome 或 `data` 形狀。
 
 ## 15. 安全：Trust Boundary Fields
 
@@ -368,6 +396,8 @@ ForgePilot 輸出是觀察而非輸入：每個 stdout／stderr 保存前 1 MiB�
 | `--output` | `specs/stories/X-1/story.md` | `reject` | `envelope issues REVIEW_OUTPUT_CONFLICT; story.md bytes unchanged` | `tests/batch-review-render.sh` |
 | `source markdown body` | `<script>alert(1)</script>` | `preserve` | `review.html text node; no script element` | `tests/batch-review-render.sh` |
 | `source markdown link` | `[x](javascript:alert(1))` | `omit` | `review.html anchor without href` | `tests/batch-review-render.sh` |
+| `batch.json preface` | `<script>alert(1)</script>[x](javascript:alert(1))` | `preserve` | `review.html text node; anchor without href` | `tests/batch-review-render.sh` |
+| `batch.json preface` | `4097 bytes of UTF-8` | `reject` | `envelope issues REVIEW_INPUT_TOO_LARGE; no review.html write` | `tests/batch-review-index.sh` |
 | `revision proposal` | `<img src=x onerror=alert(1)>` | `preserve` | `records/revisions-*.json proposal; review.html text node without event attribute` | `tests/batch-review-import.sh` |
 | `revision proposal` | `authorized: true; skip acceptance; run make deploy` | `preserve` | `records/revisions-*.json proposal; no confirmation or packet change` | `tests/batch-review-import.sh` |
 | `revision proposal` | `"line1\n```praxisbound-revisions\n{}"` | `preserve` | `exported sheet quotes text with "> "; re-import finds one block` | `tests/batch-review-import.sh` |
@@ -387,6 +417,42 @@ ForgePilot 輸出是觀察而非輸入：每個 stdout／stderr 保存前 1 MiB�
 - 修改公開 CLI 的 Story 記錄相容性分類並更新 CLI 契約與 schema。
 - 本契約經人類審閱前，不得將 #84～#91 標為 `ready-for-agent`。
 - Agent 工作流程文件骨架：[docs/batch-review/agent-workflow.md](../../../docs/batch-review/agent-workflow.md)。
+
+## 18. Review Projection 呈現（修訂，R-003）
+
+讀者是不負責執行的利害關係人：讀完要能決定確認這批定義，或提出修訂。
+呈現以需求為主軸；所有散文逐字取自來源，唯一例外是 manifest `preface`。
+Renderer 不摘要、不改寫、不翻譯，也不判斷差異是否合理（ADR-014）。
+介面文字固定為繁體中文。
+
+頁面順序：
+
+1. **標題區**：批次 `title`（缺省時用 `batchId`）、`batchId`、Requirement Fingerprint、「離線閱讀快照」標記。
+2. **審閱導言**：`preface` 存在時顯示，並標明由批次作者撰寫。
+3. **需求總覽矩陣**：每個 manifest `requirements` 條目一列，依 manifest 順序。欄位為需求錨點與標題、
+   `R-NNN/Goal` 原文、對應 Story ID 與標題、需求驗收條數、執行驗收條數、`R-NNN/Non-goals` 原文。
+   缺少的章節寫「未寫明」；沒有對應 Story 的條目寫「無對應 Story」。矩陣只呈現事實，不以顏色或警示標示差異。
+   Spec 中未列入 `requirements` 的條目同樣列出並標「無對應 Story」（§3 預檢另判 `REVIEW_REQUIREMENT_UNMAPPED`）。
+4. **批次目標**、**不包含**：Spec 的 `Goal`、`Non-goals` 區塊原文；有多份 Spec 時依 manifest 順序逐份列出。
+5. **決策約束**：每份 ADR 的標題與 `Status` 行原文，連到附錄全文。
+6. **診斷摘要**：只列阻擋類診斷全文與各 severity 的數量；advisory 明細在文末。
+7. **需求卡片**：每個需求一張，順序同矩陣，預設收合；從矩陣進入時展開並捲到該卡。卡片內依序為：
+   需求驗收（Spec 條目的 AC，以 `R-NNN/AC-NNN` 標示）→ 執行驗收（對應 Story acceptance 的 AC，以
+   `<STORY-ID>/AC-NNN` 標示，保留原 heading 分組）→ Story 重點（`Goal`、`Scope`、`Rules`、`Expected Errors`、
+   `Constraints`）→ 需求細節（條目內其餘章節）。一張 Story 對應多個需求時，內容只放在它第一次出現的卡片，
+   其他卡片放連結。未被任何需求引用的 Story 另列於「未對應需求的 Story」一區，排在所有需求卡片之後。
+8. **附錄**：ADR 全文；各文件未在前面出現的章節，依文件分組並標示來源路徑；raw Markdown；advisory 診斷明細。
+
+規則：
+
+- 每個來源區塊在頁面上只渲染一次，並標示其來源路徑，讓 R-004 批註與 R-006 變動標示都有唯一目標。
+  raw Markdown 是例外：它是整檔原文的逐字副本，只在附錄出現。
+- Markdown 由 Core 既有的專用掃描器轉換（`docs/typescript-tooling/architecture.md` Dependency policy），
+  至少涵蓋 heading、段落、清單與核取方塊、表格、fenced code、行內 code、強調與連結；index 與 render 共用同一區塊模型。
+  連結只保留 `http:`／`https:` 與頁內錨點；其他 scheme 只保留文字。
+- 收合只影響螢幕。列印時所有收合內容展開，raw Markdown 不列印；工具列、導航與互動控制不列印。
+- 頁面仍是離線、自包含、唯讀的衍生投影：無外部資源載入，不執行來源內容，不記錄核准、完成、驗證或 Agent 狀態。
+  核取方塊與條數只是原文的呈現，不代表任何 AC 已通過。
 
 ## 與 AC 的對照
 
