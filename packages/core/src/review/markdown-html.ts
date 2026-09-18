@@ -182,6 +182,13 @@ function renderInline(text: string): string {
   return output;
 }
 
+/** Exposes the shared inline renderer so callers composing labels around a
+ * rendered fragment (e.g. an `R-NNN/AC-NNN` prefix) reuse the same escaping,
+ * code-span, link, and emphasis rules rather than re-implementing them. */
+export function renderMarkdownInline(text: string): string {
+  return renderInline(text);
+}
+
 function isAsciiVisible(character: string): boolean {
   if (character === "") return false;
   const codePoint = character.codePointAt(0) ?? 0;

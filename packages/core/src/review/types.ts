@@ -161,6 +161,8 @@ export interface ReviewIndex {
   readonly specs: readonly SpecIndex[];
   readonly stories: readonly StoryIndex[];
   readonly trace: readonly TraceEntry[];
+  /** The manifest's `requirements` in declared order (contract §18 matrix row order). */
+  readonly requirements: readonly ReviewBatchPlanRequirement[];
   readonly dependencies: readonly ReviewBatchPlanDependency[];
   readonly diagnostics: readonly ReviewDiagnostic[];
 }

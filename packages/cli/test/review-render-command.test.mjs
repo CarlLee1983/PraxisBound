@@ -101,7 +101,7 @@ test("TST022-AC-001/006: review render atomically writes an offline projection f
     assert.equal(execution.result.exit, 0);
     assert.equal(execution.result.data.output, "review.html");
     const html = await readFile(join(root, "review.html"), "utf8");
-    assert.match(html, /Offline reading snapshot/);
+    assert.match(html, /離線閱讀快照/);
     assert.doesNotMatch(html, /href="javascript:/i);
   });
 });
@@ -195,10 +195,7 @@ test("TST022-AC-006: readable drafts with a missing source keep their diagnostic
       "REVIEW_SOURCE_MISSING",
     );
     const html = await readFile(join(root, "incomplete.html"), "utf8");
-    assert.match(
-      html,
-      /Source was unavailable when this snapshot was produced/,
-    );
+    assert.match(html, /此來源無法讀取/);
   });
 });
 

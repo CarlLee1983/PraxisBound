@@ -180,17 +180,39 @@ diagnostic on a `success` result, aligned one-to-one between `issues` and
 
 `praxisbound review render <manifest> --output <file> [--json]` reuses the
 same validated local batch and Requirement Fingerprint as `review index`, then
-writes one self-contained HTML Review Projection. This additive command uses
-the existing v1 envelope mappings: `success` is `pass`/`0`; a diagnosed output
-publication failure is `failure`/`1`; invalid argv and unsafe input/output are
-`usage-error` or `configuration-error`/`2`; unexpected failures are `ERROR`/`3`.
-The output must remain within the repository and cannot target the manifest,
-any declared source, the batch `records/` directory, or any symlink. It stages
-and renames the HTML atomically, retaining a prior successful output if
-publication fails. It never creates the output directory; a missing one is a
-`REVIEW_OUTPUT_WRITE_FAILED` failure whose issue path names that directory. HTML is an offline, read-only projection: it includes no
-external resource loads, executes no source content, and never records
-approval, completion, verification, or Agent state.
+writes one self-contained HTML Review Projection. This is an Additive CLI
+capability (Story TST-022): the result envelope stays at schema version
+`1.0.0` and reuses the existing v1 envelope mappings — `success` is `pass`/`0`;
+a diagnosed output publication failure is `failure`/`1`; invalid argv and
+unsafe input/output are `usage-error` or `configuration-error`/`2`; unexpected
+failures are `ERROR`/`3`. The output must remain within the repository and
+cannot target the manifest, any declared source, the batch `records/`
+directory, or any symlink. It stages and renames the HTML atomically,
+retaining a prior successful output if publication fails. It never creates
+the output directory; a missing one is a `REVIEW_OUTPUT_WRITE_FAILED` failure
+whose issue path names that directory.
+
+The Batch Manifest may declare `schemaVersion` `1.1.0` with an optional
+`preface` (a batch-author Review Preface, up to 4 KiB UTF-8; oversized input
+is `REVIEW_INPUT_TOO_LARGE`, and a `preface` under `1.0.0` is
+`REVIEW_MANIFEST_INVALID`); both `review index` and `review render` accept it,
+and `1.0.0` manifests remain valid without it.
+
+The generated page follows contract §18's requirement-organized layout, in
+order: a title area (batch `title` or `batchId`, `batchId`, the full
+Requirement Fingerprint, and an offline-snapshot marker), the Review Preface
+when present, a requirement overview matrix (one row per Spec entry, in
+manifest `requirements` order then remaining Spec order, stating facts only —
+a missing section reads 「未寫明」, an entry without a Story reads
+「無對應 Story」), the batch's Goal and Non-goals text, ADR title/Status
+constraints, a diagnostic summary, one collapsed card per requirement (each
+listing Requirement Acceptance, then Execution Acceptance, then the serving
+Story's Goal/Scope/Rules/Expected Errors/Constraints, then the entry's
+remaining sections), a section for Stories no requirement references, and an
+appendix (source list, ADR and other leftover sections, raw Markdown, and
+advisory diagnostic detail). HTML is an offline, read-only projection: it
+includes no external resource loads, executes no source content, and never
+records approval, completion, verification, or Agent state.
 
 ## Static and execution trust boundary
 

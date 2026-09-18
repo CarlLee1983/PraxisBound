@@ -349,6 +349,7 @@ export function indexReviewBatch(
       })),
       stories,
       trace,
+      requirements: plan.requirements,
       dependencies: plan.dependencies,
       diagnostics,
     },
@@ -357,7 +358,11 @@ export function indexReviewBatch(
 
 const adrTitlePattern = /ADR-(\d+)/;
 
-function adrExplicitId(
+/**
+ * Recognizes an ADR's own `ADR-<digits>` title, shared with the projection
+ * so both agree on which heading's locator is the ADR's explicit id.
+ */
+export function adrExplicitId(
   heading: HeadingBlock,
   index: number,
 ): string | undefined {
@@ -366,7 +371,8 @@ function adrExplicitId(
   return match === null ? undefined : `ADR-${match[1]}`;
 }
 
-const STORY_FIXED_FIELDS: ReadonlySet<string> = new Set([
+/** Story `story.md` fixed field headings, shared with the projection. */
+export const STORY_FIXED_FIELDS: ReadonlySet<string> = new Set([
   "Goal",
   "Context",
   "Classification",
@@ -386,7 +392,8 @@ const STORY_FIXED_FIELDS: ReadonlySet<string> = new Set([
   "Superseded Behavior",
 ]);
 
-function storyExplicitId(heading: HeadingBlock): string | undefined {
+/** Recognizes a `story.md` fixed field heading, shared with the projection. */
+export function storyExplicitId(heading: HeadingBlock): string | undefined {
   return heading.level === 2 && STORY_FIXED_FIELDS.has(heading.text)
     ? heading.text
     : undefined;
@@ -423,10 +430,12 @@ interface SpecIndexInternal extends SpecIndex {
   readonly allRecognizedIds: readonly string[];
 }
 
-type TopLevelVocabKey = "goal" | "nonGoals";
-type EntrySectionVocabKey = "goal" | "acceptance" | "nonGoals" | "dependencies";
+export type TopLevelVocabKey = "goal" | "nonGoals";
+export type EntrySectionVocabKey =
+  "goal" | "acceptance" | "nonGoals" | "dependencies";
 
-const ENTRY_SECTION_LABELS: Record<EntrySectionVocabKey, string> = {
+/** Contract §5 entry-section anchor labels, shared with the projection. */
+export const ENTRY_SECTION_LABELS: Record<EntrySectionVocabKey, string> = {
   goal: "Goal",
   acceptance: "Acceptance",
   nonGoals: "Non-goals",
@@ -439,7 +448,7 @@ const ENTRY_SECTION_LABELS: Record<EntrySectionVocabKey, string> = {
  * for "goal". English comparisons are case-insensitive; nothing else is
  * normalized beyond the heading text's own leading/trailing trim.
  */
-function matchTopLevelVocab(text: string): TopLevelVocabKey | undefined {
+export function matchTopLevelVocab(text: string): TopLevelVocabKey | undefined {
   const trimmed = text.trim();
   const lower = trimmed.toLowerCase();
   if (
@@ -458,7 +467,7 @@ function matchTopLevelVocab(text: string): TopLevelVocabKey | undefined {
  * `R-NNN/*` anchors (contract §5): an exact match on the trimmed heading
  * text, case-insensitive for the English forms only.
  */
-function matchEntrySectionVocab(
+export function matchEntrySectionVocab(
   text: string,
 ): EntrySectionVocabKey | undefined {
   const trimmed = text.trim();

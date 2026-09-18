@@ -2,138 +2,432 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { TextEncoder } from "node:util";
 
-import { renderReviewProjection } from "../dist/index.js";
+import { indexReviewBatch, renderReviewProjection } from "../dist/index.js";
 
-const index = {
-  batchId: "TST-922-fixture",
-  title: "Readable fixture objective",
-  fingerprint: "a".repeat(64),
-  manifestSha256: "b".repeat(64),
-  sources: [
-    { path: "specs/features/fixture/spec.md", sha256: "c".repeat(64) },
-    {
-      path: "specs/stories/RF-001-fixture/story.md",
-      sha256: "d".repeat(64),
-    },
-    {
-      path: "specs/stories/RF-001-fixture/acceptance.md",
-      sha256: "e".repeat(64),
-    },
-  ],
-  adrs: [],
-  specs: [
-    {
-      path: "specs/features/fixture/spec.md",
-      entries: [
-        {
-          id: "R-001",
-          heading: "R-001：Fixture",
-          locator: {
-            path: "specs/features/fixture/spec.md",
-            anchor: "R-001",
-            blockSha256: "f".repeat(64),
-          },
-          acceptance: [],
-        },
-      ],
-      sections: [],
-    },
-  ],
-  stories: [
-    {
-      id: "RF-001",
-      path: "specs/stories/RF-001-fixture",
-      acceptanceIds: ["AC-001", "AC-002"],
-      locators: {
-        story: [],
-        acceptance: [
-          {
-            path: "specs/stories/RF-001-fixture/acceptance.md",
-            anchor: "Acceptance Criteria",
-            blockSha256: "1".repeat(64),
-          },
-          {
-            path: "specs/stories/RF-001-fixture/acceptance.md",
-            anchor: "AC-001",
-            blockSha256: "2".repeat(64),
-          },
-          {
-            path: "specs/stories/RF-001-fixture/acceptance.md",
-            anchor: "AC-002",
-            blockSha256: "3".repeat(64),
-          },
-        ],
+const SPEC_PATH = "specs/features/fixture/spec.md";
+const ADR_PATH = "specs/decisions/ADR-014-fixture.md";
+const SHARED_DIR = "specs/stories/RF-SHARED-fixture";
+const ORPHAN_DIR = "specs/stories/RF-ORPHAN-fixture";
+
+const encoder = new TextEncoder();
+
+const SPEC_MD = `# Fixture Spec
+
+Preamble text before any section, sentinel PREAMBLE_SENTENCE_ONE.
+
+## Goal
+
+Batch objective sentence GOAL_SENTENCE_SPEC.
+
+## Non-goals
+
+Batch exclusion sentence NONGOALS_SENTENCE_SPEC.
+
+## Unrecognized Section
+
+Unrecognized-section sentence UNRECOGNIZED_SENTENCE_SPEC.
+
+## R-001：Fixture Requirement One
+
+### Goal
+
+Entry one goal sentence GOAL_SENTENCE_R001 <script>alert(1)</script><img src=x onerror=alert(1)>.
+
+### Acceptance
+
+- AC-001：Entry one acceptance sentence AC_SENTENCE_R001_1.
+- AC-002：Entry one acceptance sentence AC_SENTENCE_R001_2.
+
+### Out of Scope
+
+Entry one exclusion sentence NONGOALS_SENTENCE_R001.
+
+### Dependencies
+
+Entry one dependency sentence DEPENDENCIES_SENTENCE_R001 [x](javascript:alert(1)) [y](data:text/html,unsafe) [z](mailto:a@example.test).
+
+## R-002：Fixture Requirement Two
+
+### Goal
+
+Entry two goal sentence GOAL_SENTENCE_R002.
+
+### Acceptance
+
+- AC-001：Entry two acceptance sentence AC_SENTENCE_R002_1.
+
+## R-003：Fixture Requirement Three Unmapped
+
+### Goal
+
+Entry three goal sentence GOAL_SENTENCE_R003.
+
+### Acceptance
+
+- AC-001：Entry three acceptance sentence AC_SENTENCE_R003_1.
+`;
+
+const SHARED_STORY_MD = `# Story: RF-SHARED Fixture Shared Story
+
+## Goal
+
+Shared story goal sentence GOAL_SENTENCE_SHARED.
+
+## Scope
+
+Shared story scope sentence SCOPE_SENTENCE_SHARED.
+
+## Rules
+
+Shared story rules sentence RULES_SENTENCE_SHARED.
+
+## Expected Errors
+
+Shared story errors sentence ERRORS_SENTENCE_SHARED.
+
+## Constraints
+
+Shared story constraints sentence CONSTRAINTS_SENTENCE_SHARED.
+
+## Dependencies
+
+Shared story dependency sentence DEPENDENCIES_SENTENCE_SHARED.
+`;
+
+const SHARED_ACCEPTANCE_MD = `# Acceptance Criteria
+
+## Happy Path
+
+* [ ] AC-001: Shared story acceptance sentence ACCEPTANCE_SENTENCE_SHARED_1.
+* [ ] AC-002: Shared story acceptance sentence ACCEPTANCE_SENTENCE_SHARED_2.
+
+## Notes
+
+Shared story notes sentence NOTES_SENTENCE_SHARED.
+`;
+
+const ORPHAN_STORY_MD = `# Story: RF-ORPHAN Fixture Orphan Story
+
+## Goal
+
+Orphan story goal sentence GOAL_SENTENCE_ORPHAN.
+`;
+
+const ORPHAN_ACCEPTANCE_MD = `# Acceptance Criteria
+
+* [ ] AC-001: Orphan story acceptance sentence ACCEPTANCE_SENTENCE_ORPHAN_1.
+`;
+
+const ADR_MD = `# ADR-014: Fixture Decision Title
+
+* Status: Accepted
+
+Decision body sentence ADR_BODY_SENTENCE.
+`;
+
+const PREFACE =
+  "Preface sentence PREFACE_SENTENCE <script>alert(1)</script>[x](javascript:alert(1)).";
+
+function buildFixture() {
+  const plan = {
+    batchId: "TST-922-fixture",
+    title: "Readable fixture objective",
+    preface: PREFACE,
+    manifestSha256: "0".repeat(64),
+    adrs: [ADR_PATH],
+    specs: [SPEC_PATH],
+    stories: [
+      {
+        directory: SHARED_DIR,
+        storyId: "RF-SHARED",
+        storyPath: `${SHARED_DIR}/story.md`,
+        acceptancePath: `${SHARED_DIR}/acceptance.md`,
       },
-    },
-  ],
-  trace: [
-    {
-      spec: "specs/features/fixture/spec.md",
-      anchor: "R-001",
-      stories: [{ storyId: "RF-001", acceptanceIds: ["AC-001", "AC-002"] }],
-    },
-  ],
-  dependencies: [],
-  diagnostics: [
-    {
-      code: "REVIEW_SOURCE_MISSING",
-      severity: "blocking",
-      message: "declared source is missing: specs/missing.md",
-      path: "specs/missing.md",
-    },
-  ],
-};
+      {
+        directory: ORPHAN_DIR,
+        storyId: "RF-ORPHAN",
+        storyPath: `${ORPHAN_DIR}/story.md`,
+        acceptancePath: `${ORPHAN_DIR}/acceptance.md`,
+      },
+    ],
+    requirements: [
+      { spec: SPEC_PATH, anchor: "R-001", stories: ["RF-SHARED"] },
+      { spec: SPEC_PATH, anchor: "R-002", stories: ["RF-SHARED"] },
+    ],
+    dependencies: [{ story: "RF-SHARED", dependsOn: [] }],
+    sources: [
+      ADR_PATH,
+      SPEC_PATH,
+      `${ORPHAN_DIR}/acceptance.md`,
+      `${ORPHAN_DIR}/story.md`,
+      `${SHARED_DIR}/acceptance.md`,
+      `${SHARED_DIR}/story.md`,
+    ].sort(),
+    diagnostics: [],
+    ambiguousStoryIds: [],
+  };
 
-test("TST022-AC-001/002/003/005: an offline projection retains sources, promotes Story sections, and makes untrusted markup inert", () => {
-  const html = renderReviewProjection(index, [
-    {
-      path: "specs/features/fixture/spec.md",
-      bytes: new TextEncoder().encode(
-        "## R-001：Fixture\n\n[x](javascript:alert(1)) [data](data:text/html,unsafe) [safe](https://example.test/reference)\n\n| Long heading | Value |\n| --- | --- |\n| A very long cell | Still locally scrollable |\n",
-      ),
-    },
-    {
-      path: "specs/stories/RF-001-fixture/story.md",
-      bytes: new TextEncoder().encode(
-        "# Story: RF-001 Fixture\n\n## Goal\n\nShip it.\n\n## Scope\n\n<script>alert(1)</script><img src=x onerror=alert(1)>\n\n## Rules\n\nNo remote assets.\n\n## Expected Errors\n\nNo write.\n\n## Constraints\n\nOffline.\n",
-      ),
-    },
-    {
-      path: "specs/stories/RF-001-fixture/acceptance.md",
-      bytes: new TextEncoder().encode(
-        "# Acceptance Criteria\n\n* [ ] AC-001: Still pending.\n* [ ] AC-002: Also pending.\n",
-      ),
-    },
-  ]);
+  const files = {
+    [SPEC_PATH]: SPEC_MD,
+    [ADR_PATH]: ADR_MD,
+    [`${SHARED_DIR}/story.md`]: SHARED_STORY_MD,
+    [`${SHARED_DIR}/acceptance.md`]: SHARED_ACCEPTANCE_MD,
+    [`${ORPHAN_DIR}/story.md`]: ORPHAN_STORY_MD,
+    [`${ORPHAN_DIR}/acceptance.md`]: ORPHAN_ACCEPTANCE_MD,
+  };
 
+  const observations = new Map(
+    Object.entries(files).map(([path, text]) => [
+      path,
+      { kind: "file", bytes: encoder.encode(text) },
+    ]),
+  );
+
+  const result = indexReviewBatch(plan, observations);
+  assert.equal(result.kind, "ok", JSON.stringify(result));
+  const { index } = result;
+
+  const documents = index.sources.map((source) => ({
+    path: source.path,
+    bytes: observations.get(source.path)?.bytes,
+  }));
+
+  const html = renderReviewProjection(index, documents);
+  return { index, html, files };
+}
+
+const { index, html, files } = buildFixture();
+
+test("TST022-AC-001: the page follows the contract §18 order", () => {
+  const markers = [
+    "離線閱讀快照",
+    "PREFACE_SENTENCE",
+    "需求總覽矩陣",
+    "批次目標",
+    "不包含",
+    "決策約束",
+    "診斷摘要",
+    "需求卡片",
+    "未對應需求的 Story",
+    "附錄",
+  ];
+  let cursor = -1;
+  for (const marker of markers) {
+    const position = html.indexOf(marker, cursor + 1);
+    assert.ok(position !== -1, `missing marker (in order): ${marker}`);
+    cursor = position;
+  }
   assert.match(html, /<!doctype html>/i);
   assert.match(html, /TST-922-fixture/);
-  assert.match(html, /Requirement Fingerprint/);
   assert.match(html, /Readable fixture objective/);
-  assert.match(html, /REVIEW_SOURCE_MISSING/);
-  assert.match(html, /Spec → Story → Acceptance/);
-  assert.match(html, /Story focus/);
-  assert.match(html, /<h3>Goal<\/h3>/);
-  assert.match(html, /&lt;script&gt;alert\(1\)&lt;\/script&gt;/);
+  assert.match(html, /由批次作者撰寫（Review Preface）/);
+  assert.match(html, new RegExp(index.fingerprint));
+});
+
+test("TST022-AC-002: the matrix has one row per Spec entry, verbatim cells, counts, and gap labels", () => {
+  const matrix = html.slice(
+    html.indexOf("需求總覽矩陣"),
+    html.indexOf("批次目標"),
+  );
+
+  const r1 = matrix.indexOf("R-001");
+  const r2 = matrix.indexOf("R-002");
+  const r3 = matrix.indexOf("R-003");
+  assert.ok(r1 !== -1 && r2 !== -1 && r3 !== -1);
+  assert.ok(
+    r1 < r2 && r2 < r3,
+    "manifest order first, then Spec order for the unmapped entry",
+  );
+
+  assert.match(matrix, /GOAL_SENTENCE_R001/);
+  assert.match(matrix, /NONGOALS_SENTENCE_R001/);
+  assert.match(matrix, /RF-SHARED/);
+  assert.match(matrix, /GOAL_SENTENCE_R002/);
+  assert.match(matrix, /未寫明/); // R-002 has no ### Non-goals
+  assert.match(matrix, /無對應 Story/); // R-003 is not in `requirements`
+  assert.doesNotMatch(matrix, /class="diff|class="warn/);
+});
+
+test("TST022-AC-003: each card lists Requirement then Execution acceptance, then Story focus, then detail; cards are collapsed", () => {
+  const cardsSection = html.slice(
+    html.indexOf('<section class="cards">'),
+    html.indexOf('<section class="orphan-stories">'),
+  );
+  assert.doesNotMatch(
+    cardsSection.match(/<details class="card"/g)?.join("") ?? "",
+    /open/,
+  );
+
+  const r1Card = cardsSection.slice(
+    cardsSection.indexOf("R-001"),
+    cardsSection.indexOf("R-002"),
+  );
+  const order = [
+    "需求驗收",
+    "R-001/AC-001",
+    "AC_SENTENCE_R001_1",
+    "執行驗收",
+    "RF-SHARED/AC-001",
+    "ACCEPTANCE_SENTENCE_SHARED_1",
+    "Story 重點",
+    "GOAL_SENTENCE_SHARED",
+    "需求細節",
+    "DEPENDENCIES_SENTENCE_R001",
+  ];
+  let cursor = -1;
+  for (const marker of order) {
+    const position = r1Card.indexOf(marker);
+    assert.ok(position !== -1, `missing in card: ${marker}`);
+    assert.ok(position > cursor, `out of order in card: ${marker}`);
+    cursor = position;
+  }
+
+  // The second card sharing the same Story links back instead of repeating its content.
+  const r2Card = cardsSection.slice(cardsSection.indexOf("R-002"));
+  assert.doesNotMatch(r2Card, /GOAL_SENTENCE_SHARED/);
+  assert.match(r2Card, /已在其他卡片顯示/);
+});
+
+test("TST022-AC-004: every source block renders exactly once outside the raw appendix, and every non-blank line's text is present", () => {
+  const withoutRaw = html.replace(
+    /<details class="raw no-print">[\s\S]*?<\/details>/,
+    "",
+  );
+
+  const onceOutsideRaw = [
+    "PREAMBLE_SENTENCE_ONE",
+    "GOAL_SENTENCE_SPEC",
+    "NONGOALS_SENTENCE_SPEC",
+    "UNRECOGNIZED_SENTENCE_SPEC",
+    "GOAL_SENTENCE_R001",
+    "AC_SENTENCE_R001_1",
+    "AC_SENTENCE_R001_2",
+    "NONGOALS_SENTENCE_R001",
+    "DEPENDENCIES_SENTENCE_R001",
+    "GOAL_SENTENCE_R002",
+    "AC_SENTENCE_R002_1",
+    "GOAL_SENTENCE_R003",
+    "AC_SENTENCE_R003_1",
+    "GOAL_SENTENCE_SHARED",
+    "SCOPE_SENTENCE_SHARED",
+    "RULES_SENTENCE_SHARED",
+    "ERRORS_SENTENCE_SHARED",
+    "CONSTRAINTS_SENTENCE_SHARED",
+    "DEPENDENCIES_SENTENCE_SHARED",
+    "ACCEPTANCE_SENTENCE_SHARED_1",
+    "ACCEPTANCE_SENTENCE_SHARED_2",
+    "NOTES_SENTENCE_SHARED",
+    "GOAL_SENTENCE_ORPHAN",
+    "ACCEPTANCE_SENTENCE_ORPHAN_1",
+    "ADR_BODY_SENTENCE",
+  ];
+  for (const sentinel of onceOutsideRaw) {
+    const count = withoutRaw.split(sentinel).length - 1;
+    assert.equal(
+      count,
+      1,
+      `expected exactly one rendering of ${sentinel}, saw ${count}`,
+    );
+  }
+
+  // Every non-blank source line's text (Markdown markers stripped) is present somewhere,
+  // including the raw appendix.
+  for (const text of Object.values(files)) {
+    for (const rawLine of text.split("\n")) {
+      const stripped = rawLine
+        .replace(/^#{1,6}\s+/, "")
+        .replace(/^[-*]\s+(?:\[[ xX]\]\s+)?/, "")
+        .replace(/^\*\s+Status:\s*/, "")
+        .trim();
+      if (stripped === "") continue;
+      assert.ok(
+        html.includes(stripped) || html.includes(require_escape(stripped)),
+        `line text missing from projection: ${stripped}`,
+      );
+    }
+  }
+});
+
+// A very small helper: text rendered through the HTML escaper for the raw-Markdown
+// appendix comparison above (script/img payload lines contain `<`/`>`/`&`).
+function require_escape(value) {
+  return value
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;");
+}
+
+test("TST022-AC-005: every projection locator equals the index Locator for the same block, once each", () => {
+  const locators = [];
+  for (const spec of index.specs) {
+    if (spec.goal) locators.push(spec.goal);
+    if (spec.nonGoals) locators.push(spec.nonGoals);
+    for (const section of spec.sections) locators.push(section.locator);
+    for (const entry of spec.entries) {
+      locators.push(entry.locator);
+      for (const acceptance of entry.acceptance)
+        locators.push(acceptance.locator);
+      for (const key of ["goal", "acceptance", "nonGoals", "dependencies"]) {
+        if (entry.sections[key]) locators.push(entry.sections[key]);
+      }
+    }
+  }
+  for (const story of index.stories) {
+    for (const locator of story.locators.story) locators.push(locator);
+    for (const locator of story.locators.acceptance) locators.push(locator);
+  }
+  for (const adr of index.adrs)
+    for (const locator of adr.locators) locators.push(locator);
+
+  assert.ok(locators.length > 0);
+  for (const locator of locators) {
+    const attributeText = `data-path="${escapeAttribute(locator.path)}" data-anchor="${escapeAttribute(locator.anchor)}" data-block-sha256="${locator.blockSha256}"`;
+    const count = html.split(attributeText).length - 1;
+    assert.equal(
+      count,
+      1,
+      `expected locator to render exactly once: ${locator.path}#${locator.anchor} (saw ${count})`,
+    );
+  }
+});
+
+function escapeAttribute(value) {
+  return value
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+}
+
+test("TST022-AC-009: the projection never claims PASS, completion, or approval; checkboxes are glyphs only", () => {
+  assert.doesNotMatch(html, /<input/i);
+  assert.doesNotMatch(html, /\bPASS\b/);
+  assert.doesNotMatch(html, /已核准|已通過|已完成/);
+  assert.match(html, /☐/);
+  assert.match(html, /class="checkbox-glyph"/);
+});
+
+test("TST022-AC-010/Security Fixture Matrix: untrusted markup and unsafe links are inert; the page is offline and self-contained", () => {
   assert.doesNotMatch(html, /<script[\s>]/i);
   assert.doesNotMatch(html, /<img[\s>]/i);
-  assert.match(html, /<a class="unsafe-link">x<\/a>/);
-  assert.match(html, /<a class="unsafe-link">data<\/a>/);
-  assert.match(html, /<a href="https:\/\/example\.test\/reference">safe<\/a>/);
+  assert.doesNotMatch(html, /<iframe[\s>]/i);
+  assert.match(html, /&lt;script&gt;alert\(1\)&lt;\/script&gt;/);
   assert.doesNotMatch(html, /href="javascript:/i);
-  assert.doesNotMatch(html, /<(?:img|script|iframe|embed|object|link)[\s>]/i);
-  assert.match(html, /@media print/);
-  assert.match(html, /<nav aria-label="Review navigation">/);
-  assert.match(html, /AC-001: Still pending/);
-  assert.match(html, /href="#source-1-locator-1"/);
-  assert.match(html, /id="source-1-locator-1"/);
-  assert.match(html, /href="#source-3-locator-2"/);
-  assert.match(html, /id="source-3-locator-2"/);
-  assert.match(html, /href="#source-3-locator-3"/);
-  assert.match(html, /id="source-3-locator-3"/);
-  assert.equal((html.match(/id="source-3-locator-2"/g) ?? []).length, 1);
-  assert.match(html, /<div class="table-scroll"><table>/);
+  assert.doesNotMatch(html, /href="data:/i);
+  assert.doesNotMatch(html, /href="mailto:/i);
+  assert.match(html, /<a class="unsafe-link">x<\/a>/);
+  assert.match(html, /<a class="unsafe-link">y<\/a>/);
+  assert.match(html, /<a class="unsafe-link">z<\/a>/);
+  // Preface script/link payload is also inert, and never gets an href.
+  assert.match(html, /由批次作者撰寫（Review Preface）[\s\S]*&lt;script&gt;/);
   assert.match(html, /Content-Security-Policy/);
-  // 64 字元 digest 沒有斷點，窄螢幕上須能換行，否則會撐寬整頁。
-  assert.match(html, /\.source-digest \{[^}]*overflow-wrap: anywhere;/);
+  assert.doesNotMatch(html, /https?:\/\/(?!example\.test)/);
+  assert.doesNotMatch(
+    html,
+    /<link[\s>]|<iframe[\s>]|<embed[\s>]|<object[\s>]/i,
+  );
+  assert.match(html, /overflow-wrap: anywhere/);
+  assert.match(html, /@media print/);
+  assert.match(html, /details::details-content/);
 });

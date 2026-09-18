@@ -1,244 +1,315 @@
-import { scanHeadingBlocks, scanMarkdownLines } from "./markdown.js";
-import type { ReviewDiagnostic, ReviewIndex } from "./types.js";
+/**
+ * The requirement-organized Review Projection page (contract §18).
+ *
+ * Assembles the page order §18 specifies — title, Review Preface, overview
+ * matrix, batch goal/non-goals, ADR constraints, diagnostic summary,
+ * collapsed requirement cards, orphan Stories, appendix — from the index and
+ * already-read source bytes. All partitioning (which byte range plays which
+ * role) lives in `render-source.ts`; this module only assembles the page and
+ * its inline CSS. Pure: no I/O, no globals, no mutation of its inputs.
+ */
+
+import { renderMarkdownHtml } from "./markdown-html.js";
+import {
+  buildLocatorLookup,
+  elementId,
+  locatorHref,
+  type LocatorLookup,
+} from "./render-locators.js";
+import {
+  adrSummary,
+  escapeHtml,
+  MISSING_SECTION_TEXT,
+  NO_STORY_TEXT,
+  partitionAcceptanceDocument,
+  partitionSpecDocument,
+  partitionStoryDocument,
+  renderAdrAppendix,
+  type AcceptanceContent,
+  type AppendixSection,
+  type SpecDocumentContent,
+  type StoryContent,
+} from "./render-source.js";
+import type {
+  ReviewDiagnostic,
+  ReviewIndex,
+  SpecEntryIndex,
+  SpecIndex,
+} from "./types.js";
 
 export interface ReviewProjectionDocument {
   readonly path: string;
   readonly bytes: Uint8Array | undefined;
 }
 
-function escapeHtml(value: string): string {
-  return value
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#39;");
+const MISSING_SOURCE_TEXT = "產生本次離線快照時，此來源無法讀取。";
+
+function firstH1Text(bytes: Uint8Array): string | undefined {
+  const text = new TextDecoder("utf-8").decode(bytes);
+  return /^#\s+(.*)$/m.exec(text)?.[1]?.trim();
 }
 
-function isSafeHref(value: string): boolean {
-  const normalized = value.trim().toLowerCase();
-  for (const character of normalized) {
-    const codePoint = character.codePointAt(0) ?? 0;
-    if (codePoint <= 0x1f || (codePoint >= 0x7f && codePoint <= 0x9f))
-      return false;
-  }
-  return (
-    normalized.startsWith("#") ||
-    normalized.startsWith("http:") ||
-    normalized.startsWith("https:") ||
-    normalized.startsWith("mailto:")
-  );
+interface StoryDocuments {
+  readonly title: string | undefined;
+  readonly story: StoryContent | undefined;
+  readonly acceptance: AcceptanceContent | undefined;
 }
 
-function renderInline(value: string): string {
-  let output = "";
-  let cursor = 0;
-  while (cursor < value.length) {
-    const start = value.indexOf("[", cursor);
-    const labelEnd = start === -1 ? -1 : value.indexOf("](", start + 1);
-    if (start === -1 || labelEnd === -1) break;
-    let end = labelEnd + 2;
-    let depth = 1;
-    while (end < value.length && depth > 0) {
-      if (value[end] === "(") depth += 1;
-      if (value[end] === ")") depth -= 1;
-      end += 1;
-    }
-    if (depth !== 0) break;
-    output += escapeHtml(value.slice(cursor, start));
-    const label = escapeHtml(value.slice(start + 1, labelEnd));
-    const href = value.slice(labelEnd + 2, end - 1);
-    output += isSafeHref(href)
-      ? `<a href="${escapeHtml(href)}">${label}</a>`
-      : `<a class="unsafe-link">${label}</a>`;
-    cursor = end;
-  }
-  return `${output}${escapeHtml(value.slice(cursor))}`;
+interface MatrixEntry {
+  readonly spec: SpecIndex;
+  readonly entry: SpecEntryIndex;
 }
 
-function sourceId(index: number): string {
-  return `source-${index + 1}`;
-}
+/** Manifest `requirements` order first, then remaining entries in Spec order (R10). */
+function buildMatrixOrder(index: ReviewIndex): readonly MatrixEntry[] {
+  const specsByPath = new Map(index.specs.map((spec) => [spec.path, spec]));
+  const seen = new Set<string>();
+  const order: MatrixEntry[] = [];
 
-function locatorId(source: number, locator: number): string {
-  return `source-${source + 1}-locator-${locator + 1}`;
-}
-
-function tableCells(line: string): string[] {
-  const trimmed = line.trim().replace(/^\||\|$/g, "");
-  return trimmed.split("|").map((cell) => cell.trim());
-}
-
-function isTableDivider(line: string): boolean {
-  return /^\s*\|?\s*:?-{3,}:?\s*(?:\|\s*:?-{3,}:?\s*)+\|?\s*$/.test(line);
-}
-
-function anchorAttribute(
-  line: string,
-  anchors: ReadonlyMap<string, string>,
-): string {
-  const explicit = /\b(?:R|AC)-\d+\b/.exec(line)?.[0];
-  const target = anchors.get(explicit ?? line);
-  return target === undefined ? "" : ` id="${target}"`;
-}
-
-function renderSourceText(
-  bytes: Uint8Array,
-  anchors: ReadonlyMap<string, string>,
-): string {
-  const lines = scanMarkdownLines(bytes);
-  const rendered: string[] = [];
-  let code: string[] = [];
-
-  function flushCode() {
-    if (code.length === 0) return;
-    rendered.push(`<pre><code>${escapeHtml(code.join("\n"))}</code></pre>`);
-    code = [];
-  }
-
-  for (let position = 0; position < lines.length; position += 1) {
-    const line = lines[position];
-    if (line === undefined) continue;
-    if (line.fenced) {
-      code.push(line.text);
-      if (!(lines[position + 1]?.fenced ?? false)) flushCode();
-      continue;
-    }
-    const heading = /^(#{1,6})\s+(.*)$/.exec(line.text);
-    if (heading !== null) {
-      const level = Math.min((heading[1] ?? "").length + 1, 6);
-      const text = heading[2] ?? "";
-      rendered.push(
-        `<h${level}${anchorAttribute(text, anchors)}>${renderInline(text)}</h${level}>`,
-      );
-      continue;
-    }
-    if (isTableDivider(lines[position + 1]?.text ?? "")) {
-      const headers = tableCells(line.text);
-      const rows: string[][] = [];
-      position += 2;
-      while (position < lines.length && lines[position]?.text.includes("|")) {
-        rows.push(tableCells(lines[position]?.text ?? ""));
-        position += 1;
-      }
-      position -= 1;
-      rendered.push(
-        `<div class="table-scroll"><table><thead><tr>${headers.map((cell) => `<th>${renderInline(cell)}</th>`).join("")}</tr></thead><tbody>${rows.map((row) => `<tr>${row.map((cell) => `<td>${renderInline(cell)}</td>`).join("")}</tr>`).join("")}</tbody></table></div>`,
-      );
-      continue;
-    }
-    if (/^\s*[-*+]\s+/.test(line.text)) {
-      rendered.push(
-        `<p class="list-line"${anchorAttribute(line.text, anchors)}>${renderInline(line.text)}</p>`,
-      );
-      continue;
-    }
-    if (line.text.trim() === "") {
-      rendered.push("");
-      continue;
-    }
-    rendered.push(`<p>${renderInline(line.text)}</p>`);
-  }
-  flushCode();
-  return rendered.join("\n");
-}
-
-function sectionText(bytes: Uint8Array, heading: string): string | undefined {
-  const blocks = scanHeadingBlocks(bytes, scanMarkdownLines(bytes));
-  const section = blocks.find(
-    (block) => block.level === 2 && block.text === heading,
-  );
-  if (section === undefined) return undefined;
-  return new TextDecoder("utf-8")
-    .decode(bytes.subarray(section.startOffset, section.endOffset))
-    .split("\n")
-    .slice(1)
-    .join("\n")
-    .trim();
-}
-
-function renderStoryFocus(
-  bytes: Uint8Array,
-  acceptanceBytes: Uint8Array | undefined,
-  acceptanceTarget: string,
-): string {
-  const sections = ["Goal", "Scope", "Rules", "Expected Errors", "Constraints"]
-    .map((heading) => ({ heading, text: sectionText(bytes, heading) }))
-    .filter(
-      (
-        section,
-      ): section is { readonly heading: string; readonly text: string } =>
-        section.text !== undefined,
+  for (const requirement of index.requirements) {
+    const spec = specsByPath.get(requirement.spec);
+    const entry = spec?.entries.find(
+      (candidate) => candidate.id === requirement.anchor,
     );
-  if (sections.length === 0 && acceptanceBytes === undefined) return "";
-  const acceptance =
-    acceptanceBytes === undefined
-      ? `<p><a href="#${acceptanceTarget}">Open the acceptance source</a></p>`
-      : `<div class="acceptance-focus">${renderSourceText(acceptanceBytes, new Map())}</div>`;
-  return `<section class="story-focus"><h3>Story focus</h3>${sections
-    .map(
-      (section) =>
-        `<section><h4>${section.heading}</h4><pre>${escapeHtml(section.text)}</pre></section>`,
-    )
-    .join("")}<section><h4>Acceptance</h4>${acceptance}</section></section>`;
-}
-
-function locatorTargets(
-  index: ReviewIndex,
-): ReadonlyMap<string, Map<string, string>> {
-  const targets = new Map<string, Map<string, string>>();
-  const add = (path: string, anchor: string, position: number) => {
-    const document = targets.get(path) ?? new Map<string, string>();
-    if (!targets.has(path)) targets.set(path, document);
-    if (!document.has(anchor))
-      document.set(
-        anchor,
-        locatorId(
-          index.sources.findIndex((source) => source.path === path),
-          position,
-        ),
-      );
-  };
+    if (spec === undefined || entry === undefined) continue;
+    const key = `${spec.path}#${entry.id}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    order.push({ spec, entry });
+  }
   for (const spec of index.specs) {
-    spec.entries.forEach((entry, position) =>
-      add(spec.path, entry.locator.anchor, position),
-    );
-    spec.sections.forEach((section, position) =>
-      add(spec.path, section.locator.anchor, spec.entries.length + position),
-    );
+    for (const entry of spec.entries) {
+      const key = `${spec.path}#${entry.id}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      order.push({ spec, entry });
+    }
   }
-  for (const story of index.stories) {
-    const storyPath = `${story.path}/story.md`;
-    const acceptancePath = `${story.path}/acceptance.md`;
-    story.locators.story.forEach((locator, position) =>
-      add(storyPath, locator.anchor, position),
-    );
-    story.locators.acceptance.forEach((locator, position) =>
-      add(acceptancePath, locator.anchor, position),
-    );
-  }
-  for (const adr of index.adrs)
-    adr.locators.forEach((locator, position) =>
-      add(adr.path, locator.anchor, position),
-    );
-  return targets;
+  return order;
 }
 
-function renderDiagnostics(diagnostics: readonly ReviewDiagnostic[]): string {
-  if (diagnostics.length === 0)
-    return '<p class="muted">No diagnostics were reported for this reading snapshot.</p>';
-  return `<ul class="diagnostics">${diagnostics
-    .map(
-      (diagnostic) =>
-        `<li><strong>${escapeHtml(diagnostic.code)}</strong> <span>${escapeHtml(diagnostic.severity)}</span> ${escapeHtml(diagnostic.message)}</li>`,
+function missingSourceArticle(path: string): string {
+  return `<p class="muted missing">${escapeHtml(path)}：${MISSING_SOURCE_TEXT}</p>`;
+}
+
+function renderMatrixAndCards(
+  index: ReviewIndex,
+  matrixOrder: readonly MatrixEntry[],
+  specContent: ReadonlyMap<string, SpecDocumentContent | undefined>,
+  storyDocuments: ReadonlyMap<string, StoryDocuments>,
+): {
+  readonly matrixRows: string;
+  readonly cards: string;
+  readonly orphanStories: string;
+} {
+  const traceByKey = new Map(
+    index.trace.map((trace) => [`${trace.spec}#${trace.anchor}`, trace]),
+  );
+  const homeOf = new Map<string, string>();
+  const referenced = new Set<string>();
+  const matrixRows: string[] = [];
+  const cards: string[] = [];
+
+  for (const { spec, entry } of matrixOrder) {
+    const key = `${spec.path}#${entry.id}`;
+    const trace = traceByKey.get(key);
+    const storyIds = trace?.stories.map((story) => story.storyId) ?? [];
+    const targetId = elementId(spec.path, entry.id);
+    const content = specContent.get(spec.path);
+    const entryContent = content?.entries.get(entry.id);
+    const missing = `<p class="muted">${MISSING_SECTION_TEXT}</p>`;
+
+    for (const storyId of storyIds) {
+      referenced.add(storyId);
+      if (!homeOf.has(storyId)) homeOf.set(storyId, targetId);
+    }
+
+    const storyCell =
+      storyIds.length === 0
+        ? `<span class="muted">${NO_STORY_TEXT}</span>`
+        : storyIds
+            .map((storyId) => {
+              const story = index.stories.find(
+                (candidate) => candidate.id === storyId,
+              );
+              const title =
+                story === undefined
+                  ? undefined
+                  : storyDocuments.get(story.path)?.title;
+              const home = homeOf.get(storyId) ?? targetId;
+              return `<a href="#${home}">${escapeHtml(storyId)}</a>${title === undefined ? "" : ` ${escapeHtml(title)}`}`;
+            })
+            .join("、");
+
+    const requirementAcceptanceCount = entry.acceptance.length;
+    const executionAcceptanceCount = (trace?.stories ?? []).reduce(
+      (sum, story) => sum + story.acceptanceIds.length,
+      0,
+    );
+
+    matrixRows.push(
+      `<tr><th scope="row"><a href="#${targetId}">${escapeHtml(entry.id)} ${escapeHtml(entry.heading)}</a></th>` +
+        `<td>${entryContent?.goalCellHtml ?? missing}</td>` +
+        `<td>${storyCell}</td>` +
+        `<td class="num">${requirementAcceptanceCount}</td>` +
+        `<td class="num">${executionAcceptanceCount}</td>` +
+        `<td>${entryContent?.nonGoalsCellHtml ?? missing}</td></tr>`,
+    );
+
+    const executionAcceptance =
+      storyIds.length === 0
+        ? `<p class="muted">${NO_STORY_TEXT}</p>`
+        : storyIds
+            .map((storyId) => {
+              const story = index.stories.find(
+                (candidate) => candidate.id === storyId,
+              );
+              if (story === undefined) return "";
+              const home = homeOf.get(storyId);
+              if (home !== targetId)
+                return `<p><a href="#${home}">${escapeHtml(storyId)} 執行驗收已在其他卡片顯示</a></p>`;
+              const acceptance = storyDocuments.get(story.path)?.acceptance;
+              return `<section><h4>${escapeHtml(storyId)}</h4>${acceptance?.acceptanceGroupsHtml ?? missing}</section>`;
+            })
+            .join("");
+
+    const storyFocus = storyIds
+      .map((storyId) => {
+        const story = index.stories.find(
+          (candidate) => candidate.id === storyId,
+        );
+        if (story === undefined) return "";
+        if (homeOf.get(storyId) !== targetId) return "";
+        const focus = storyDocuments.get(story.path)?.story;
+        return `<section><h4>${escapeHtml(storyId)}</h4>${focus?.focusHtml ?? missing}</section>`;
+      })
+      .join("");
+
+    cards.push(
+      `<details class="card"><summary><span class="req-id">${escapeHtml(entry.id)}</span> ${escapeHtml(entry.heading)}</summary>` +
+        `<div class="card-body">` +
+        `<section class="req-ac"><h3>需求驗收</h3>${entryContent?.acceptanceHtml ?? missing}</section>` +
+        `<section class="exec-ac"><h3>執行驗收</h3>${executionAcceptance}</section>` +
+        `<section class="story-focus"><h3>Story 重點</h3>${storyFocus || `<p class="muted">${NO_STORY_TEXT}</p>`}</section>` +
+        `<section class="detail"><h3>需求細節</h3>${entryContent?.detailHtml || `<p class="muted">${MISSING_SECTION_TEXT}</p>`}</section>` +
+        `</div></details>`,
+    );
+  }
+
+  const orphanStories = index.stories
+    .filter(
+      (story): story is typeof story & { readonly id: string } =>
+        story.id !== undefined && !referenced.has(story.id),
     )
-    .join("")}</ul>`;
+    .map((story) => {
+      const documents = storyDocuments.get(story.path);
+      return (
+        `<section class="orphan-story"><h3>${escapeHtml(story.id)}${documents?.title === undefined ? "" : ` ${escapeHtml(documents.title)}`}</h3>` +
+        `<section><h4>執行驗收</h4>${documents?.acceptance?.acceptanceGroupsHtml ?? `<p class="muted">${MISSING_SECTION_TEXT}</p>`}</section>` +
+        `<section><h4>Story 重點</h4>${documents?.story?.focusHtml ?? `<p class="muted">${MISSING_SECTION_TEXT}</p>`}</section>` +
+        `</section>`
+      );
+    })
+    .join("");
+
+  return {
+    matrixRows: matrixRows.join(""),
+    cards: cards.join(""),
+    orphanStories,
+  };
+}
+
+function renderDiagnosticsSummary(diagnostics: readonly ReviewDiagnostic[]): {
+  readonly summaryHtml: string;
+  readonly advisoryDetailHtml: string;
+} {
+  const blocking = diagnostics.filter(
+    (diagnostic) => diagnostic.severity === "blocking",
+  );
+  const advisory = diagnostics.filter(
+    (diagnostic) => diagnostic.severity === "advisory",
+  );
+  const item = (diagnostic: ReviewDiagnostic) =>
+    `<li><strong>${escapeHtml(diagnostic.code)}</strong> ${escapeHtml(diagnostic.message)}${
+      diagnostic.path === undefined
+        ? ""
+        : ` <span class="doc-path">${escapeHtml(diagnostic.path)}</span>`
+    }</li>`;
+  const summaryHtml =
+    `<p>阻擋 ${blocking.length} 條、提示 ${advisory.length} 條（提示明細見附錄）。</p>` +
+    (blocking.length === 0
+      ? ""
+      : `<ul class="diagnostics">${blocking.map(item).join("")}</ul>`);
+  const advisoryDetailHtml =
+    advisory.length === 0
+      ? `<p class="muted">沒有提示診斷。</p>`
+      : `<ul class="diagnostics">${advisory.map(item).join("")}</ul>`;
+  return { summaryHtml, advisoryDetailHtml };
+}
+
+function renderAppendix(
+  index: ReviewIndex,
+  documents: ReadonlyMap<string, ReviewProjectionDocument>,
+  specAppendix: readonly AppendixSection[],
+  storyAppendix: readonly AppendixSection[],
+  advisoryDetailHtml: string,
+  lookup: LocatorLookup,
+): string {
+  const sourceList = index.sources
+    .map(
+      (source) =>
+        `<li><span class="doc-path">${escapeHtml(source.path)}</span> — SHA-256: <span class="digest">${escapeHtml(source.sha256 ?? "unavailable")}</span></li>`,
+    )
+    .join("");
+
+  const adrFullText = index.adrs
+    .map((adr) => {
+      const document = documents.get(adr.path);
+      const body =
+        document?.bytes === undefined
+          ? missingSourceArticle(adr.path)
+          : renderAdrAppendix(adr.path, document.bytes, lookup);
+      return `<details class="raw-doc"><summary>${escapeHtml(adr.path)}</summary>${body}</details>`;
+    })
+    .join("");
+
+  const remainingByPath = new Map<string, string[]>();
+  for (const section of [...specAppendix, ...storyAppendix]) {
+    const group = remainingByPath.get(section.path) ?? [];
+    group.push(section.html);
+    remainingByPath.set(section.path, group);
+  }
+  const remainingSections = [...remainingByPath.entries()]
+    .map(
+      ([path, blocks]) =>
+        `<details class="raw-doc"><summary>${escapeHtml(path)}（其餘章節）</summary>${blocks.join("\n")}</details>`,
+    )
+    .join("");
+
+  const rawMarkdown = index.sources
+    .map((source) => {
+      const document = documents.get(source.path);
+      if (document?.bytes === undefined) return "";
+      const text = new TextDecoder("utf-8").decode(document.bytes);
+      return `<h4>${escapeHtml(source.path)}</h4><pre class="raw-source"><code>${escapeHtml(text)}</code></pre>`;
+    })
+    .join("");
+
+  return (
+    `<section class="appendix" id="appendix"><h2>附錄</h2>` +
+    `<section><h3>來源清單</h3><ul class="source-list">${sourceList}</ul></section>` +
+    `<section><h3>決策約束全文</h3>${adrFullText}</section>` +
+    `<section><h3>其餘章節</h3>${remainingSections}</section>` +
+    `<details class="raw no-print"><summary>原始 Markdown（不列印）</summary>${rawMarkdown}</details>` +
+    `<section><h3>提示診斷明細</h3>${advisoryDetailHtml}</section>` +
+    `</section>`
+  );
 }
 
 /**
- * Produces an inert, self-contained reading projection. The caller owns source
- * acquisition and output publication; this function accepts only immutable
- * index data and source text, and performs no I/O.
+ * Produces an inert, self-contained reading projection. The caller owns
+ * source acquisition and output publication; this function accepts only
+ * immutable index data and source text, and performs no I/O.
  */
 export function renderReviewProjection(
   index: ReviewIndex,
@@ -247,86 +318,127 @@ export function renderReviewProjection(
   const documentsByPath = new Map(
     documents.map((document) => [document.path, document]),
   );
-  const sourcePaths = index.sources.map((source) => source.path);
-  const sourceIds = new Map(
-    sourcePaths.map((path, position) => [path, sourceId(position)]),
-  );
-  const anchorsByPath = locatorTargets(index);
-  const storyDocuments = new Map(
-    index.stories.map((story) => [
-      `${story.path}/story.md`,
-      `${story.path}/acceptance.md`,
-    ]),
+  const lookup = buildLocatorLookup(index);
+
+  const specContent = new Map<string, SpecDocumentContent | undefined>();
+  const specAppendix: AppendixSection[] = [];
+  for (const spec of index.specs) {
+    const bytes = documentsByPath.get(spec.path)?.bytes;
+    if (bytes === undefined) {
+      specContent.set(spec.path, undefined);
+      continue;
+    }
+    const content = partitionSpecDocument(spec, bytes, lookup);
+    specContent.set(spec.path, content);
+    specAppendix.push(...content.appendixSections);
+  }
+
+  const storyDocuments = new Map<string, StoryDocuments>();
+  const storyAppendix: AppendixSection[] = [];
+  for (const story of index.stories) {
+    const storyPath = `${story.path}/story.md`;
+    const acceptancePath = `${story.path}/acceptance.md`;
+    const storyBytes = documentsByPath.get(storyPath)?.bytes;
+    const acceptanceBytes = documentsByPath.get(acceptancePath)?.bytes;
+    const storyContent =
+      storyBytes === undefined
+        ? undefined
+        : partitionStoryDocument(storyPath, storyBytes, lookup);
+    const acceptanceContent =
+      story.id === undefined || acceptanceBytes === undefined
+        ? undefined
+        : partitionAcceptanceDocument(
+            story.id,
+            acceptancePath,
+            acceptanceBytes,
+            lookup,
+          );
+    if (storyContent !== undefined)
+      storyAppendix.push(...storyContent.appendixSections);
+    if (acceptanceContent !== undefined)
+      storyAppendix.push(...acceptanceContent.appendixSections);
+    storyDocuments.set(story.path, {
+      title: storyBytes === undefined ? undefined : firstH1Text(storyBytes),
+      story: storyContent,
+      acceptance: acceptanceContent,
+    });
+  }
+
+  const matrixOrder = buildMatrixOrder(index);
+  const { matrixRows, cards, orphanStories } = renderMatrixAndCards(
+    index,
+    matrixOrder,
+    specContent,
+    storyDocuments,
   );
 
-  const navigation = sourcePaths
-    .map(
-      (path, position) =>
-        `<li><a href="#${sourceId(position)}">${escapeHtml(path)}</a></li>`,
-    )
-    .join("");
-  const trace = index.trace
-    .map((entry) => {
-      const specTarget =
-        anchorsByPath.get(entry.spec)?.get(entry.anchor) ??
-        sourceIds.get(entry.spec) ??
-        "contents";
-      const stories = entry.stories
-        .map((story) => {
-          const directory = index.stories.find(
-            (item) => item.id === story.storyId,
-          )?.path;
-          const storyTarget =
-            directory === undefined
-              ? "contents"
-              : (sourceIds.get(`${directory}/story.md`) ?? "contents");
-          const acceptancePath = `${directory}/acceptance.md`;
-          const acceptanceLinks =
-            story.acceptanceIds.length === 0
-              ? "no acceptance IDs"
-              : story.acceptanceIds
-                  .map((acceptanceId) => {
-                    const target =
-                      directory === undefined
-                        ? "contents"
-                        : (anchorsByPath
-                            .get(acceptancePath)
-                            ?.get(acceptanceId) ??
-                          sourceIds.get(acceptancePath) ??
-                          "contents");
-                    return `<a href="#${target}">${escapeHtml(acceptanceId)}</a>`;
-                  })
-                  .join(", ");
-          return `<a href="#${storyTarget}">${escapeHtml(story.storyId)}</a> → ${acceptanceLinks}`;
-        })
-        .join(", ");
-      return `<tr><td><a href="#${specTarget}">${escapeHtml(entry.anchor)}</a></td><td>${stories || "—"}</td></tr>`;
+  const goalSections = index.specs
+    .map((spec) => {
+      const content = specContent.get(spec.path);
+      const html =
+        content?.goalHtml ?? `<p class="muted">${MISSING_SECTION_TEXT}</p>`;
+      return `<div class="doc-group"><p class="doc-path">${escapeHtml(spec.path)}</p>${html}</div>`;
     })
     .join("");
-  const documentsHtml = sourcePaths
-    .map((path, position) => {
-      const document = documentsByPath.get(path);
-      const bytes = document?.bytes;
-      if (bytes === undefined)
-        return `<article id="${sourceId(position)}"><h2>${escapeHtml(path)}</h2><p class="missing">Source was unavailable when this snapshot was produced.</p></article>`;
-      const text = new TextDecoder("utf-8").decode(bytes);
-      const acceptancePath = storyDocuments.get(path);
-      const acceptanceBytes =
-        acceptancePath === undefined
+  const nonGoalsSections = index.specs
+    .map((spec) => {
+      const content = specContent.get(spec.path);
+      const html =
+        content?.nonGoalsHtml ?? `<p class="muted">${MISSING_SECTION_TEXT}</p>`;
+      return `<div class="doc-group"><p class="doc-path">${escapeHtml(spec.path)}</p>${html}</div>`;
+    })
+    .join("");
+
+  const adrConstraints = index.adrs
+    .map((adr) => {
+      const document = documentsByPath.get(adr.path);
+      const summary =
+        document?.bytes === undefined ? undefined : adrSummary(document.bytes);
+      const titleAnchor = adr.locators[0]?.anchor;
+      const href =
+        titleAnchor === undefined
           ? undefined
-          : documentsByPath.get(acceptancePath)?.bytes;
-      const focus =
-        acceptancePath === undefined
-          ? ""
-          : renderStoryFocus(
-              bytes,
-              acceptanceBytes,
-              sourceIds.get(acceptancePath) ?? "contents",
-            );
-      const digest = index.sources[position]?.sha256 ?? "unavailable";
-      return `<article id="${sourceId(position)}"><h2>${escapeHtml(path)}</h2><p class="source-digest">SHA-256: ${escapeHtml(digest ?? "unavailable")}</p>${focus}<section><h3>Reading view</h3><div class="source-view">${renderSourceText(bytes, anchorsByPath.get(path) ?? new Map())}</div></section><section><h3>Full source text</h3><pre class="source-raw">${escapeHtml(text)}</pre></section></article>`;
+          : locatorHref(lookup, adr.path, titleAnchor);
+      const label =
+        summary === undefined
+          ? escapeHtml(adr.path)
+          : escapeHtml(summary.title);
+      const status =
+        summary === undefined
+          ? MISSING_SECTION_TEXT
+          : escapeHtml(summary.status);
+      return `<li>${href === undefined ? label : `<a href="${href}">${label}</a>`} <span class="status">${status}</span></li>`;
     })
-    .join("\n");
+    .join("");
+
+  const { summaryHtml, advisoryDetailHtml } = renderDiagnosticsSummary(
+    index.diagnostics,
+  );
+
+  const missingSourcesHtml = index.sources
+    .filter((source) => documentsByPath.get(source.path)?.bytes === undefined)
+    .map((source) => missingSourceArticle(source.path))
+    .join("");
+
+  const prefaceHtml =
+    index.preface === undefined
+      ? ""
+      : `<section class="preface"><h2>審閱導言</h2><p class="label">由批次作者撰寫（Review Preface）</p>${renderMarkdownHtml(
+          new TextEncoder().encode(index.preface),
+          0,
+          new TextEncoder().encode(index.preface).length,
+        )}</section>`;
+
+  const appendixHtml = renderAppendix(
+    index,
+    documentsByPath,
+    specAppendix,
+    storyAppendix,
+    advisoryDetailHtml,
+    lookup,
+  );
+
+  const title = index.title ?? index.batchId;
 
   return `<!doctype html>
 <html lang="zh-Hant">
@@ -334,57 +446,86 @@ export function renderReviewProjection(
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src 'none'; media-src 'none'; object-src 'none'; frame-src 'none'; connect-src 'none'; base-uri 'none'; form-action 'none'; style-src 'unsafe-inline'">
-<title>Review Projection — ${escapeHtml(index.batchId)}</title>
+<title>${escapeHtml(title)} — Review Projection</title>
 <style>
-:root { color-scheme: light; font-family: ui-serif, Georgia, "Noto Serif TC", serif; color: #25231f; background: #f4f1ea; }
-* { box-sizing: border-box; }
-body { margin: 0; line-height: 1.65; }
-a { color: #1d4e5f; text-underline-offset: .18em; }
-.unsafe-link { color: inherit; text-decoration: underline dotted; cursor: not-allowed; }
-.toolbar { position: fixed; inset: 0 0 auto; z-index: 1; padding: .65rem max(1rem, calc((100vw - 76rem) / 2)); background: #25231f; color: #fff; font-family: ui-sans-serif, system-ui, sans-serif; }
-.toolbar a { color: #fff; }
-.layout { display: grid; grid-template-columns: minmax(12rem, 18rem) minmax(0, 1fr); gap: 2.5rem; max-width: 76rem; margin: 4rem auto 0; padding: 2rem; }
-nav { position: sticky; top: 4.5rem; align-self: start; font-family: ui-sans-serif, system-ui, sans-serif; font-size: .9rem; }
-nav ol { padding-left: 1.2rem; }
-main { min-width: 0; }
-h1, h2, h3, h4 { line-height: 1.2; }
-h1 { font-size: clamp(2rem, 5vw, 4.2rem); margin: 0; }
-h2 { border-top: 1px solid #c9c1b4; margin-top: 4rem; padding-top: 1.5rem; overflow-wrap: anywhere; }
-h3 { margin-top: 1.8rem; }
-.eyebrow, .muted, .meta, .diagnostics span { font-family: ui-sans-serif, system-ui, sans-serif; }
-.eyebrow { color: #705f49; letter-spacing: .08em; text-transform: uppercase; }
-.meta { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: .3rem 1rem; overflow-wrap: anywhere; }
-.story-focus { margin: 1.5rem 0; padding: 1.25rem; border-left: .35rem solid #a96f35; background: #fffaf0; }
-.story-focus h4 { margin-bottom: .25rem; }
-pre, code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
-pre { max-width: 100%; overflow: auto; padding: 1rem; background: #ebe7de; white-space: pre-wrap; overflow-wrap: anywhere; }
-.source-digest { overflow-wrap: anywhere; }
-.source-view { overflow-wrap: anywhere; }
-.source-view pre { white-space: pre; overflow-x: auto; }
-.list-line { padding-left: 1rem; }
-.diagnostics { padding-left: 1.2rem; }
-.missing { color: #8a251e; }
-.table-scroll { max-width: 100%; overflow-x: auto; }
-table { width: 100%; border-collapse: collapse; }
-th, td { padding: .6rem; border-bottom: 1px solid #c9c1b4; text-align: left; vertical-align: top; }
-@media (max-width: 44rem) { .layout { display: block; padding: 1rem; } nav { position: static; border-bottom: 1px solid #c9c1b4; margin-bottom: 2rem; padding-bottom: 1rem; } .toolbar { position: static; } .layout { margin-top: 0; } }
-@page { size: A4; margin: 16mm; }
-@media print { :root, body { background: #fff; } .toolbar, nav { display: none; } .layout { display: block; max-width: none; margin: 0; padding: 0; } article { break-inside: avoid; } details { display: block; } details > summary { display: none; } details:not([open]) { display: block; } pre { overflow: visible; white-space: pre-wrap; } a { color: inherit; text-decoration: none; } }
+${PAGE_CSS}
 </style>
 </head>
 <body>
-<header class="toolbar"><a href="#contents">Jump to contents</a></header>
-<div class="layout">
-<nav aria-label="Review navigation"><p class="eyebrow">Review Projection</p><ol>${navigation}</ol></nav>
-<main id="contents">
-<p class="eyebrow">Offline reading snapshot</p>
-<h1>${escapeHtml(index.batchId)}</h1>
-<dl class="meta">${index.title === undefined ? "" : `<dt>Batch objective</dt><dd>${escapeHtml(index.title)}</dd>`}<dt>Requirement Fingerprint</dt><dd>${escapeHtml(index.fingerprint)}</dd><dt>Manifest SHA-256</dt><dd>${escapeHtml(index.manifestSha256)}</dd></dl>
-<section><h2>Spec → Story → Acceptance</h2><table><thead><tr><th>Requirement</th><th>Stories and acceptance IDs</th></tr></thead><tbody>${trace}</tbody></table></section>
-<section><h2>Diagnostics</h2>${renderDiagnostics(index.diagnostics)}</section>
-${documentsHtml}
+<main class="page">
+<header class="cover">
+<p class="kicker">離線閱讀快照</p>
+<h1>${escapeHtml(title)}</h1>
+<dl class="meta">
+<dt>批次 ID</dt><dd>${escapeHtml(index.batchId)}</dd>
+<dt>Requirement Fingerprint</dt><dd class="fingerprint">${escapeHtml(index.fingerprint)}</dd>
+</dl>
+${prefaceHtml}
+</header>
+<section class="matrix"><h2>需求總覽矩陣</h2><div class="table-scroll"><table>
+<thead><tr><th scope="col">需求</th><th scope="col">目標</th><th scope="col">Story</th><th scope="col">需求驗收</th><th scope="col">執行驗收</th><th scope="col">不包含</th></tr></thead>
+<tbody>${matrixRows}</tbody>
+</table></div></section>
+<section><h2>批次目標</h2>${goalSections}</section>
+<section><h2>不包含</h2>${nonGoalsSections}</section>
+<section><h2>決策約束</h2><ul class="adr-list">${adrConstraints}</ul></section>
+<section><h2>診斷摘要</h2>${summaryHtml}</section>
+${missingSourcesHtml}
+<section class="cards"><h2>需求卡片</h2>${cards}</section>
+<section class="orphan-stories"><h2>未對應需求的 Story</h2>${orphanStories || `<p class="muted">沒有未對應需求的 Story。</p>`}</section>
+${appendixHtml}
 </main>
-</div>
 </body>
 </html>`;
 }
+
+const PAGE_CSS = `
+:root { color-scheme: light; font-family: ui-serif, Georgia, "Noto Serif TC", serif; color: #24211c; background: #f7f4ee; }
+* { box-sizing: border-box; }
+body { margin: 0; line-height: 1.7; }
+a { color: #1e4e6e; text-underline-offset: .18em; }
+a.unsafe-link { color: inherit; text-decoration: underline dotted; cursor: not-allowed; }
+.page { max-width: 64rem; margin: 0 auto; padding: 2.5rem 1.25rem; }
+h1, h2, h3, h4 { font-family: ui-sans-serif, system-ui, sans-serif; line-height: 1.35; overflow-wrap: anywhere; }
+h1 { font-size: clamp(1.7rem, 4.5vw, 2.6rem); margin: .2rem 0 .6rem; }
+h2 { margin-top: 3rem; border-top: 1px solid #d8d0c3; padding-top: 1rem; }
+h3 { margin-top: 1.4rem; }
+.kicker { font: 600 .78rem/1.4 ui-sans-serif, system-ui, sans-serif; letter-spacing: .08em; color: #8a5a2b; margin: 0; }
+.muted { color: #6f675c; }
+.missing { color: #8a251e; }
+.meta { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: .3rem 1rem; font-family: ui-sans-serif, system-ui, sans-serif; overflow-wrap: anywhere; }
+.fingerprint { overflow-wrap: anywhere; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+.preface { margin-top: 1.5rem; padding: .2rem 1.2rem .8rem; border-left: 4px solid #8a5a2b; background: #fffaf0; }
+.preface .label { font: .8rem ui-sans-serif, system-ui, sans-serif; color: #6f675c; margin: 0; }
+.doc-path { display: inline-block; font: .72rem/1.4 ui-monospace, Menlo, monospace; color: #6f675c; border: 1px solid #d8d0c3; border-radius: 3px; padding: .05rem .4rem; overflow-wrap: anywhere; }
+.digest { overflow-wrap: anywhere; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+.doc-group { margin: 1rem 0; }
+pre, code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+pre { max-width: 100%; overflow: auto; padding: 1rem; background: #ece6da; white-space: pre-wrap; overflow-wrap: anywhere; }
+.table-scroll { max-width: 100%; overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; font-size: .92rem; }
+th, td { padding: .6rem; border-bottom: 1px solid #d8d0c3; text-align: left; vertical-align: top; }
+td.num, th.num { text-align: center; }
+.checkbox-glyph { font-size: 1em; }
+.ac-id { display: inline-block; font: 600 .8rem ui-monospace, Menlo, monospace; color: #7a4b1f; margin-right: .4rem; }
+.diagnostics { padding-left: 1.2rem; }
+.card { border: 1px solid #d8d0c3; background: #fff; border-radius: 6px; padding: .8rem 1.2rem; margin: 1.2rem 0; }
+.card > summary { cursor: pointer; font: 600 1rem ui-sans-serif, system-ui, sans-serif; }
+.card .req-id { color: #8a5a2b; }
+.card-body section { margin-top: 1.2rem; }
+.orphan-story { border-top: 1px dashed #d8d0c3; padding-top: 1rem; margin-top: 1.5rem; }
+.adr-list { padding-left: 1.2rem; }
+.adr-list .status { font: 600 .75rem ui-sans-serif, system-ui, sans-serif; color: #2e6b3a; border: 1px solid #9cc3a4; border-radius: 10px; padding: 0 .5em; }
+.raw-doc { border: 1px solid #d8d0c3; border-radius: 4px; padding: .4rem .9rem; margin: .8rem 0; background: #fbf9f5; }
+.raw-doc > summary, .raw > summary { cursor: pointer; font: 600 .9rem ui-sans-serif, system-ui, sans-serif; color: #6f675c; }
+@media (max-width: 24.375em) { .page { padding: 1rem .75rem; } }
+@page { size: A4; margin: 16mm; }
+@media print {
+  :root, body { background: #fff; }
+  .raw { display: none; }
+  details::details-content { content-visibility: visible; display: block; }
+  details > summary { list-style: none; }
+  details > summary::-webkit-details-marker { display: none; }
+  a { color: inherit; text-decoration: none; }
+}
+`;
