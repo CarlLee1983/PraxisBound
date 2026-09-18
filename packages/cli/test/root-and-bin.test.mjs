@@ -25,6 +25,7 @@ Commands:
   release check      Inspect local Git release readiness
   story check        Check the static Story contract
   review index       Report the batch review source index
+  review render      Write an offline batch review HTML projection
   verification check Resolve plans and check recorded results
   help, --help       Show this help
   version, --version Print the CLI version

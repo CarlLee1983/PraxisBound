@@ -19,6 +19,15 @@ import {
   type MarkdownLineMatch,
 } from "./markdown.js";
 import { escapeControlCharacters } from "./path.js";
+import {
+  adrExplicitId,
+  ENTRY_SECTION_LABELS,
+  matchEntrySectionVocab,
+  matchTopLevelVocab,
+  storyExplicitId,
+  type EntrySectionVocabKey,
+  type TopLevelVocabKey,
+} from "./vocabulary.js";
 import type {
   AdrIndex,
   IndexReviewBatchResult,
@@ -30,6 +39,7 @@ import type {
   SourceObservation,
   SpecAcceptanceEntry,
   SpecEntryIndex,
+  SpecEntrySections,
   SpecIndex,
   SpecSectionIndex,
   StoryIndex,
@@ -255,13 +265,14 @@ export function indexReviewBatch(
       .map((story) => [story.id, story.acceptanceIds] as const),
   );
 
+  const requirementsByKey = groupBy(
+    plan.requirements,
+    (requirement) => `${requirement.spec}#${requirement.anchor}`,
+  );
   const trace: TraceEntry[] = [];
   for (const spec of specs) {
     for (const entry of spec.entries) {
-      const matches = plan.requirements.filter(
-        (requirement) =>
-          requirement.spec === spec.path && requirement.anchor === entry.id,
-      );
+      const matches = requirementsByKey.get(`${spec.path}#${entry.id}`) ?? [];
 
       const referencedStoryIds = matches.flatMap(
         (requirement) => requirement.stories,
@@ -313,10 +324,13 @@ export function indexReviewBatch(
   // A mapped anchor that does not name any recognized entry in its Spec
   // (including one excluded as a duplicate, which is reported separately) is
   // diagnosed once per requirement rather than silently ignored.
+  const recognizedIdsBySpec = new Map<string, ReadonlySet<string>>();
+  for (const spec of specs)
+    if (!recognizedIdsBySpec.has(spec.path))
+      recognizedIdsBySpec.set(spec.path, new Set(spec.allRecognizedIds));
   for (const requirement of plan.requirements) {
-    const spec = specs.find((candidate) => candidate.path === requirement.spec);
-    if (spec === undefined) continue;
-    const recognizedIds = new Set(spec.allRecognizedIds);
+    const recognizedIds = recognizedIdsBySpec.get(requirement.spec);
+    if (recognizedIds === undefined) continue;
     if (!recognizedIds.has(requirement.anchor)) {
       diagnostics.push(
         diagnostic(
@@ -333,6 +347,8 @@ export function indexReviewBatch(
     kind: "ok",
     index: {
       batchId: plan.batchId,
+      title: plan.title,
+      preface: plan.preface,
       fingerprint,
       manifestSha256: plan.manifestSha256,
       sources: sourceDigests,
@@ -341,50 +357,16 @@ export function indexReviewBatch(
         path: spec.path,
         entries: spec.entries,
         sections: spec.sections,
+        ...(spec.goal === undefined ? {} : { goal: spec.goal }),
+        ...(spec.nonGoals === undefined ? {} : { nonGoals: spec.nonGoals }),
       })),
       stories,
       trace,
+      requirements: plan.requirements,
       dependencies: plan.dependencies,
       diagnostics,
     },
   };
-}
-
-const adrTitlePattern = /ADR-(\d+)/;
-
-function adrExplicitId(
-  heading: HeadingBlock,
-  index: number,
-): string | undefined {
-  if (index !== 0) return undefined;
-  const match = adrTitlePattern.exec(heading.text);
-  return match === null ? undefined : `ADR-${match[1]}`;
-}
-
-const STORY_FIXED_FIELDS: ReadonlySet<string> = new Set([
-  "Goal",
-  "Context",
-  "Classification",
-  "Authority",
-  "Architecture",
-  "Risk",
-  "Scope",
-  "Inputs",
-  "Outputs",
-  "Rules",
-  "Expected Errors",
-  "Dependencies",
-  "Constraints",
-  "Guidance",
-  "Trust Boundary Fields",
-  "Security Fixture Matrix",
-  "Superseded Behavior",
-]);
-
-function storyExplicitId(heading: HeadingBlock): string | undefined {
-  return heading.level === 2 && STORY_FIXED_FIELDS.has(heading.text)
-    ? heading.text
-    : undefined;
 }
 
 /**
@@ -437,7 +419,14 @@ function indexSpec(
   diagnostics: ReviewDiagnostic[],
 ): SpecIndexInternal {
   if (observation.kind !== "file") {
-    return { path, entries: [], sections: [], allRecognizedIds: [] };
+    return {
+      path,
+      entries: [],
+      sections: [],
+      allRecognizedIds: [],
+      goal: undefined,
+      nonGoals: undefined,
+    };
   }
 
   const { bytes } = observation;
@@ -469,6 +458,122 @@ function indexSpec(
         candidate.id !== undefined && !duplicateIds.has(candidate.id),
     )
     .map((candidate) => candidate.heading);
+
+  // Spec-level `Goal`/`Non-goals` vocabulary (contract §5): a second-level
+  // heading that is not itself a Spec entry. Computed before the per-heading
+  // loop so a duplicate is still excluded from the generic unrecognized-
+  // section bucket below.
+  const topVocabGroups = new Map<TopLevelVocabKey, HeadingBlock[]>();
+  for (const heading of headings) {
+    if (heading.level !== 2) continue;
+    if (readSpecEntryId(heading) !== undefined) continue;
+    const key = matchTopLevelVocab(heading.text);
+    if (key === undefined) continue;
+    const group = topVocabGroups.get(key) ?? [];
+    group.push(heading);
+    topVocabGroups.set(key, group);
+  }
+  const topVocabHeadings = new Set<HeadingBlock>(
+    [...topVocabGroups.values()].flat(),
+  );
+
+  let goal: Locator | undefined;
+  let nonGoals: Locator | undefined;
+  for (const [key, group] of topVocabGroups) {
+    const label = key === "goal" ? "Goal" : "Non-goals";
+    if (group.length > 1) {
+      for (const heading of group) {
+        const blockSha256 = sha256Hex(
+          bytes.subarray(heading.startOffset, heading.endOffset),
+        );
+        diagnostics.push(
+          diagnostic(
+            "REVIEW_ANCHOR_DUPLICATE",
+            "blocking",
+            `anchor occurs more than once in ${path}: ${label}`,
+            path,
+            { path, anchor: label, blockSha256 },
+          ),
+        );
+      }
+      continue;
+    }
+    const [heading] = group as [HeadingBlock];
+    const blockSha256 = sha256Hex(
+      bytes.subarray(heading.startOffset, heading.endOffset),
+    );
+    const locator: Locator = { path, anchor: label, blockSha256 };
+    if (key === "goal") goal = locator;
+    else nonGoals = locator;
+  }
+
+  // Entry-level vocabulary (contract §5): a third-level heading nested inside
+  // one recognized (non-duplicate) entry's own block, keyed by entry id.
+  // Each heading's owner: the nearest preceding `##`/`#` heading. A
+  // `##` block ends at the next heading of level 2 or higher, so a deeper
+  // heading lies inside a `##` block exactly when that block is its owner —
+  // one pass instead of a range test against every block per heading.
+  const ownerOf = new Map<HeadingBlock, HeadingBlock>();
+  let currentOwner: HeadingBlock | undefined;
+  for (const heading of headings) {
+    if (heading.level <= 2) {
+      currentOwner = heading;
+      continue;
+    }
+    if (currentOwner !== undefined && currentOwner.level === 2)
+      ownerOf.set(heading, currentOwner);
+  }
+  const entryHeadingSet = new Set(entryRanges);
+  const headingsByEntry = new Map<HeadingBlock, HeadingBlock[]>();
+  for (const [heading, owner] of ownerOf) {
+    if (!entryHeadingSet.has(owner)) continue;
+    const group = headingsByEntry.get(owner) ?? [];
+    group.push(heading);
+    headingsByEntry.set(owner, group);
+  }
+
+  const entrySectionsById = new Map<string, SpecEntrySections>();
+  for (const entryHeading of entryRanges) {
+    const entryId = readSpecEntryId(entryHeading) as string;
+    const groups = new Map<EntrySectionVocabKey, HeadingBlock[]>();
+    for (const heading of headingsByEntry.get(entryHeading) ?? []) {
+      if (heading.level !== 3) continue;
+      const key = matchEntrySectionVocab(heading.text);
+      if (key === undefined) continue;
+      const group = groups.get(key) ?? [];
+      group.push(heading);
+      groups.set(key, group);
+    }
+
+    const entrySections: Partial<Record<EntrySectionVocabKey, Locator>> = {};
+    for (const [key, group] of groups) {
+      const label = ENTRY_SECTION_LABELS[key];
+      const anchor = `${entryId}/${label}`;
+      if (group.length > 1) {
+        for (const heading of group) {
+          const blockSha256 = sha256Hex(
+            bytes.subarray(heading.startOffset, heading.endOffset),
+          );
+          diagnostics.push(
+            diagnostic(
+              "REVIEW_ANCHOR_DUPLICATE",
+              "blocking",
+              `anchor occurs more than once in ${path}: ${anchor}`,
+              path,
+              { path, anchor, blockSha256 },
+            ),
+          );
+        }
+        continue;
+      }
+      const [heading] = group as [HeadingBlock];
+      const blockSha256 = sha256Hex(
+        bytes.subarray(heading.startOffset, heading.endOffset),
+      );
+      entrySections[key] = { path, anchor, blockSha256 };
+    }
+    entrySectionsById.set(entryId, entrySections);
+  }
 
   const entries: SpecEntryIndex[] = [];
   const sections: SpecSectionIndex[] = [];
@@ -531,17 +636,36 @@ function indexSpec(
         heading: heading.text,
         locator: { path, anchor: id, blockSha256 },
         acceptance,
+        sections: entrySectionsById.get(id) ?? {},
+      });
+      continue;
+    }
+
+    // A heading recognized as Spec-level `Goal`/`Non-goals` vocabulary is
+    // handled above, whether or not it resolved (a duplicate is still a
+    // recognized heading, not an unrecognized section).
+    if (topVocabHeadings.has(heading)) continue;
+
+    // A heading nested inside a recognized top-level `Goal`/`Non-goals` block
+    // is that block's own content, the same way a heading nested inside an
+    // entry is that entry's content: no unrecognized-section diagnostic, but
+    // it is still indexed by heading path so its own locator exists.
+    const owner = ownerOf.get(heading);
+    const nestedInTopVocab = owner !== undefined && topVocabHeadings.has(owner);
+    if (nestedInTopVocab) {
+      const blockSha256 = sha256Hex(
+        bytes.subarray(heading.startOffset, heading.endOffset),
+      );
+      sections.push({
+        headingPath: heading.headingPath,
+        locator: { path, anchor: heading.headingPath, blockSha256 },
       });
       continue;
     }
 
     // A heading nested inside a recognized entry's own block is that entry's
     // content, not a separate, unrecognized top-level section.
-    const nestedInEntry = entryRanges.some(
-      (entry) =>
-        heading.startOffset > entry.startOffset &&
-        heading.startOffset < entry.endOffset,
-    );
+    const nestedInEntry = owner !== undefined && entryHeadingSet.has(owner);
     if (nestedInEntry) continue;
 
     // An unrecognized heading is still indexed by heading path so no source
@@ -572,5 +696,7 @@ function indexSpec(
     entries,
     sections,
     allRecognizedIds: [...byId.keys()],
+    goal,
+    nonGoals,
   };
 }

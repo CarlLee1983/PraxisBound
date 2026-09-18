@@ -27,6 +27,9 @@ const MAX_NESTING_DEPTH = 32;
 const MAX_STRING_LENGTH = 65536;
 const MAX_ARRAY_ITEMS = 1000;
 const MAX_SOURCES_PER_KIND = 200;
+const PREFACE_MAX_BYTES = 4096;
+
+const utf8Encoder = new TextEncoder();
 
 const BATCH_ID_PATTERN =
   /^[A-Z][A-Z0-9]*(?:-[A-Z0-9]+)*-[0-9]+(?:-[a-z0-9]+(?:-[a-z0-9]+)*)?$/;
@@ -104,6 +107,7 @@ function hasDuplicates(items: readonly string[]): boolean {
 interface RawManifest {
   readonly batchId: string;
   readonly title: string | undefined;
+  readonly preface: string | undefined;
   readonly adrs: readonly string[];
   readonly specs: readonly string[];
   readonly stories: readonly string[];
@@ -126,6 +130,7 @@ function readManifestShape(value: unknown): ShapeResult {
     "schemaVersion",
     "batchId",
     "title",
+    "preface",
     "sources",
     "requirements",
     "dependencies",
@@ -147,7 +152,7 @@ function readManifestShape(value: unknown): ShapeResult {
 
   if (typeof value.schemaVersion !== "string")
     return fail(invalid("manifest schemaVersion must be a string"));
-  if (value.schemaVersion !== "1.0.0")
+  if (value.schemaVersion !== "1.0.0" && value.schemaVersion !== "1.1.0")
     return fail(
       unsupportedSchema(
         `unsupported manifest schemaVersion: ${value.schemaVersion}`,
@@ -169,6 +174,19 @@ function readManifestShape(value: unknown): ShapeResult {
     return fail(
       invalid("manifest title must be a string of at most 256 characters"),
     );
+
+  if ("preface" in value) {
+    if (value.schemaVersion !== "1.1.0")
+      return fail(
+        invalid("manifest preface is only allowed when schemaVersion is 1.1.0"),
+      );
+    if (typeof value.preface !== "string")
+      return fail(invalid("manifest preface must be a string"));
+    if (utf8Encoder.encode(value.preface).byteLength > PREFACE_MAX_BYTES)
+      return fail(
+        tooLarge(`manifest preface exceeds ${PREFACE_MAX_BYTES} bytes`),
+      );
+  }
 
   if (!isRecord(value.sources))
     return fail(invalid("manifest sources must be an object"));
@@ -312,6 +330,7 @@ function readManifestShape(value: unknown): ShapeResult {
     manifest: {
       batchId: value.batchId,
       title: typeof value.title === "string" ? value.title : undefined,
+      preface: typeof value.preface === "string" ? value.preface : undefined,
       adrs,
       specs,
       stories,
@@ -536,6 +555,8 @@ export function planReviewBatch(
 
   const plan: ReviewBatchPlan = {
     batchId: manifest.batchId,
+    title: manifest.title,
+    preface: manifest.preface,
     manifestSha256: sha256Hex(manifestBytes),
     adrs: manifest.adrs,
     specs: manifest.specs,

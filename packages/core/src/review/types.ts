@@ -48,6 +48,10 @@ export interface ReviewBatchStoryPlan {
 /** The pure, validated plan a manifest declares. */
 export interface ReviewBatchPlan {
   readonly batchId: string;
+  /** Optional human-readable batch objective from the manifest. */
+  readonly title?: string | undefined;
+  /** Optional Review Preface (manifest `preface`, schemaVersion 1.1.0 only). */
+  readonly preface?: string | undefined;
   readonly manifestSha256: string;
   readonly adrs: readonly string[];
   readonly specs: readonly string[];
@@ -83,11 +87,20 @@ export interface SpecAcceptanceEntry {
   readonly locator: Locator;
 }
 
+/** Fixed, vocabulary-recognized anchors inside one Spec entry (contract §5). */
+export interface SpecEntrySections {
+  readonly goal?: Locator | undefined;
+  readonly acceptance?: Locator | undefined;
+  readonly nonGoals?: Locator | undefined;
+  readonly dependencies?: Locator | undefined;
+}
+
 export interface SpecEntryIndex {
   readonly id: string;
   readonly heading: string;
   readonly locator: Locator;
   readonly acceptance: readonly SpecAcceptanceEntry[];
+  readonly sections: SpecEntrySections;
 }
 
 export interface SpecSectionIndex {
@@ -99,6 +112,9 @@ export interface SpecIndex {
   readonly path: string;
   readonly entries: readonly SpecEntryIndex[];
   readonly sections: readonly SpecSectionIndex[];
+  /** Fixed `Goal`/`Non-goals` anchors recognized at the Spec's own level (contract §5). */
+  readonly goal?: Locator | undefined;
+  readonly nonGoals?: Locator | undefined;
 }
 
 export interface StoryIndex {
@@ -134,6 +150,10 @@ export interface TraceEntry {
 
 export interface ReviewIndex {
   readonly batchId: string;
+  /** Optional human-readable batch objective from the manifest. */
+  readonly title?: string | undefined;
+  /** Optional Review Preface (manifest `preface`, schemaVersion 1.1.0 only). */
+  readonly preface?: string | undefined;
   readonly fingerprint: string;
   readonly manifestSha256: string;
   readonly sources: readonly SourceDigest[];
@@ -141,6 +161,8 @@ export interface ReviewIndex {
   readonly specs: readonly SpecIndex[];
   readonly stories: readonly StoryIndex[];
   readonly trace: readonly TraceEntry[];
+  /** The manifest's `requirements` in declared order (contract §18 matrix row order). */
+  readonly requirements: readonly ReviewBatchPlanRequirement[];
   readonly dependencies: readonly ReviewBatchPlanDependency[];
   readonly diagnostics: readonly ReviewDiagnostic[];
 }

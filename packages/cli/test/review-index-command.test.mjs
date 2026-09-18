@@ -692,3 +692,61 @@ test("code review item 15: an uncommitted working-tree change changes the finger
     await cleanupWorkspace(root);
   }
 });
+
+test("TST022-AC-006/AC-007: a 1.1.0 manifest with a preface is indexed successfully", async () => {
+  const root = await workspace(async (dir) => {
+    const manifest = baseManifest("TST-960-fixture");
+    manifest.schemaVersion = "1.1.0";
+    manifest.preface = "This batch reviews the fixture requirement.";
+    await writeBatch(dir, "TST-960-fixture", manifest, baseFixtureFiles());
+  });
+  try {
+    const execution = await run(root, [
+      "specs/batches/TST-960-fixture/batch.json",
+    ]);
+    assert.equal(execution.result.outcome, "success");
+  } finally {
+    await cleanupWorkspace(root);
+  }
+});
+
+test("TST022-AC-014: a preface in a 1.0.0 manifest is a configuration error with REVIEW_MANIFEST_INVALID", async () => {
+  const root = await workspace(async (dir) => {
+    const manifest = baseManifest("TST-961-fixture");
+    manifest.preface = "Not allowed under 1.0.0.";
+    await writeBatch(dir, "TST-961-fixture", manifest, baseFixtureFiles());
+  });
+  try {
+    const execution = await run(root, [
+      "specs/batches/TST-961-fixture/batch.json",
+    ]);
+    assert.equal(execution.result.outcome, "configuration-error");
+    assert.equal(execution.result.exit, 2);
+    assert.ok(
+      execution.result.issues.some((i) => i.code === "REVIEW_MANIFEST_INVALID"),
+    );
+  } finally {
+    await cleanupWorkspace(root);
+  }
+});
+
+test("TST022-AC-014: a preface over 4 KiB UTF-8 is a configuration error with REVIEW_INPUT_TOO_LARGE", async () => {
+  const root = await workspace(async (dir) => {
+    const manifest = baseManifest("TST-962-fixture");
+    manifest.schemaVersion = "1.1.0";
+    manifest.preface = "a".repeat(4097);
+    await writeBatch(dir, "TST-962-fixture", manifest, baseFixtureFiles());
+  });
+  try {
+    const execution = await run(root, [
+      "specs/batches/TST-962-fixture/batch.json",
+    ]);
+    assert.equal(execution.result.outcome, "configuration-error");
+    assert.equal(execution.result.exit, 2);
+    assert.ok(
+      execution.result.issues.some((i) => i.code === "REVIEW_INPUT_TOO_LARGE"),
+    );
+  } finally {
+    await cleanupWorkspace(root);
+  }
+});

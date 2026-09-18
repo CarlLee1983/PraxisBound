@@ -64,7 +64,7 @@ built_cli_help_and_version_are_exact() {
   praxisbound_empty="$praxisbound_test_dir/empty"
 
   : >"$praxisbound_empty"
-  printf 'PraxisBound CLI v%s\n\nUsage:\n  praxisbound [command]\n\nCommands:\n  init               Plan or apply PraxisBound initialization\n  codex activate     Preview or apply project-local Codex activation\n  doctor             Inspect the static Repository Contract\n  verify             Run the canonical repository verification target\n  handoff check      Check immutable Handoff evidence\n  release check      Inspect local Git release readiness\n  story check        Check the static Story contract\n  review index       Report the batch review source index\n  verification check Resolve plans and check recorded results\n  help, --help       Show this help\n  version, --version Print the CLI version\n\nOther migration commands are unavailable.\n' \
+  printf 'PraxisBound CLI v%s\n\nUsage:\n  praxisbound [command]\n\nCommands:\n  init               Plan or apply PraxisBound initialization\n  codex activate     Preview or apply project-local Codex activation\n  doctor             Inspect the static Repository Contract\n  verify             Run the canonical repository verification target\n  handoff check      Check immutable Handoff evidence\n  release check      Inspect local Git release readiness\n  story check        Check the static Story contract\n  review index       Report the batch review source index\n  review render      Write an offline batch review HTML projection\n  verification check Resolve plans and check recorded results\n  help, --help       Show this help\n  version, --version Print the CLI version\n\nOther migration commands are unavailable.\n' \
     "$praxisbound_version" >"$praxisbound_help"
   printf '%s\n' "$praxisbound_version" >"$praxisbound_version_output"
 
@@ -129,16 +129,30 @@ packed_packages_have_the_bounded_public_contract() {
     './dist/result.js' \
     './dist/review/fingerprint.d.ts' \
     './dist/review/fingerprint.js' \
+    './dist/review/html.d.ts' \
+    './dist/review/html.js' \
     './dist/review/index.d.ts' \
     './dist/review/index.js' \
     './dist/review/manifest.d.ts' \
     './dist/review/manifest.js' \
+    './dist/review/markdown-html.d.ts' \
+    './dist/review/markdown-html.js' \
     './dist/review/markdown.d.ts' \
     './dist/review/markdown.js' \
     './dist/review/path.d.ts' \
     './dist/review/path.js' \
+    './dist/review/render-locators.d.ts' \
+    './dist/review/render-locators.js' \
+    './dist/review/render-source.d.ts' \
+    './dist/review/render-source.js' \
+    './dist/review/render-spec.d.ts' \
+    './dist/review/render-spec.js' \
+    './dist/review/render.d.ts' \
+    './dist/review/render.js' \
     './dist/review/types.d.ts' \
     './dist/review/types.js' \
+    './dist/review/vocabulary.d.ts' \
+    './dist/review/vocabulary.js' \
     './dist/story-decision.d.ts' \
     './dist/story-decision.js' \
     './dist/story-governance.d.ts' \

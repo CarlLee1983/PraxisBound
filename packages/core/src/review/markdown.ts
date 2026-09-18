@@ -18,6 +18,19 @@ export interface MarkdownLine {
   readonly text: string;
   readonly trimmed: string;
   readonly fenced: boolean;
+  /**
+   * Set only on a fence's own opener or closer line, as the scanner decided
+   * it: the marker character and run length that opened the fence. Every
+   * other fenced line is fence body, whatever it looks like (a shorter or
+   * different-character marker inside a fence is content, not a boundary).
+   */
+  readonly fence: FenceMarker | undefined;
+}
+
+export interface FenceMarker {
+  readonly role: "open" | "close";
+  readonly character: string;
+  readonly length: number;
 }
 
 /**
@@ -47,20 +60,37 @@ export function scanMarkdownLines(bytes: Uint8Array): readonly MarkdownLine[] {
         if (run >= 3) {
           fenceCharacter = character;
           fenceLength = run;
-          lines.push({ start, end, text, trimmed, fenced: true });
+          const fence: FenceMarker = { role: "open", character, length: run };
+          lines.push({ start, end, text, trimmed, fenced: true, fence });
           return;
         }
       }
-      lines.push({ start, end, text, trimmed, fenced: false });
+      lines.push({
+        start,
+        end,
+        text,
+        trimmed,
+        fenced: false,
+        fence: undefined,
+      });
       return;
     }
 
     if (trimmed.startsWith(fenceCharacter)) {
       let run = 0;
       while (trimmed[run] === fenceCharacter) run += 1;
-      if (run >= fenceLength && trimmed.length === run) fenceLength = 0;
+      if (run >= fenceLength && trimmed.length === run) {
+        const fence: FenceMarker = {
+          role: "close",
+          character: fenceCharacter,
+          length: fenceLength,
+        };
+        fenceLength = 0;
+        lines.push({ start, end, text, trimmed, fenced: true, fence });
+        return;
+      }
     }
-    lines.push({ start, end, text, trimmed, fenced: true });
+    lines.push({ start, end, text, trimmed, fenced: true, fence: undefined });
   };
 
   let lineStart = 0;
@@ -140,22 +170,32 @@ export function scanHeadingBlocks(
     raw.push({ level, text, start: line.start, headingPath });
   }
 
-  return raw.map((heading, index) => {
-    let endOffset = bytes.length;
-    for (let next = index + 1; next < raw.length; next += 1) {
-      if ((raw[next] as Raw).level <= heading.level) {
-        endOffset = (raw[next] as Raw).start;
-        break;
-      }
+  // One stack pass, back to front: a heading's block ends at the nearest
+  // following heading of the same or a higher level (contract §5). The stack
+  // holds, innermost last, the nearest following heading of each strictly
+  // lower level still open, so every heading is pushed and popped once.
+  const endOffsets: number[] = new Array<number>(raw.length);
+  const following: Raw[] = [];
+  for (let index = raw.length - 1; index >= 0; index -= 1) {
+    const heading = raw[index] as Raw;
+    while (
+      following.length > 0 &&
+      (following[following.length - 1] as Raw).level > heading.level
+    ) {
+      following.pop();
     }
-    return {
-      level: heading.level,
-      text: heading.text,
-      headingPath: heading.headingPath,
-      startOffset: heading.start,
-      endOffset,
-    };
-  });
+    const next = following[following.length - 1];
+    endOffsets[index] = next === undefined ? bytes.length : next.start;
+    following.push(heading);
+  }
+
+  return raw.map((heading, index) => ({
+    level: heading.level,
+    text: heading.text,
+    headingPath: heading.headingPath,
+    startOffset: heading.start,
+    endOffset: endOffsets[index] as number,
+  }));
 }
 
 /**
@@ -180,16 +220,23 @@ export interface MarkdownLineMatch {
 
 const specAcceptancePattern = /^[-*] AC-(\d+)[：:]/;
 
-/** Reads every Spec AC line (`- AC-NNN：` or `* AC-NNN:`) inside one entry's block, undeduplicated. */
+/**
+ * Reads every Spec AC line (`- AC-NNN：` or `* AC-NNN:`) inside one entry's
+ * block, undeduplicated. Visits only the lines inside `[blockStart,
+ * blockEnd)` (found by binary search), so reading every entry of a document
+ * costs one pass over its lines in total, not one pass per entry.
+ */
 export function readSpecAcceptanceLines(
   lines: readonly MarkdownLine[],
   blockStart: number,
   blockEnd: number,
 ): readonly MarkdownLineMatch[] {
   const found: MarkdownLineMatch[] = [];
-  for (const line of lines) {
+  const first = lowerBoundByStart(lines, blockStart);
+  for (let index = first; index < lines.length; index += 1) {
+    const line = lines[index] as MarkdownLine;
+    if (line.start >= blockEnd) break;
     if (line.fenced) continue;
-    if (line.start < blockStart || line.start >= blockEnd) continue;
     const match = specAcceptancePattern.exec(line.trimmed);
     if (!match) continue;
     found.push({ id: `AC-${match[1]}`, start: line.start, end: line.end });
@@ -243,4 +290,155 @@ export function readDependencyProseIds(
   }
 
   return [...found];
+}
+
+/** First index in the ascending-by-`start` `lines` whose `start` is `>= value`. */
+export function lowerBoundByStart(
+  lines: readonly { readonly start: number }[],
+  value: number,
+): number {
+  let low = 0;
+  let high = lines.length;
+  while (low < high) {
+    const mid = (low + high) >>> 1;
+    if ((lines[mid] as { readonly start: number }).start < value) low = mid + 1;
+    else high = mid;
+  }
+  return low;
+}
+
+/** The leading space/tab run of a line's own text, in characters. */
+export function indentOf(line: { readonly text: string }): number {
+  let width = 0;
+  while (line.text[width] === " " || line.text[width] === "\t") width += 1;
+  return width;
+}
+
+/**
+ * Matches an unordered (`-`, `*`, `+`) or ordered (`1.`, `1)`) list marker at
+ * the start of `trimmed`, returning the unconsumed rest. A hand-rolled
+ * prefix match plus `slice` rather than a single `(.*)$` capture group, so a
+ * line holding a stray `\r` (which `.` never matches) cannot force the regex
+ * engine to backtrack across the whole line looking for a split that works.
+ */
+export function parseItemMarker(
+  trimmed: string,
+): { readonly ordered: boolean; readonly rest: string } | undefined {
+  const bullet = /^[-*+][ \t]+/.exec(trimmed);
+  if (bullet !== null)
+    return { ordered: false, rest: trimmed.slice(bullet[0].length) };
+  const ordered = /^\d+[.)][ \t]+/.exec(trimmed);
+  if (ordered !== null)
+    return { ordered: true, rest: trimmed.slice(ordered[0].length) };
+  return undefined;
+}
+
+/**
+ * One document scanned once. Every consumer looks facts up here by offset
+ * (a Map or a binary search over `lines`) instead of rescanning `lines` or
+ * `headings` per heading, per entry, or per line.
+ */
+export interface MarkdownDocument {
+  readonly bytes: Uint8Array;
+  readonly lines: readonly MarkdownLine[];
+  readonly headings: readonly HeadingBlock[];
+  readonly headingByStart: ReadonlyMap<number, HeadingBlock>;
+  /** A heading's position in `headings`, keyed by its `startOffset`. */
+  readonly headingIndexByStart: ReadonlyMap<number, number>;
+  /**
+   * Per heading (same order as `headings`), the end of the range the
+   * projection shows for it: its block end, capped at the next `##` or `#`
+   * heading, so a lone `#` title never swallows the whole file.
+   */
+  readonly headingDisplayEnds: readonly number[];
+  /**
+   * For every un-fenced list-item line, keyed by its `start`: the exclusive
+   * end offset of the item's extent — the item line plus every following
+   * non-blank, un-fenced line indented deeper than it (the same rule the
+   * HTML list parser uses to nest continuation text and sub-lists).
+   */
+  readonly listItemEndByStart: ReadonlyMap<number, number>;
+}
+
+function scanListItemEnds(
+  lines: readonly MarkdownLine[],
+  documentEnd: number,
+): ReadonlyMap<number, number> {
+  // One stack pass: the open items, strictly increasing in indent. A line
+  // closes every open item it is not indented deeper than; a blank or
+  // fenced line closes them all. Each item is pushed and popped once.
+  const ends = new Map<number, number>();
+  const open: { readonly start: number; readonly indent: number }[] = [];
+  const closeAll = (end: number): void => {
+    for (const item of open) ends.set(item.start, end);
+    open.length = 0;
+  };
+
+  for (const line of lines) {
+    if (line.fenced || line.trimmed === "") {
+      closeAll(line.start);
+      continue;
+    }
+    const indent = indentOf(line);
+    while (
+      open.length > 0 &&
+      (open[open.length - 1] as { indent: number }).indent >= indent
+    ) {
+      const item = open.pop() as { start: number };
+      ends.set(item.start, line.start);
+    }
+    if (parseItemMarker(line.trimmed) !== undefined)
+      open.push({ start: line.start, indent });
+  }
+  closeAll(documentEnd);
+  return ends;
+}
+
+function scanHeadingDisplayEnds(
+  headings: readonly HeadingBlock[],
+  documentEnd: number,
+): readonly number[] {
+  const ends: number[] = new Array<number>(headings.length);
+  let nextTopLevelStart = documentEnd;
+  for (let index = headings.length - 1; index >= 0; index -= 1) {
+    const heading = headings[index] as HeadingBlock;
+    ends[index] =
+      heading.level >= 2
+        ? heading.endOffset
+        : Math.min(heading.endOffset, nextTopLevelStart);
+    if (heading.level <= 2) nextTopLevelStart = heading.startOffset;
+  }
+  return ends;
+}
+
+/** Scans `bytes` once into the shared block model; reuse the result across every consumer. */
+export function scanMarkdownDocument(bytes: Uint8Array): MarkdownDocument {
+  const lines = scanMarkdownLines(bytes);
+  const headings = scanHeadingBlocks(bytes, lines);
+  const headingByStart = new Map<number, HeadingBlock>();
+  const headingIndexByStart = new Map<number, number>();
+  headings.forEach((heading, index) => {
+    headingByStart.set(heading.startOffset, heading);
+    headingIndexByStart.set(heading.startOffset, index);
+  });
+  return {
+    bytes,
+    lines,
+    headings,
+    headingByStart,
+    headingIndexByStart,
+    headingDisplayEnds: scanHeadingDisplayEnds(headings, bytes.length),
+    listItemEndByStart: scanListItemEnds(lines, bytes.length),
+  };
+}
+
+/** The range end the projection shows for `heading` (see `headingDisplayEnds`). */
+export function headingDisplayEnd(
+  document: MarkdownDocument,
+  heading: HeadingBlock,
+): number {
+  const index = document.headingIndexByStart.get(heading.startOffset);
+  return index === undefined
+    ? heading.endOffset
+    : (document.headingDisplayEnds[index] as number);
 }

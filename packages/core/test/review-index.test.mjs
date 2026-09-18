@@ -538,6 +538,42 @@ test("code review item 7: a heading nested under a recognized Spec entry is not 
   );
 });
 
+test("TST022 review finding 16: a heading nested under a recognized top-level Goal/Non-goals block is not an unrecognized section, and keeps its own locator", () => {
+  const manifestPath = "specs/batches/TST-929-fixture/batch.json";
+  const specPath = "specs/features/fixture/spec.md";
+  const story = "specs/stories/RF-929-fixture";
+
+  const plan = planOf(manifestPath, {
+    schemaVersion: "1.0.0",
+    batchId: "TST-929-fixture",
+    sources: { adrs: [], specs: [specPath], stories: [story] },
+    requirements: [{ spec: specPath, anchor: "R-001", stories: ["RF-929"] }],
+    dependencies: [],
+  });
+
+  const result = indexReviewBatch(
+    plan,
+    observations({
+      [specPath]:
+        "## Goal\n\n### Sub Goal Detail\n\ncontent\n\n## R-001：Fixture\n",
+      [`${story}/story.md`]: "# Story: RF-929\n",
+      [`${story}/acceptance.md`]:
+        "# Acceptance Criteria\n\n* [ ] AC-001: done.\n",
+    }),
+  );
+
+  assert.equal(result.kind, "ok");
+  assert.ok(
+    !result.index.diagnostics.some(
+      (d) => d.code === "REVIEW_SECTION_UNRECOGNIZED",
+    ),
+  );
+  const nested = result.index.specs[0].sections.find(
+    (section) => section.headingPath === "Goal > Sub Goal Detail",
+  );
+  assert.ok(nested, "expected the nested heading to keep its own locator");
+});
+
 test("code review item 8: overlapping declared paths across source kinds are rejected outright", () => {
   const manifest = {
     schemaVersion: "1.0.0",
@@ -735,4 +771,322 @@ test("code review item 18: a bare `##` line is a heading boundary; `## R-01` and
     spec.entries.map((entry) => entry.id),
     ["R-001"],
   );
+});
+
+test("TST022-AC-006: Traditional Chinese Spec vocabulary gets fixed anchors and no unrecognized-section diagnostic", () => {
+  const manifestPath = "specs/batches/TST-943-fixture/batch.json";
+  const specPath = "specs/features/fixture/spec.md";
+  const story = "specs/stories/RF-943-fixture";
+
+  const plan = planOf(manifestPath, {
+    schemaVersion: "1.0.0",
+    batchId: "TST-943-fixture",
+    sources: { adrs: [], specs: [specPath], stories: [story] },
+    requirements: [{ spec: specPath, anchor: "R-001", stories: ["RF-943"] }],
+    dependencies: [],
+  });
+
+  const specText =
+    "## 目標\n\n批次目標文字。\n\n" +
+    "## 非目標\n\n批次不包含文字。\n\n" +
+    "## R-001：Fixture\n\n" +
+    "### 目標\n\n需求目標文字。\n\n" +
+    "### 驗收條件\n\n- AC-001：line.\n\n" +
+    "### 不包含\n\n需求不包含文字。\n\n" +
+    "### 依賴\n\n需求依賴文字。\n";
+
+  const result = indexReviewBatch(
+    plan,
+    observations({
+      [specPath]: specText,
+      [`${story}/story.md`]: "# Story: RF-943\n",
+      [`${story}/acceptance.md`]:
+        "# Acceptance Criteria\n\n* [ ] AC-001: done.\n",
+    }),
+  );
+
+  assert.equal(result.kind, "ok");
+  const spec = result.index.specs[0];
+  assert.equal(spec.goal?.anchor, "Goal");
+  assert.equal(spec.nonGoals?.anchor, "Non-goals");
+
+  const entry = spec.entries.find((e) => e.id === "R-001");
+  assert.equal(entry.sections.goal?.anchor, "R-001/Goal");
+  assert.equal(entry.sections.acceptance?.anchor, "R-001/Acceptance");
+  assert.equal(entry.sections.nonGoals?.anchor, "R-001/Non-goals");
+  assert.equal(entry.sections.dependencies?.anchor, "R-001/Dependencies");
+
+  assert.ok(
+    !result.index.diagnostics.some(
+      (d) => d.code === "REVIEW_SECTION_UNRECOGNIZED",
+    ),
+  );
+  assert.equal(spec.sections.length, 0);
+});
+
+test("TST022-AC-006: English Spec vocabulary is recognized case-insensitively", () => {
+  const manifestPath = "specs/batches/TST-944-fixture/batch.json";
+  const specPath = "specs/features/fixture/spec.md";
+  const story = "specs/stories/RF-944-fixture";
+
+  const plan = planOf(manifestPath, {
+    schemaVersion: "1.0.0",
+    batchId: "TST-944-fixture",
+    sources: { adrs: [], specs: [specPath], stories: [story] },
+    requirements: [{ spec: specPath, anchor: "R-002", stories: ["RF-944"] }],
+    dependencies: [],
+  });
+
+  const specText =
+    "## GOAL\n\nBatch goal text.\n\n" +
+    "## Non-Goals: extra detail\n\nBatch non-goals text.\n\n" +
+    "## R-002: Fixture\n\n" +
+    "### goal\n\nEntry goal text.\n\n" +
+    "### ACCEPTANCE\n\n- AC-001: line.\n\n" +
+    "### Out Of Scope\n\nEntry non-goals text.\n\n" +
+    "### dependencies\n\nEntry dependencies text.\n";
+
+  const result = indexReviewBatch(
+    plan,
+    observations({
+      [specPath]: specText,
+      [`${story}/story.md`]: "# Story: RF-944\n",
+      [`${story}/acceptance.md`]:
+        "# Acceptance Criteria\n\n* [ ] AC-001: done.\n",
+    }),
+  );
+
+  assert.equal(result.kind, "ok");
+  const spec = result.index.specs[0];
+  assert.equal(spec.goal?.anchor, "Goal");
+  assert.equal(spec.nonGoals?.anchor, "Non-goals");
+
+  const entry = spec.entries.find((e) => e.id === "R-002");
+  assert.equal(entry.sections.goal?.anchor, "R-002/Goal");
+  assert.equal(entry.sections.acceptance?.anchor, "R-002/Acceptance");
+  assert.equal(entry.sections.nonGoals?.anchor, "R-002/Non-goals");
+  assert.equal(entry.sections.dependencies?.anchor, "R-002/Dependencies");
+
+  assert.ok(
+    !result.index.diagnostics.some(
+      (d) => d.code === "REVIEW_SECTION_UNRECOGNIZED",
+    ),
+  );
+});
+
+test("TST022-AC-006: an unlisted second-level heading keeps its advisory even alongside recognized vocabulary", () => {
+  const manifestPath = "specs/batches/TST-945-fixture/batch.json";
+  const specPath = "specs/features/fixture/spec.md";
+  const story = "specs/stories/RF-945-fixture";
+
+  const plan = planOf(manifestPath, {
+    schemaVersion: "1.0.0",
+    batchId: "TST-945-fixture",
+    sources: { adrs: [], specs: [specPath], stories: [story] },
+    requirements: [{ spec: specPath, anchor: "R-001", stories: ["RF-945"] }],
+    dependencies: [],
+  });
+
+  const specText =
+    "## Goal\n\ntext\n\n## Notes\n\nprose\n\n## R-001: Fixture\n\n- AC-001: line.\n";
+
+  const result = indexReviewBatch(
+    plan,
+    observations({
+      [specPath]: specText,
+      [`${story}/story.md`]: "# Story: RF-945\n",
+      [`${story}/acceptance.md`]:
+        "# Acceptance Criteria\n\n* [ ] AC-001: done.\n",
+    }),
+  );
+
+  assert.equal(result.kind, "ok");
+  const spec = result.index.specs[0];
+  assert.equal(spec.goal?.anchor, "Goal");
+  assert.deepEqual(
+    spec.sections.map((section) => section.headingPath),
+    ["Notes"],
+  );
+  const unrecognized = result.index.diagnostics.filter(
+    (d) => d.code === "REVIEW_SECTION_UNRECOGNIZED",
+  );
+  assert.equal(unrecognized.length, 1);
+  assert.equal(unrecognized[0].locator?.anchor, "Notes");
+});
+
+test("TST022-AC-006: a Spec-level Goal heading repeated more than once is a blocking anchor duplicate and stays unset", () => {
+  const manifestPath = "specs/batches/TST-946-fixture/batch.json";
+  const specPath = "specs/features/fixture/spec.md";
+  const story = "specs/stories/RF-946-fixture";
+
+  const plan = planOf(manifestPath, {
+    schemaVersion: "1.0.0",
+    batchId: "TST-946-fixture",
+    sources: { adrs: [], specs: [specPath], stories: [story] },
+    requirements: [{ spec: specPath, anchor: "R-001", stories: ["RF-946"] }],
+    dependencies: [],
+  });
+
+  const specText =
+    "## Goal\n\nFirst.\n\n## Goal\n\nSecond.\n\n## R-001: Fixture\n\n- AC-001: line.\n";
+
+  const result = indexReviewBatch(
+    plan,
+    observations({
+      [specPath]: specText,
+      [`${story}/story.md`]: "# Story: RF-946\n",
+      [`${story}/acceptance.md`]:
+        "# Acceptance Criteria\n\n* [ ] AC-001: done.\n",
+    }),
+  );
+
+  assert.equal(result.kind, "ok");
+  const spec = result.index.specs[0];
+  assert.equal(spec.goal, undefined);
+  assert.equal(spec.sections.length, 0);
+
+  const duplicates = result.index.diagnostics.filter(
+    (d) => d.code === "REVIEW_ANCHOR_DUPLICATE" && d.locator?.anchor === "Goal",
+  );
+  assert.equal(duplicates.length, 2);
+  assert.ok(
+    !result.index.diagnostics.some(
+      (d) => d.code === "REVIEW_SECTION_UNRECOGNIZED",
+    ),
+  );
+});
+
+test("TST022-AC-006: an entry-level vocabulary anchor repeated inside one entry is a blocking anchor duplicate and stays unset", () => {
+  const manifestPath = "specs/batches/TST-947-fixture/batch.json";
+  const specPath = "specs/features/fixture/spec.md";
+  const story = "specs/stories/RF-947-fixture";
+
+  const plan = planOf(manifestPath, {
+    schemaVersion: "1.0.0",
+    batchId: "TST-947-fixture",
+    sources: { adrs: [], specs: [specPath], stories: [story] },
+    requirements: [{ spec: specPath, anchor: "R-001", stories: ["RF-947"] }],
+    dependencies: [],
+  });
+
+  const specText =
+    "## R-001: Fixture\n\n" +
+    "### Acceptance\n\n- AC-001: first.\n\n" +
+    "### Acceptance\n\nsecond block\n";
+
+  const result = indexReviewBatch(
+    plan,
+    observations({
+      [specPath]: specText,
+      [`${story}/story.md`]: "# Story: RF-947\n",
+      [`${story}/acceptance.md`]:
+        "# Acceptance Criteria\n\n* [ ] AC-001: done.\n",
+    }),
+  );
+
+  assert.equal(result.kind, "ok");
+  const entry = result.index.specs[0].entries.find((e) => e.id === "R-001");
+  assert.equal(entry.sections.acceptance, undefined);
+
+  const duplicates = result.index.diagnostics.filter(
+    (d) =>
+      d.code === "REVIEW_ANCHOR_DUPLICATE" &&
+      d.locator?.anchor === "R-001/Acceptance",
+  );
+  assert.equal(duplicates.length, 2);
+});
+
+test("TST022-AC-007: changing only the manifest preface changes the Requirement Fingerprint", () => {
+  const manifestPath = "specs/batches/TST-948-fixture/batch.json";
+  const specPath = "specs/features/fixture/spec.md";
+  const story = "specs/stories/RF-948-fixture";
+
+  function planWithPreface(preface) {
+    return planOf(manifestPath, {
+      schemaVersion: "1.1.0",
+      batchId: "TST-948-fixture",
+      preface,
+      sources: { adrs: [], specs: [specPath], stories: [story] },
+      requirements: [{ spec: specPath, anchor: "R-001", stories: ["RF-948"] }],
+      dependencies: [],
+    });
+  }
+
+  const sources = observations({
+    [specPath]: "## R-001：Fixture\n\n- AC-001：line.\n",
+    [`${story}/story.md`]: "# Story: RF-948\n",
+    [`${story}/acceptance.md`]:
+      "# Acceptance Criteria\n\n* [ ] AC-001: done.\n",
+  });
+
+  const first = indexReviewBatch(planWithPreface("First preface."), sources);
+  const second = indexReviewBatch(planWithPreface("Second preface."), sources);
+
+  assert.equal(first.kind, "ok");
+  assert.equal(second.kind, "ok");
+  assert.notEqual(first.index.fingerprint, second.index.fingerprint);
+  assert.equal(first.index.preface, "First preface.");
+  assert.equal(second.index.preface, "Second preface.");
+});
+
+test("TST022-AC-014: a preface in a 1.0.0 manifest is rejected as REVIEW_MANIFEST_INVALID", () => {
+  const manifestPath = "specs/batches/TST-949-fixture/batch.json";
+  const result = planReviewBatch(
+    manifestPath,
+    bytesOf(
+      JSON.stringify({
+        schemaVersion: "1.0.0",
+        batchId: "TST-949-fixture",
+        preface: "Not allowed under 1.0.0.",
+        sources: {
+          adrs: [],
+          specs: [],
+          stories: ["specs/stories/RF-949-fixture"],
+        },
+        requirements: [],
+        dependencies: [],
+      }),
+    ),
+  );
+
+  assert.equal(result.ok, false);
+  assert.equal(result.code, "REVIEW_MANIFEST_INVALID");
+});
+
+test("TST022-AC-014: a preface over 4 KiB UTF-8 is rejected as REVIEW_INPUT_TOO_LARGE", () => {
+  const manifestPath = "specs/batches/TST-950-fixture/batch.json";
+  const result = planReviewBatch(
+    manifestPath,
+    bytesOf(
+      JSON.stringify({
+        schemaVersion: "1.1.0",
+        batchId: "TST-950-fixture",
+        preface: "a".repeat(4097),
+        sources: {
+          adrs: [],
+          specs: [],
+          stories: ["specs/stories/RF-950-fixture"],
+        },
+        requirements: [],
+        dependencies: [],
+      }),
+    ),
+  );
+
+  assert.equal(result.ok, false);
+  assert.equal(result.code, "REVIEW_INPUT_TOO_LARGE");
+});
+
+test("TST022-AC-014: a preface of exactly 4 KiB UTF-8 is accepted", () => {
+  const manifestPath = "specs/batches/TST-951-fixture/batch.json";
+  const plan = planOf(manifestPath, {
+    schemaVersion: "1.1.0",
+    batchId: "TST-951-fixture",
+    preface: "a".repeat(4096),
+    sources: { adrs: [], specs: [], stories: ["specs/stories/RF-951-fixture"] },
+    requirements: [],
+    dependencies: [],
+  });
+
+  assert.equal(plan.preface?.length, 4096);
 });

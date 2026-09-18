@@ -12,6 +12,7 @@ praxisbound verification check [story ...]
 praxisbound handoff check [handoff-file]
 praxisbound release check [repository]
 praxisbound review index <manifest>
+praxisbound review render <manifest> --output <file>
 
 praxisbound codex activate <repository>
 ```
@@ -56,6 +57,7 @@ verify             = execute make verify
 | `praxisbound handoff check [file]`           | `scripts/handoff-check`               | Defaults to `specs/handoff.md`.                                                                  |
 | `praxisbound release check [repo]`           | `scripts/release-check` Node wrapper  | Local, read-only release inspection; target defaults to `.`; never performs remote checks.       |
 | `praxisbound review index <manifest>`        | none (new capability)                 | Reads one Batch Manifest and its declared sources; read-only; writes nothing.                    |
+| `praxisbound review render <manifest> --output <file>` | none (new capability) | Writes an additive, self-contained offline HTML Review Projection; never changes selected sources. |
 | `praxisbound codex activate <repo>`          | `scripts/codex-activate`              | Preview by default; supports `--apply`; stays a late migration wave.                             |
 
 Global options may appear after the selected command path and before or among
@@ -164,6 +166,14 @@ Requirement Fingerprint, stable locators, and the Spec requirement -> Story
 | `configuration-error`  | `error` | `2`  | The manifest is unreadable, not JSON, fails the schema, names an unsupported `schemaVersion`, its `batchId` does not match its directory, a declared path is unsafe, or an input exceeds contract §13's limits. |
 | `ERROR`                | `error` | `3`  | An unexpected internal failure.                                                   |
 
+Story TST-022 adds the contract §5 Spec section vocabulary to `data`: each
+`data.specs[]` entry gains optional `goal`/`nonGoals` locators (the Spec's own
+`Goal`/`Non-goals` heading, when recognized), and each of its `entries[]`
+gains a `sections` object with optional `goal`/`acceptance`/`nonGoals`/
+`dependencies` locators for that entry's recognized `R-NNN/*` subheadings.
+These are additive fields only: every field `review index` reported before
+Story TST-022 keeps its same shape and meaning.
+
 Issue codes this command can emit: `REVIEW_MANIFEST_INVALID`,
 `REVIEW_SCHEMA_UNSUPPORTED`, `REVIEW_PATH_UNSAFE`, `REVIEW_INPUT_TOO_LARGE`,
 `REVIEW_SOURCE_MISSING`, `REVIEW_STORY_UNKNOWN`, `REVIEW_REQUIREMENT_UNMAPPED`,
@@ -173,6 +183,44 @@ path with an unsafe segment, or an input over a contract §13 limit, rejects
 the whole command before any source content is read; every other gap is a
 diagnostic on a `success` result, aligned one-to-one between `issues` and
 `data.diagnostics`. The command writes no file.
+
+## `praxisbound review render` contract
+
+`praxisbound review render <manifest> --output <file> [--json]` reuses the
+same validated local batch and Requirement Fingerprint as `review index`, then
+writes one self-contained HTML Review Projection. This is an Additive CLI
+capability (Story TST-022): the result envelope stays at schema version
+`1.0.0` and reuses the existing v1 envelope mappings — `success` is `pass`/`0`;
+a diagnosed output publication failure is `failure`/`1`; invalid argv and
+unsafe input/output are `usage-error` or `configuration-error`/`2`; unexpected
+failures are `ERROR`/`3`. The output must remain within the repository and
+cannot target the manifest, any declared source, the batch `records/`
+directory, or any symlink. It stages and renames the HTML atomically,
+retaining a prior successful output if publication fails. It never creates
+the output directory; a missing one is a `REVIEW_OUTPUT_WRITE_FAILED` failure
+whose issue path names that directory.
+
+The Batch Manifest may declare `schemaVersion` `1.1.0` with an optional
+`preface` (a batch-author Review Preface, up to 4 KiB UTF-8; oversized input
+is `REVIEW_INPUT_TOO_LARGE`, and a `preface` under `1.0.0` is
+`REVIEW_MANIFEST_INVALID`); both `review index` and `review render` accept it,
+and `1.0.0` manifests remain valid without it.
+
+The generated page follows contract §18's requirement-organized layout, in
+order: a title area (batch `title` or `batchId`, `batchId`, the full
+Requirement Fingerprint, and an offline-snapshot marker), the Review Preface
+when present, a requirement overview matrix (one row per Spec entry, in
+manifest `requirements` order then remaining Spec order, stating facts only —
+a missing section reads 「未寫明」, an entry without a Story reads
+「無對應 Story」), the batch's Goal and Non-goals text, ADR title/Status
+constraints, a diagnostic summary, one collapsed card per requirement (each
+listing Requirement Acceptance, then Execution Acceptance, then the serving
+Story's Goal/Scope/Rules/Expected Errors/Constraints, then the entry's
+remaining sections), a section for Stories no requirement references, and an
+appendix (source list, ADR and other leftover sections, raw Markdown, and
+advisory diagnostic detail). HTML is an offline, read-only projection: it
+includes no external resource loads, executes no source content, and never
+records approval, completion, verification, or Agent state.
 
 ## Static and execution trust boundary
 
