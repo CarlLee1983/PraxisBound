@@ -169,6 +169,7 @@ export type {
 export { indexReviewBatch } from "./review/index.js";
 export { planReviewBatch } from "./review/manifest.js";
 export { renderReviewProjection } from "./review/render.js";
+export { sha256Hex } from "./review/fingerprint.js";
 export type {
   AdrIndex,
   IndexReviewBatchResult,
@@ -193,3 +194,52 @@ export type {
   TraceStoryEntry,
 } from "./review/types.js";
 export type { ReviewProjectionDocument } from "./review/render.js";
+
+export {
+  rawJsonMaxDepth,
+  jsonParseFailureMessage,
+} from "./review/revision-limits.js";
+
+export {
+  dedupeRevisions,
+  parseRevisionSheetBlock,
+  revisionContentKey,
+  sameRevisionContent,
+  supersedesConflicts,
+  validateStoredRevisionRecord,
+} from "./review/revision-sheet.js";
+export { validateRevisionRecordSet } from "./review/revision-content.js";
+export type {
+  PathedRevisionRecords,
+  RecordSetConflict,
+  RecordSetValidation,
+} from "./review/revision-content.js";
+export type {
+  DedupeResult,
+  RevisionKind,
+  RevisionLocatorValue,
+  RevisionRecord,
+  RevisionRecordValidationResult,
+  RevisionSheetData,
+  RevisionSheetParseResult,
+  SupersedesConflict,
+} from "./review/revision-sheet.js";
+
+export {
+  parseRevisionResponses,
+  validateStoredResponsesRecord,
+} from "./review/revision-responses.js";
+export type {
+  ResponseOutcome,
+  ResponseRecord,
+  ResponseRoute,
+  RevisionResponsesData,
+  RevisionResponsesParseResult,
+  RevisionResponsesValidationResult,
+} from "./review/revision-responses.js";
+
+export {
+  buildTargetLookup,
+  matchRevisionTarget,
+} from "./review/revision-targets.js";
+export type { TargetLookup, TargetMatch } from "./review/revision-targets.js";

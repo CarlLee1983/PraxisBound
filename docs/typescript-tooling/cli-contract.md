@@ -13,6 +13,8 @@ praxisbound handoff check [handoff-file]
 praxisbound release check [repository]
 praxisbound review index <manifest>
 praxisbound review render <manifest> --output <file>
+praxisbound review import <manifest> <sheet>
+praxisbound review respond <manifest> <responses.json>
 
 praxisbound codex activate <repository>
 ```
@@ -58,6 +60,8 @@ verify             = execute make verify
 | `praxisbound release check [repo]`           | `scripts/release-check` Node wrapper  | Local, read-only release inspection; target defaults to `.`; never performs remote checks.       |
 | `praxisbound review index <manifest>`        | none (new capability)                 | Reads one Batch Manifest and its declared sources; read-only; writes nothing.                    |
 | `praxisbound review render <manifest> --output <file>` | none (new capability) | Writes an additive, self-contained offline HTML Review Projection; never changes selected sources. |
+| `praxisbound review import <manifest> <sheet>` | none (new capability) | Reads a Markdown Revision Sheet and records new requests, create-new, under the batch's `records/`; never changes a source. |
+| `praxisbound review respond <manifest> <responses.json>` | none (new capability) | The only way to record a Revision Response file, create-new, after the contract §7 fingerprint and coverage checks. |
 | `praxisbound codex activate <repo>`          | `scripts/codex-activate`              | Preview by default; supports `--apply`; stays a late migration wave.                             |
 
 Global options may appear after the selected command path and before or among
@@ -234,6 +238,127 @@ content reach the page only as text. The layer never writes the repository or
 `records/`, keeps drafts only in browser storage, and is hidden in print; with
 JavaScript disabled the page reads exactly as before. This is Additive: the
 CLI result envelope and its `data` are unchanged.
+
+## `praxisbound review import` contract
+
+`praxisbound review import <manifest> <sheet> [--json]` (Story TST-024,
+Additive) reuses the same manifest and source loading as `review index`, then
+reads one exported Revision Sheet — a Markdown file with exactly one
+`praxisbound-revisions` fenced block — and records it under the batch's
+`specs/batches/<BATCH-ID>/records/` (`specs/features/batch-review/contract.md`
+§6, §12, §13, the 「修訂，R-005」 amendments). It never changes a source,
+confirms a definition, or grants any authority (`ADR-014`).
+
+Every existing `records/revisions-*.json` is read and validated first (a
+loose `revisions-*.json` name that fails the strict `revisions-<sha12>.json`
+pattern is invalid, not silently skipped; name prefix, schema, and the §13
+limits), and every valid one is additionally checked as a whole against
+every other (the same id must carry the same content everywhere, and the
+combined `supersedes` graph must have no self-reference, cycle, or doubled
+target). Both an individually invalid record and a set-level inconsistency
+are a defect of `records/` itself, not of the sheet being checked against
+it, so both fail the command with `REVIEW_RECORD_INVALID` — one issue per
+involved file, each naming its `path` (and, for a set-level conflict, the
+affected id as `subject: revision:<id>`) — and nothing is written; this is
+never `REVIEW_REVISION_CONFLICT`, which is reserved for a rejected input.
+The sheet itself is then checked: a wrong `batchId`, zero or more than one
+fenced block, an unclosed block, or invalid JSON is
+`REVIEW_REVISION_SHEET_INVALID`; an unsupported `schemaVersion` — checked
+before any unknown-field check, so a field this version does not recognize
+never masks it — is `REVIEW_SCHEMA_UNSUPPORTED` (`failure`, exit 1, per the
+Story's Expected Errors: rejected content is a failure, not a configuration
+error); exceeding a §13 limit (file size, JSON nesting depth, revision count, or a
+64&nbsp;KiB string) is `REVIEW_INPUT_TOO_LARGE`; a duplicate id with
+different content — within the sheet or against an already imported sheet —
+or a `supersedes` chain problem (self-reference, a cycle, or a doubled
+target, whether entirely within the sheet or against what is already
+imported) is `REVIEW_REVISION_CONFLICT`, one issue per affected id (the
+envelope issue's `subject` field carries it as `revision:<id>`). With at
+least one new (non-duplicate) request, the fenced block's exact bytes are
+written verbatim, create-new, to `records/revisions-<sheet12>.json`; with
+none, nothing is written and the result is still `success` with issue
+`REVIEW_REVISION_DUPLICATE`. A request whose `fingerprint` no longer matches
+the current Requirement Fingerprint is still written and reported with
+`REVIEW_REVISION_STALE_TARGET`.
+
+| Outcome               | Status  | Exit | Meaning                                                                          |
+| ---------------------- | ------- | ---- | --------------------------------------------------------------------------------- |
+| `success`              | `pass`  | `0`  | The sheet was read (even when every request in it was already imported); `data.sheet` and `data.revisions` report the per-request and per-target outcome. |
+| `failure`              | `fail`  | `1`  | The sheet or an existing record was rejected, or the write itself failed; nothing new is written. |
+| `usage-error`          | `error` | `2`  | Invalid or missing argv.                                                          |
+| `configuration-error`  | `error` | `2`  | The manifest is invalid or its path is unsafe, or the batch `records/` path (or a parent segment) is a symlink. |
+| `ERROR`                | `error` | `3`  | An unexpected internal failure.                                                   |
+
+`data` extends the `review index` minimal shape (`batchId`, `fingerprint`,
+`sources`, `diagnostics`) with `sheet` (`{ sha256, record }`, `record` is the
+repo-relative path written or `null` when every request duplicated) and
+`revisions` (one `{ id, status, targets }` entry per request in the sheet,
+`status` `new` or `duplicate`, each target reporting `match`,
+`hash-mismatch`, `anchor-missing`, or `anchor-duplicate` against the current
+sources per contract §5, including `#document` — matched against the whole
+source file's own sha256 — and `#batch`). Issue codes this command can emit,
+beyond those `review index` already can: `REVIEW_REVISION_SHEET_INVALID`,
+`REVIEW_INPUT_TOO_LARGE`, `REVIEW_REVISION_CONFLICT`,
+`REVIEW_REVISION_DUPLICATE`, `REVIEW_REVISION_STALE_TARGET`,
+`REVIEW_RECORD_INVALID`, `REVIEW_RECORD_WRITE_FAILED`,
+`REVIEW_SCHEMA_UNSUPPORTED`, and `REVIEW_PATH_UNSAFE`.
+
+## `praxisbound review respond` contract
+
+`praxisbound review respond <manifest> <responses.json> [--json]` (Story
+TST-024, Additive) is the only way to write a Revision Response record
+(contract §7, the 「修訂，R-005」 amendments). It checks, in order:
+
+1. Schema and the §13 limits of the response file and of every existing
+   `records/revisions-*.json`/`records/responses-*.json` it depends on
+   (`REVIEW_RECORD_INVALID` naming an invalid existing file — including a
+   set-level inconsistency among otherwise-individually-valid revisions
+   records, never `REVIEW_REVISION_CONFLICT`;
+   `REVIEW_INPUT_TOO_LARGE` for an over-limit response file;
+   `REVIEW_SCHEMA_UNSUPPORTED`, `failure` exit 1, checked before any
+   unknown-field check, for an unsupported `schemaVersion`; otherwise
+   `REVIEW_RESPONSE_INVALID`), including that the response file's own
+   `batchId` matches the current batch.
+2. Every `revisionSheets` entry names an already imported record
+   (`REVIEW_RESPONSE_INVALID`).
+3. `fromFingerprint` equals the `fingerprint` of at least one listed sheet
+   (`REVIEW_RESPONSE_INVALID`).
+4. `toFingerprint` equals the Requirement Fingerprint recomputed at write
+   time (`REVIEW_RESPONSE_STALE` otherwise).
+5. The response set matches the listed sheets' effective requests (every
+   imported request, across the whole batch, not superseded by another
+   imported request) exactly, with no id missing or extra
+   (`REVIEW_RESPONSE_MISMATCH`, one issue per differing id).
+6. The per-response field rules (already enforced by step 1's schema check),
+   the two-fingerprint rule (`fromFingerprint` and `toFingerprint` must
+   differ when any response is `incorporated`), and — matching `review
+   import`'s own §5 judgement — every `incorporated` response's `locators`
+   must each `match` the current sources (`REVIEW_RESPONSE_INVALID`
+   otherwise, one issue per offending revision id).
+
+When every check passes, the response file's bytes are written verbatim,
+create-new, to `records/responses-<to12>-<n>.json`, `<n>` starting at 1 and
+incrementing past an existing name.
+
+| Outcome               | Status  | Exit | Meaning                                                                          |
+| ---------------------- | ------- | ---- | --------------------------------------------------------------------------------- |
+| `success`              | `pass`  | `0`  | The response record was written; `data.record` names the repo-relative path.      |
+| `failure`              | `fail`  | `1`  | A check failed or the write itself failed; nothing new is written.                |
+| `usage-error`          | `error` | `2`  | Invalid or missing argv.                                                          |
+| `configuration-error`  | `error` | `2`  | The manifest is invalid or its path is unsafe, or the batch `records/` path (or a parent segment) is a symlink. |
+| `ERROR`                | `error` | `3`  | An unexpected internal failure.                                                   |
+
+`data` extends the `review index` minimal shape with `record` (the
+repo-relative path written). Issue codes this command can emit, beyond those
+`review index` already can: `REVIEW_RESPONSE_INVALID`,
+`REVIEW_RESPONSE_STALE`, `REVIEW_RESPONSE_MISMATCH`, `REVIEW_RECORD_INVALID`,
+`REVIEW_RECORD_WRITE_FAILED`, `REVIEW_SCHEMA_UNSUPPORTED`, and
+`REVIEW_PATH_UNSAFE`. A `REVIEW_REVISION_CONFLICT`/`REVIEW_RESPONSE_MISMATCH`
+issue that names a specific revision carries it in the envelope issue's
+`subject` field (`revision:<id>`), not only in `message` text. Writing a
+response record never approves anything and never changes a source,
+confirmation, packet, or other record (`ADR-014`); request and response
+text is stored as data only, whatever it says.
 
 ## Static and execution trust boundary
 

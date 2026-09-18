@@ -64,7 +64,7 @@ built_cli_help_and_version_are_exact() {
   praxisbound_empty="$praxisbound_test_dir/empty"
 
   : >"$praxisbound_empty"
-  printf 'PraxisBound CLI v%s\n\nUsage:\n  praxisbound [command]\n\nCommands:\n  init               Plan or apply PraxisBound initialization\n  codex activate     Preview or apply project-local Codex activation\n  doctor             Inspect the static Repository Contract\n  verify             Run the canonical repository verification target\n  handoff check      Check immutable Handoff evidence\n  release check      Inspect local Git release readiness\n  story check        Check the static Story contract\n  review index       Report the batch review source index\n  review render      Write an offline batch review HTML projection\n  verification check Resolve plans and check recorded results\n  help, --help       Show this help\n  version, --version Print the CLI version\n\nOther migration commands are unavailable.\n' \
+  printf 'PraxisBound CLI v%s\n\nUsage:\n  praxisbound [command]\n\nCommands:\n  init               Plan or apply PraxisBound initialization\n  codex activate     Preview or apply project-local Codex activation\n  doctor             Inspect the static Repository Contract\n  verify             Run the canonical repository verification target\n  handoff check      Check immutable Handoff evidence\n  release check      Inspect local Git release readiness\n  story check        Check the static Story contract\n  review index       Report the batch review source index\n  review render      Write an offline batch review HTML projection\n  review import      Record an exported Revision Sheet\n  review respond     Record a Revision Response file\n  verification check Resolve plans and check recorded results\n  help, --help       Show this help\n  version, --version Print the CLI version\n\nOther migration commands are unavailable.\n' \
     "$praxisbound_version" >"$praxisbound_help"
   printf '%s\n' "$praxisbound_version" >"$praxisbound_version_output"
 
@@ -159,6 +159,16 @@ packed_packages_have_the_bounded_public_contract() {
     './dist/review/render-spec.js' \
     './dist/review/render.d.ts' \
     './dist/review/render.js' \
+    './dist/review/revision-content.d.ts' \
+    './dist/review/revision-content.js' \
+    './dist/review/revision-limits.d.ts' \
+    './dist/review/revision-limits.js' \
+    './dist/review/revision-responses.d.ts' \
+    './dist/review/revision-responses.js' \
+    './dist/review/revision-sheet.d.ts' \
+    './dist/review/revision-sheet.js' \
+    './dist/review/revision-targets.d.ts' \
+    './dist/review/revision-targets.js' \
     './dist/review/types.d.ts' \
     './dist/review/types.js' \
     './dist/review/vocabulary.d.ts' \
@@ -233,6 +243,14 @@ packed_packages_have_the_bounded_public_contract() {
     './dist/release-git.js' \
     './dist/release.d.ts' \
     './dist/release.js' \
+    './dist/review-import.d.ts' \
+    './dist/review-import.js' \
+    './dist/review-input.d.ts' \
+    './dist/review-input.js' \
+    './dist/review-records.d.ts' \
+    './dist/review-records.js' \
+    './dist/review-respond.d.ts' \
+    './dist/review-respond.js' \
     './dist/review.d.ts' \
     './dist/review.js' \
     './dist/snapshot/AGENTS.md' \

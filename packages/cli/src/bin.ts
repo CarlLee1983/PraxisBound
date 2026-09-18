@@ -25,6 +25,16 @@ import {
   runReviewIndex,
   runReviewRender,
 } from "./review.js";
+import {
+  renderReviewImportHuman,
+  reviewImportHelp,
+  runReviewImport,
+} from "./review-import.js";
+import {
+  renderReviewRespondHuman,
+  reviewRespondHelp,
+  runReviewRespond,
+} from "./review-respond.js";
 import { renderStoryHuman, runStoryCheck, storyHelp } from "./story.js";
 import {
   renderVerifyHuman,
@@ -62,6 +72,8 @@ Commands:
   story check        Check the static Story contract
   review index       Report the batch review source index
   review render      Write an offline batch review HTML projection
+  review import      Record an exported Revision Sheet
+  review respond     Record a Revision Response file
   verification check Resolve plans and check recorded results
   help, --help       Show this help
   version, --version Print the CLI version
@@ -272,6 +284,40 @@ if (
     process.stdout.write(serializeResultEnvelope(execution.result));
   } else {
     const rendered = renderReviewRenderHuman(execution);
+    process.stdout.write(rendered.stdout);
+    process.stderr.write(rendered.stderr);
+  }
+  process.exitCode = execution.result.exit;
+} else if (
+  args.length === 3 &&
+  args[0] === "review" &&
+  args[1] === "import" &&
+  args[2] === "--help"
+) {
+  process.stdout.write(reviewImportHelp);
+} else if (args[0] === "review" && args[1] === "import") {
+  const execution = await runReviewImport(args.slice(2));
+  if (execution.mode === "json") {
+    process.stdout.write(serializeResultEnvelope(execution.result));
+  } else {
+    const rendered = renderReviewImportHuman(execution);
+    process.stdout.write(rendered.stdout);
+    process.stderr.write(rendered.stderr);
+  }
+  process.exitCode = execution.result.exit;
+} else if (
+  args.length === 3 &&
+  args[0] === "review" &&
+  args[1] === "respond" &&
+  args[2] === "--help"
+) {
+  process.stdout.write(reviewRespondHelp);
+} else if (args[0] === "review" && args[1] === "respond") {
+  const execution = await runReviewRespond(args.slice(2));
+  if (execution.mode === "json") {
+    process.stdout.write(serializeResultEnvelope(execution.result));
+  } else {
+    const rendered = renderReviewRespondHuman(execution);
     process.stdout.write(rendered.stdout);
     process.stderr.write(rendered.stderr);
   }
