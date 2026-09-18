@@ -30,6 +30,7 @@ import type {
   SourceObservation,
   SpecAcceptanceEntry,
   SpecEntryIndex,
+  SpecEntrySections,
   SpecIndex,
   SpecSectionIndex,
   StoryIndex,
@@ -334,6 +335,7 @@ export function indexReviewBatch(
     index: {
       batchId: plan.batchId,
       title: plan.title,
+      preface: plan.preface,
       fingerprint,
       manifestSha256: plan.manifestSha256,
       sources: sourceDigests,
@@ -342,6 +344,8 @@ export function indexReviewBatch(
         path: spec.path,
         entries: spec.entries,
         sections: spec.sections,
+        ...(spec.goal === undefined ? {} : { goal: spec.goal }),
+        ...(spec.nonGoals === undefined ? {} : { nonGoals: spec.nonGoals }),
       })),
       stories,
       trace,
@@ -419,6 +423,53 @@ interface SpecIndexInternal extends SpecIndex {
   readonly allRecognizedIds: readonly string[];
 }
 
+type TopLevelVocabKey = "goal" | "nonGoals";
+type EntrySectionVocabKey = "goal" | "acceptance" | "nonGoals" | "dependencies";
+
+const ENTRY_SECTION_LABELS: Record<EntrySectionVocabKey, string> = {
+  goal: "Goal",
+  acceptance: "Acceptance",
+  nonGoals: "Non-goals",
+  dependencies: "Dependencies",
+};
+
+/**
+ * Recognizes a Spec-level (non-entry) `Goal`/`Non-goals` heading (contract
+ * §5): Non-goals is checked first, since it can also start with the Chinese
+ * for "goal". English comparisons are case-insensitive; nothing else is
+ * normalized beyond the heading text's own leading/trailing trim.
+ */
+function matchTopLevelVocab(text: string): TopLevelVocabKey | undefined {
+  const trimmed = text.trim();
+  const lower = trimmed.toLowerCase();
+  if (
+    trimmed.includes("非目標") ||
+    trimmed.startsWith("不包含") ||
+    lower.startsWith("non-goals") ||
+    lower.startsWith("out of scope")
+  )
+    return "nonGoals";
+  if (trimmed.startsWith("目標") || lower.startsWith("goal")) return "goal";
+  return undefined;
+}
+
+/**
+ * Recognizes a third-level heading inside a Spec entry as one of the fixed
+ * `R-NNN/*` anchors (contract §5): an exact match on the trimmed heading
+ * text, case-insensitive for the English forms only.
+ */
+function matchEntrySectionVocab(
+  text: string,
+): EntrySectionVocabKey | undefined {
+  const trimmed = text.trim();
+  const lower = trimmed.toLowerCase();
+  if (trimmed === "目標" || lower === "goal") return "goal";
+  if (trimmed === "驗收條件" || lower === "acceptance") return "acceptance";
+  if (trimmed === "不包含" || lower === "out of scope") return "nonGoals";
+  if (trimmed === "依賴" || lower === "dependencies") return "dependencies";
+  return undefined;
+}
+
 function specAcceptanceLocator(
   path: string,
   entryId: string,
@@ -438,7 +489,14 @@ function indexSpec(
   diagnostics: ReviewDiagnostic[],
 ): SpecIndexInternal {
   if (observation.kind !== "file") {
-    return { path, entries: [], sections: [], allRecognizedIds: [] };
+    return {
+      path,
+      entries: [],
+      sections: [],
+      allRecognizedIds: [],
+      goal: undefined,
+      nonGoals: undefined,
+    };
   }
 
   const { bytes } = observation;
@@ -470,6 +528,104 @@ function indexSpec(
         candidate.id !== undefined && !duplicateIds.has(candidate.id),
     )
     .map((candidate) => candidate.heading);
+
+  // Spec-level `Goal`/`Non-goals` vocabulary (contract §5): a second-level
+  // heading that is not itself a Spec entry. Computed before the per-heading
+  // loop so a duplicate is still excluded from the generic unrecognized-
+  // section bucket below.
+  const topVocabGroups = new Map<TopLevelVocabKey, HeadingBlock[]>();
+  for (const heading of headings) {
+    if (heading.level !== 2) continue;
+    if (readSpecEntryId(heading) !== undefined) continue;
+    const key = matchTopLevelVocab(heading.text);
+    if (key === undefined) continue;
+    const group = topVocabGroups.get(key) ?? [];
+    group.push(heading);
+    topVocabGroups.set(key, group);
+  }
+  const topVocabHeadings = new Set<HeadingBlock>(
+    [...topVocabGroups.values()].flat(),
+  );
+
+  let goal: Locator | undefined;
+  let nonGoals: Locator | undefined;
+  for (const [key, group] of topVocabGroups) {
+    const label = key === "goal" ? "Goal" : "Non-goals";
+    if (group.length > 1) {
+      for (const heading of group) {
+        const blockSha256 = sha256Hex(
+          bytes.subarray(heading.startOffset, heading.endOffset),
+        );
+        diagnostics.push(
+          diagnostic(
+            "REVIEW_ANCHOR_DUPLICATE",
+            "blocking",
+            `anchor occurs more than once in ${path}: ${label}`,
+            path,
+            { path, anchor: label, blockSha256 },
+          ),
+        );
+      }
+      continue;
+    }
+    const [heading] = group as [HeadingBlock];
+    const blockSha256 = sha256Hex(
+      bytes.subarray(heading.startOffset, heading.endOffset),
+    );
+    const locator: Locator = { path, anchor: label, blockSha256 };
+    if (key === "goal") goal = locator;
+    else nonGoals = locator;
+  }
+
+  // Entry-level vocabulary (contract §5): a third-level heading nested inside
+  // one recognized (non-duplicate) entry's own block, keyed by entry id.
+  const entrySectionsById = new Map<string, SpecEntrySections>();
+  for (const entryHeading of entryRanges) {
+    const entryId = readSpecEntryId(entryHeading) as string;
+    const groups = new Map<EntrySectionVocabKey, HeadingBlock[]>();
+    for (const heading of headings) {
+      if (heading.level !== 3) continue;
+      if (
+        heading.startOffset <= entryHeading.startOffset ||
+        heading.startOffset >= entryHeading.endOffset
+      )
+        continue;
+      const key = matchEntrySectionVocab(heading.text);
+      if (key === undefined) continue;
+      const group = groups.get(key) ?? [];
+      group.push(heading);
+      groups.set(key, group);
+    }
+
+    const entrySections: Partial<Record<EntrySectionVocabKey, Locator>> = {};
+    for (const [key, group] of groups) {
+      const label = ENTRY_SECTION_LABELS[key];
+      const anchor = `${entryId}/${label}`;
+      if (group.length > 1) {
+        for (const heading of group) {
+          const blockSha256 = sha256Hex(
+            bytes.subarray(heading.startOffset, heading.endOffset),
+          );
+          diagnostics.push(
+            diagnostic(
+              "REVIEW_ANCHOR_DUPLICATE",
+              "blocking",
+              `anchor occurs more than once in ${path}: ${anchor}`,
+              path,
+              { path, anchor, blockSha256 },
+            ),
+          );
+        }
+        continue;
+      }
+      const [heading] = group as [HeadingBlock];
+      const blockSha256 = sha256Hex(
+        bytes.subarray(heading.startOffset, heading.endOffset),
+      );
+      entrySections[key] = { path, anchor, blockSha256 };
+    }
+    entrySectionsById.set(entryId, entrySections);
+  }
 
   const entries: SpecEntryIndex[] = [];
   const sections: SpecSectionIndex[] = [];
@@ -532,9 +688,15 @@ function indexSpec(
         heading: heading.text,
         locator: { path, anchor: id, blockSha256 },
         acceptance,
+        sections: entrySectionsById.get(id) ?? {},
       });
       continue;
     }
+
+    // A heading recognized as Spec-level `Goal`/`Non-goals` vocabulary is
+    // handled above, whether or not it resolved (a duplicate is still a
+    // recognized heading, not an unrecognized section).
+    if (topVocabHeadings.has(heading)) continue;
 
     // A heading nested inside a recognized entry's own block is that entry's
     // content, not a separate, unrecognized top-level section.
@@ -573,5 +735,7 @@ function indexSpec(
     entries,
     sections,
     allRecognizedIds: [...byId.keys()],
+    goal,
+    nonGoals,
   };
 }
