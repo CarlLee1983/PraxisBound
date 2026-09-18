@@ -172,6 +172,13 @@ Schema：[`schemas/revision-sheet.schema.json`](schemas/revision-sheet.schema.js
 3. 至少一則新意見時，把區塊 JSON 原樣寫入 `records/revisions-<sheet12>.json`；全部重複時不寫檔，outcome `success`，issue `REVIEW_REVISION_DUPLICATE`。
 4. 意見 `fingerprint` 與當前指紋不同：仍寫入，issue `REVIEW_REVISION_STALE_TARGET`（「待比對」）。
 
+（修訂性澄清，R-004）同內容的判定：只比較 schema 欄位（`id`、`fingerprint`、`targets`、`quote`、`kind`、
+`blocking`、`proposal`、`rationale`、`createdAt`、`supersedes`），先做下列正規化再逐字比較：各層物件的鍵依鍵名
+（UTF-16 碼元順序）排序，陣列保持原順序；`createdAt` 轉為標準 UTC 形式（大寫 `T`，小數秒去除尾端 `0`、全為 `0`
+時省略，結尾 `Z`），所以 `…:00Z` 與 `…:00.000Z` 是同一時刻；`quote`、`proposal`、`rationale` 中的 `\r\n` 與
+單獨的 `\r` 視為 `\n`。其餘值逐字比較，有無 `supersedes` 即為不同內容。HTML 閱讀頁的還原（§19）與
+`review import` 使用同一判定。
+
 之後所有命令採計**全部**已匯入修訂單中未被 `supersedes` 取代的意見（「有效意見」）；沒有「最新一份」的概念。
 HTML 內的匯出／還原（R-004）仍是閱讀頁功能，與 `review import` 分開。
 

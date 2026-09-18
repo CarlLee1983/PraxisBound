@@ -222,6 +222,19 @@ advisory diagnostic detail). HTML is an offline, read-only projection: it
 includes no external resource loads, executes no source content, and never
 records approval, completion, verification, or Agent state.
 
+The page embeds exactly one script: the fixed annotation layer of Story
+TST-023 (contract §19), a right-hand drawer plus an inline entry on every
+located block for raising Revision Requests, exporting a Revision Sheet (as a
+download and as copyable text), and restoring one. The script is the core
+package's constant `ANNOTATION_SCRIPT`, embedded unchanged and pinned in the
+page's Content Security Policy by its own hash (`script-src 'sha256-…'`); every
+other source, including `connect-src` and `frame-src`, stays `'none'`, so the
+page makes no network request. Source text, request text, and restored sheet
+content reach the page only as text. The layer never writes the repository or
+`records/`, keeps drafts only in browser storage, and is hidden in print; with
+JavaScript disabled the page reads exactly as before. This is Additive: the
+CLI result envelope and its `data` are unchanged.
+
 ## Static and execution trust boundary
 
 These commands are always static and target-read-only:
