@@ -888,7 +888,11 @@ export async function runReviewRender(
         bytes: observation?.kind === "file" ? observation.bytes : undefined,
       };
     });
-    const html = renderReviewProjection(loaded.loaded.index, documents);
+    const html = renderReviewProjection(
+      loaded.loaded.index,
+      documents,
+      loaded.loaded.manifestPath,
+    );
     const publication = await publishProjection(
       root,
       output,

@@ -1,9 +1,12 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import test from "node:test";
 import { TextEncoder } from "node:util";
 
 import { indexReviewBatch, renderReviewProjection } from "../dist/index.js";
+import { ANNOTATION_SCRIPT } from "../dist/review/annotation-script.js";
 
+const MANIFEST_PATH = "specs/batches/TST-922-fixture/batch.json";
 const SPEC_PATH = "specs/features/fixture/spec.md";
 const MISSING_SPEC_PATH = "specs/features/fixture/missing-spec.md";
 const ADR_PATH = "specs/decisions/ADR-014-fixture.md";
@@ -286,7 +289,7 @@ function buildFixture() {
     bytes: observations.get(source.path)?.bytes,
   }));
 
-  const html = renderReviewProjection(index, documents);
+  const html = renderReviewProjection(index, documents, MANIFEST_PATH);
   return { index, html, files };
 }
 
@@ -739,7 +742,10 @@ test("TST022-AC-009: the projection never claims PASS, completion, or approval; 
 });
 
 test("TST022-AC-010/Security Fixture Matrix: untrusted markup and unsafe links are inert; the page is offline and self-contained", () => {
-  assert.doesNotMatch(html, /<script[\s>]/i);
+  // The page embeds exactly one fixed, Renderer-produced script (contract
+  // §19, TST-023 AC-009); the reader-supplied `<script>` payload below must
+  // never become a second, live one.
+  assert.equal([...html.matchAll(/<script[\s>]/gi)].length, 1);
   assert.doesNotMatch(html, /<img[\s>]/i);
   assert.doesNotMatch(html, /<iframe[\s>]/i);
   assert.match(html, /&lt;script&gt;alert\(1\)&lt;\/script&gt;/);
@@ -967,4 +973,51 @@ test("TST022-AC-005: duplicate AC ids in acceptance.md each keep their own locat
     )
     .map((locator) => locator.blockSha256);
   assert.deepEqual(new Set([shaOf(items[0]), shaOf(items[1])]), new Set(shas));
+});
+
+test("TST023-AC-009: exactly one hashed script, a matching CSP, connect-src stays 'none', and print hides the annotation layer", () => {
+  const scripts = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map(
+    (match) => match[1],
+  );
+  assert.equal(scripts.length, 1);
+  assert.equal(scripts[0], ANNOTATION_SCRIPT);
+
+  const expectedHash = createHash("sha256")
+    .update(ANNOTATION_SCRIPT, "utf8")
+    .digest("base64");
+  const csp =
+    /<meta http-equiv="Content-Security-Policy" content="([^"]+)">/.exec(
+      html,
+    )?.[1];
+  assert.ok(csp);
+  // Compare literally: a base64 hash may contain regex metacharacters such as +.
+  assert.ok(csp.includes(`script-src 'sha256-${expectedHash}'`), csp);
+  // No other script source is allowed, and every other directive TST-022
+  // already pinned stays exactly as strict.
+  assert.equal(csp.match(/script-src/g)?.length, 1);
+  assert.match(csp, /connect-src 'none'/);
+  assert.match(csp, /frame-src 'none'/);
+  assert.match(csp, /default-src 'none'/);
+  assert.match(csp, /img-src 'none'/);
+  assert.match(csp, /media-src 'none'/);
+  assert.match(csp, /object-src 'none'/);
+  assert.match(csp, /base-uri 'none'/);
+  assert.match(csp, /form-action 'none'/);
+
+  assert.match(html, /\.pb-annotation \{ display: none !important; \}/);
+  // Selection outlines never reach print, and touch readers see the inline entry.
+  assert.match(
+    html,
+    /@media print \{[^}]*(?:\}[^}]*)*\.pb-annotation-selectable, \.pb-annotation-target-selected \{ outline: none !important; \}/,
+  );
+  assert.match(
+    html,
+    /@media \(hover: none\), \(max-width: 24\.375em\) \{\n {2}\.pb-annotation-inline-add \{ opacity: 1; \}/,
+  );
+  assert.match(
+    html,
+    new RegExp(
+      `data-pb-batch-id="${index.batchId}" data-pb-manifest-path="${MANIFEST_PATH}" data-pb-fingerprint="${index.fingerprint}"`,
+    ),
+  );
 });

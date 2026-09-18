@@ -1,5 +1,6 @@
 /**
- * The requirement-organized Review Projection page (contract §18).
+ * The requirement-organized Review Projection page (contract §18) and its
+ * embedded annotation layer script (contract §19, Story TST-023 R1).
  *
  * Assembles the page order §18 specifies — title, Review Preface, overview
  * matrix, batch goal/non-goals, ADR constraints, diagnostic summary,
@@ -7,8 +8,15 @@
  * already-read source bytes. All partitioning (which byte range plays which
  * role) lives in `render-source.ts`; this module only assembles the page and
  * its inline CSS. Pure: no I/O, no globals, no mutation of its inputs.
+ *
+ * `node:crypto` is a pure hashing primitive here too (as in `fingerprint.ts`,
+ * Story TST-021 R9/AC-011): it pins the one embedded script with its own
+ * `sha256`, never touches the filesystem, process, or clock.
  */
 
+import { createHash } from "node:crypto";
+
+import { ANNOTATION_SCRIPT } from "./annotation-script.js";
 import { renderMarkdownHtml, scanMarkdownDocument } from "./markdown-html.js";
 import {
   buildLocatorLookup,
@@ -428,10 +436,17 @@ function renderAppendix(
  * Produces an inert, self-contained reading projection. The caller owns
  * source acquisition and output publication; this function accepts only
  * immutable index data and source text, and performs no I/O.
+ *
+ * `manifestPath` is the batch target's `path` (contract §5 rule 3, §19): the
+ * page's annotation script needs it, plus `batchId` and `fingerprint`, to
+ * build the `#batch` target and the storage key, so it is emitted as a
+ * `data-*` attribute on the page root rather than read from any other
+ * rendered content.
  */
 export function renderReviewProjection(
   index: ReviewIndex,
   documents: readonly ReviewProjectionDocument[],
+  manifestPath: string,
 ): string {
   const documentsByPath = new Map(
     documents.map((document) => [document.path, document]),
@@ -561,18 +576,24 @@ export function renderReviewProjection(
 
   const title = index.title ?? index.batchId;
 
+  // The one embedded script's exact bytes are pinned by their own sha256
+  // (contract §19 R1); every other script source stays forbidden.
+  const scriptHash = createHash("sha256")
+    .update(ANNOTATION_SCRIPT, "utf8")
+    .digest("base64");
+
   return `<!doctype html>
 <html lang="zh-Hant">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src 'none'; media-src 'none'; object-src 'none'; frame-src 'none'; connect-src 'none'; base-uri 'none'; form-action 'none'; style-src 'unsafe-inline'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-${scriptHash}'; img-src 'none'; media-src 'none'; object-src 'none'; frame-src 'none'; connect-src 'none'; base-uri 'none'; form-action 'none'; style-src 'unsafe-inline'">
 <title>${escapeHtml(title)} — Review Projection</title>
 <style>
 ${PAGE_CSS}
 </style>
 </head>
-<body>
+<body data-pb-batch-id="${escapeHtml(index.batchId)}" data-pb-manifest-path="${escapeHtml(manifestPath)}" data-pb-fingerprint="${escapeHtml(index.fingerprint)}">
 <main class="page">
 <header class="cover">
 <p class="kicker">離線閱讀快照</p>
@@ -596,6 +617,7 @@ ${missingSourcesHtml}
 <section class="orphan-stories"><h2>未對應需求的 Story</h2>${orphanStories || `<p class="muted">沒有未對應需求的 Story。</p>`}</section>
 ${appendixHtml}
 </main>
+<script>${ANNOTATION_SCRIPT}</script>
 </body>
 </html>`;
 }
@@ -652,5 +674,41 @@ th.num { white-space: nowrap; min-width: 6rem; }
   details > summary { list-style: none; }
   details > summary::-webkit-details-marker { display: none; }
   a { color: inherit; text-decoration: none; }
+  .pb-annotation { display: none !important; }
+  .pb-annotation-selectable, .pb-annotation-target-selected { outline: none !important; }
+}
+
+/* 審閱層（contract §19, Story TST-023）：抽屜、行內入口、頁面標記，皆以 .pb-annotation 標記以便列印隱藏。 */
+.pb-annotation-toggle { position: fixed; top: 1rem; right: 1rem; z-index: 55; font: 600 .85rem ui-sans-serif, system-ui, sans-serif; padding: .5rem .9rem; border-radius: 999px; border: 1px solid #8a5a2b; background: #fffaf0; color: #5c3a15; cursor: pointer; }
+.pb-annotation-drawer { position: fixed; top: 0; right: 0; bottom: 0; width: min(26rem, 100vw); overflow-y: auto; background: #fff; border-left: 1px solid #d8d0c3; box-shadow: -0.4rem 0 1.2rem rgba(0, 0, 0, .12); padding: 1rem; z-index: 50; font: .92rem/1.6 ui-sans-serif, system-ui, sans-serif; padding-top: 3.75rem; padding-bottom: 6rem; }
+.pb-annotation-drawer-header { display: flex; flex-wrap: wrap; align-items: center; gap: .6rem; justify-content: space-between; border-bottom: 1px solid #d8d0c3; padding-bottom: .6rem; margin-bottom: .6rem; }
+.pb-annotation-toolbar { display: flex; gap: .5rem; align-items: center; flex-wrap: wrap; }
+.pb-annotation-section { margin: 1rem 0; }
+.pb-annotation-form { display: flex; flex-direction: column; gap: .4rem; margin: .6rem 0; }
+.pb-annotation-form textarea { min-height: 4rem; font: inherit; }
+.pb-annotation-error:empty { display: none; }
+.pb-annotation-error { color: #8a251e; }
+.pb-annotation-target-list { list-style: none; padding: 0; margin: .4rem 0; display: flex; flex-direction: column; gap: .3rem; }
+.pb-annotation-target-list li { display: flex; justify-content: space-between; align-items: center; gap: .4rem; border: 1px solid #d8d0c3; border-radius: 4px; padding: .2rem .5rem; }
+.pb-annotation-card { border: 1px solid #d8d0c3; border-radius: 6px; padding: .6rem .8rem; margin: .6rem 0; }
+.pb-annotation-card-head { display: flex; gap: .4rem; flex-wrap: wrap; }
+.pb-annotation-badge { font: 600 .72rem ui-sans-serif, system-ui, sans-serif; border: 1px solid #d8d0c3; border-radius: 10px; padding: 0 .5em; color: #6f675c; }
+.pb-annotation-badge-blocking { color: #8a251e; border-color: #8a251e; }
+.pb-annotation-targets, .pb-annotation-excerpt { font-size: .85rem; color: #4a4640; overflow-wrap: anywhere; }
+.pb-annotation-request-text { margin: .3rem 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.pb-annotation-card-actions { display: flex; gap: .5rem; margin-top: .4rem; }
+.pb-annotation-inline-add { opacity: 0; margin-left: .4rem; font: 600 .72rem ui-sans-serif, system-ui, sans-serif; border: 1px solid #8a5a2b; background: #fffaf0; color: #5c3a15; border-radius: 999px; padding: 0 .5em; cursor: pointer; }
+:hover > .pb-annotation-inline-add, :focus-within > .pb-annotation-inline-add, .pb-annotation-inline-add:focus { opacity: 1; }
+.pb-annotation-selectable { outline: 1px dashed #8a5a2b; outline-offset: 2px; cursor: pointer; }
+.pb-annotation-target-selected { outline: 2px solid #1e4e6e; outline-offset: 2px; }
+.pb-annotation-marker { display: inline-block; margin-left: .4rem; font: 600 .7rem ui-sans-serif, system-ui, sans-serif; border: 1px solid #1e4e6e; color: #1e4e6e; border-radius: 999px; padding: 0 .5em; background: #eef4f8; cursor: pointer; overflow-wrap: anywhere; }
+.pb-annotation-notice { position: fixed; bottom: 0; left: 0; right: 0; z-index: 60; background: #8a251e; color: #fff; text-align: center; padding: .5rem 1rem; font: 600 .85rem ui-sans-serif, system-ui, sans-serif; }
+.pb-annotation-export-text, .pb-annotation-restore-text { display: block; width: 100%; min-height: 8rem; font: .8rem ui-monospace, Menlo, monospace; }
+.pb-annotation-muted { color: #6f675c; }
+@media (max-width: 24.375em) {
+  .pb-annotation-drawer { width: 100vw; }
+}
+@media (hover: none), (max-width: 24.375em) {
+  .pb-annotation-inline-add { opacity: 1; }
 }
 `;

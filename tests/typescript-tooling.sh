@@ -127,6 +127,16 @@ packed_packages_have_the_bounded_public_contract() {
     './dist/repository.js' \
     './dist/result.d.ts' \
     './dist/result.js' \
+    './dist/review/annotation-dom.d.ts' \
+    './dist/review/annotation-dom.js' \
+    './dist/review/annotation-logic.d.ts' \
+    './dist/review/annotation-logic.js' \
+    './dist/review/annotation-script.d.ts' \
+    './dist/review/annotation-script.js' \
+    './dist/review/annotation-state.d.ts' \
+    './dist/review/annotation-state.js' \
+    './dist/review/annotation-ui.d.ts' \
+    './dist/review/annotation-ui.js' \
     './dist/review/fingerprint.d.ts' \
     './dist/review/fingerprint.js' \
     './dist/review/html.d.ts' \

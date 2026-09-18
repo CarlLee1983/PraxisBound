@@ -2,7 +2,7 @@
 
 Contract ID：`SPEC-BATCH-REVIEW/R-001`。狀態：已接受（accepted，人類審閱並合併 #94）。日期：2026-09-17。
 修訂：2026-09-18，Review Projection 以需求為主軸的呈現（§18）、manifest `preface`（§3）與 Spec 章節詞彙（§5）；已接受（人類審閱 #100）。
-修訂：2026-09-18，Review Projection 的審閱層（§19，R-004）；待人類審閱。
+修訂：2026-09-18，Review Projection 的審閱層（§19，R-004）；已接受（人類審閱 #103）。
 
 本文件定稿 [spec.md](spec.md) R-001 要求的產物格式、指紋、定位、命令結果與授權邊界。
 取捨與不可靜默推翻的邊界記錄於
@@ -155,6 +155,8 @@ Schema：[`schemas/revision-sheet.schema.json`](schemas/revision-sheet.schema.js
   tilde fence、縮排 fence、較長 backtick fence 都不是此區塊。
 - 區塊外文字由匯出端產生、僅供閱讀；匯入不讀。匯出端把所有使用者文字以 `> ` 引用行輸出，
   使用者文字因此不可能在第 0 欄形成 fence；JSON 字串不含原始換行，區塊內也不可能出現 fence 行。
+  （修訂性澄清，R-004）區塊外的 `quote`、`proposal`、`rationale` 只列前 200 個字元（Unicode 碼位），
+  超過時以 `…` 收尾，並註明完整內容以 JSON 區塊為準；區塊外文字因此不會讓修訂單的大小隨意見文字倍增。
 - 開頭行數量不是恰好一個、或區塊未閉合：`REVIEW_REVISION_SHEET_INVALID`，整份拒絕。
 
 每則意見：`id`（`REV-` 加 26 字元 ULID）、`fingerprint`（提出時批次指紋）、`targets`（一或多個 locator；跨段／跨 Story 以多個 target，整批以 `#batch`）、
@@ -167,10 +169,21 @@ Schema：[`schemas/revision-sheet.schema.json`](schemas/revision-sheet.schema.js
 `praxisbound review import <manifest> <sheet>`：
 
 1. 讀取並驗證區塊、schema 與上限（§13）；`batchId` 不符：`REVIEW_REVISION_SHEET_INVALID`。
+   同一份修訂單內重複的 ID：同內容只保留一則，不同內容整份拒絕（`REVIEW_REVISION_CONFLICT`，列出 ID）。
 2. 與全部已匯入修訂單比對意見 ID：同 ID 同內容 → 去重；同 ID 不同內容 → 整份拒絕（`REVIEW_REVISION_CONFLICT`，列出 ID）。
-   `supersedes` 指向不存在或已被取代的 ID：`REVIEW_REVISION_CONFLICT`。
+   去重之後，只對新意見檢查 `supersedes`：指向的 ID 必須存在於已匯入修訂單或本份修訂單，且尚未被其他意見取代；
+   否則整份拒絕（`REVIEW_REVISION_CONFLICT`）。頁面每次匯出都包含全部意見，所以第二份修訂單會同時帶著 X 與取代 X 的 Y，
+   X 在去重時已略過，Y 取代 X 不算重複取代。
 3. 至少一則新意見時，把區塊 JSON 原樣寫入 `records/revisions-<sheet12>.json`；全部重複時不寫檔，outcome `success`，issue `REVIEW_REVISION_DUPLICATE`。
 4. 意見 `fingerprint` 與當前指紋不同：仍寫入，issue `REVIEW_REVISION_STALE_TARGET`（「待比對」）。
+
+（修訂性澄清，R-004）同內容的判定：只比較 schema 欄位（`id`、`fingerprint`、`targets`、`quote`、`kind`、
+`blocking`、`proposal`、`rationale`、`createdAt`、`supersedes`），先做下列正規化再逐字比較：各層物件的鍵依鍵名
+（UTF-16 碼元順序）排序，陣列保持原順序；`createdAt` 轉為標準 UTC 形式（大寫 `T`，小數秒去除尾端 `0`、全為 `0`
+時省略，結尾 `Z`），所以 `…:00Z` 與 `…:00.000Z` 是同一時刻；閏秒依 RFC 3339 只在 UTC `23:59:60` 合法，
+標準形式保留 `:60`，不折算成下一分鐘，所以 `2016-12-31T23:59:60Z` 與 `2017-01-01T00:00:00Z` 是不同內容；`quote`、`proposal`、`rationale` 中的 `\r\n` 與
+單獨的 `\r` 視為 `\n`。其餘值逐字比較，有無 `supersedes` 即為不同內容。HTML 閱讀頁的還原（§19）與
+`review import` 使用同一判定。
 
 之後所有命令採計**全部**已匯入修訂單中未被 `supersedes` 取代的意見（「有效意見」）；沒有「最新一份」的概念。
 HTML 內的匯出／還原（R-004）仍是閱讀頁功能，與 `review import` 分開。
@@ -493,10 +506,19 @@ Revision Request 欄位（§6 之外的產生規則）：
 
 - 匯出產生 §6 的 Markdown Revision Sheet，提供下載與可複製的文字框兩種取得方式。
 - 還原讀取使用者選取或貼上的 Revision Sheet，套用 §6 的區塊規則與 §13 上限；`batchId` 不符即整份拒絕。
-  同 `id` 同內容略過並計數；同 `id` 不同內容整份拒絕並列出 `id`。
+  同 `id` 同內容略過並計數，頁面上的該則意見改標為已匯出；同 `id` 不同內容整份拒絕並列出 `id`。
+  `supersedes` 與 `review import` 同一規則（§6）：去重後，指向的 `id` 必須在頁面或這份 Revision Sheet 中、
+  是已匯出的意見，且未被其他意見取代，否則整份拒絕、草稿不變。
+- 頁面持有的 Revision Request 總數不超過 §13 的單份上限（1000 則）：新增、修改已匯出的意見（會建立新 `id`）
+  與還原若會超過上限即拒絕並說明，避免意見數量讓全部意見無法匯出成一份修訂單。大小上限（1 MiB）仍在匯出時檢查，
+  超過時匯出失敗並說明，草稿不變。
 - Revision Request 的 `fingerprint` 等於頁面指紋，且每個目標的 `(path, anchor, blockSha256)` 都能在頁面找到時，
   才掛回原位；否則列入「待比對」，永不套用到同名或相似段落（§5）。
 - 瀏覽器儲存只作輔助暫存，key 含 `batchId` 與頁面指紋；無法使用時持續提示「請記得匯出」。
+  暫存是不受信任的輸入：以 §6 與上述規則驗證，無效者隔離且不匯出（包括取代對象不存在或尚未匯出、
+  以及因隔離而懸空的後繼意見）。`file://` 頁面在部分瀏覽器共用同一份儲存，其他本機頁面可能寫入格式正確的意見，
+  所以從暫存載入時常駐提示「已從瀏覽器暫存載入 N 則意見」，每則載入的意見標示「來自暫存」；草稿經讀者修改或匯出、或任一意見出現在讀者還原的修訂單中後不再標示。
+  以已匯出狀態載入且未再還原的意見在本次開啟期間持續標示，因為它不會再被匯出或就地修改。
   有未匯出的 Revision Request 時顯示數量，離開頁面前提示。匯出、還原或暫存失敗時，既有草稿不被清空，也不被標示為已保存。
 
 ## 與 AC 的對照
