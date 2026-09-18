@@ -134,4 +134,6 @@ test("TST022-AC-001/002/003/005: an offline projection retains sources, promotes
   assert.equal((html.match(/id="source-3-locator-2"/g) ?? []).length, 1);
   assert.match(html, /<div class="table-scroll"><table>/);
   assert.match(html, /Content-Security-Policy/);
+  // 64 字元 digest 沒有斷點，窄螢幕上須能換行，否則會撐寬整頁。
+  assert.match(html, /\.source-digest \{[^}]*overflow-wrap: anywhere;/);
 });

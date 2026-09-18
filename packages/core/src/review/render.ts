@@ -358,6 +358,7 @@ h3 { margin-top: 1.8rem; }
 .story-focus h4 { margin-bottom: .25rem; }
 pre, code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
 pre { max-width: 100%; overflow: auto; padding: 1rem; background: #ebe7de; white-space: pre-wrap; overflow-wrap: anywhere; }
+.source-digest { overflow-wrap: anywhere; }
 .source-view { overflow-wrap: anywhere; }
 .source-view pre { white-space: pre; overflow-x: auto; }
 .list-line { padding-left: 1rem; }
