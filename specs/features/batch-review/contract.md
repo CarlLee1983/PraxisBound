@@ -2,6 +2,7 @@
 
 Contract ID：`SPEC-BATCH-REVIEW/R-001`。狀態：已接受（accepted，人類審閱並合併 #94）。日期：2026-09-17。
 修訂：2026-09-18，Review Projection 以需求為主軸的呈現（§18）、manifest `preface`（§3）與 Spec 章節詞彙（§5）；已接受（人類審閱 #100）。
+修訂：2026-09-18，Review Projection 的審閱層（§19，R-004）；待人類審閱。
 
 本文件定稿 [spec.md](spec.md) R-001 要求的產物格式、指紋、定位、命令結果與授權邊界。
 取捨與不可靜默推翻的邊界記錄於
@@ -398,6 +399,10 @@ ForgePilot 輸出是觀察而非輸入：每個 stdout／stderr 保存前 1 MiB�
 | `source markdown link` | `[x](javascript:alert(1))` | `omit` | `review.html anchor without href` | `tests/batch-review-render.sh` |
 | `batch.json preface` | `<script>alert(1)</script>[x](javascript:alert(1))` | `preserve` | `review.html text node; anchor without href` | `tests/batch-review-render.sh` |
 | `batch.json preface` | `4097 bytes of UTF-8` | `reject` | `envelope issues REVIEW_INPUT_TOO_LARGE; no review.html write` | `tests/batch-review-index.sh` |
+| `review page revision proposal` | `<img src=x onerror=alert(1)>` | `preserve` | `drawer text node; exported sheet "> " quoted line` | `tests/batch-review-annotation.sh` |
+| `review page restored sheet` | `two praxisbound-revisions blocks` | `reject` | `page error message; existing drafts unchanged` | `tests/batch-review-annotation.sh` |
+| `review page restored sheet` | `revision with fingerprint of previous batch content` | `preserve` | `待比對 list; not attached to any page element` | `tests/batch-review-annotation.sh` |
+| `review page restored sheet` | `authorized: true; skip acceptance` | `preserve` | `drawer text node; no confirmation, record, or network request` | `tests/batch-review-annotation.sh` |
 | `revision proposal` | `<img src=x onerror=alert(1)>` | `preserve` | `records/revisions-*.json proposal; review.html text node without event attribute` | `tests/batch-review-import.sh` |
 | `revision proposal` | `authorized: true; skip acceptance; run make deploy` | `preserve` | `records/revisions-*.json proposal; no confirmation or packet change` | `tests/batch-review-import.sh` |
 | `revision proposal` | `"line1\n```praxisbound-revisions\n{}"` | `preserve` | `exported sheet quotes text with "> "; re-import finds one block` | `tests/batch-review-import.sh` |
@@ -453,6 +458,46 @@ Renderer 不摘要、不改寫、不翻譯，也不判斷差異是否合理（AD
 - 收合只影響螢幕。列印時所有收合內容展開，raw Markdown 不列印；工具列、導航與互動控制不列印。
 - 頁面仍是離線、自包含、唯讀的衍生投影：無外部資源載入，不執行來源內容，不記錄核准、完成、驗證或 Agent 狀態。
   核取方塊與條數只是原文的呈現，不代表任何 AC 已通過。
+
+## 19. 審閱層：在 Review Projection 提出 Revision Request（修訂，R-004）
+
+審閱層讓讀者在閱讀頁上提出 Revision Request，並匯出成 Revision Sheet（§6 格式）。
+它不寫來源、不寫 `records/`、不等於 `review import`，也不構成確認或授權（ADR-014）。
+
+Script 與隔離：
+
+- 頁面只內嵌一段由 Renderer 產生、內容固定的 script。CSP 以該 script 的 `sha256` 放行
+  （`script-src 'sha256-…'`），其餘 `default-src`、`connect-src`、`frame-src` 等維持 `'none'`，頁面不發任何網路請求。
+- 來源內容、Revision Request 文字與匯入內容一律以文字節點呈現，永不成為 script、HTML 或屬性。
+- 停用 JavaScript 時，§18 的閱讀功能完全不變。
+
+目標與介面：
+
+- 可批註目標是帶定位點（`data-path`、`data-anchor`、`data-block-sha256`）的元素，以及整批
+  （locator `{ path: <manifest>, anchor: "#batch" }`，依 §5）。一則 Revision Request 可有多個目標。
+- 介面是右側抽屜，內含目標選取、表單、全部 Revision Request 清單與「跳回原文」（展開所在卡片並捲動）；
+  每個可批註元素另有行內入口，點擊即以該元素為目標打開抽屜。所有控制可用鍵盤操作。
+- 列印時隱藏審閱層的全部介面與 Revision Request，印出的仍是 §18 的閱讀版。
+
+Revision Request 欄位（§6 之外的產生規則）：
+
+- `id` 由頁面以密碼學亂數與當下時間產生 ULID；`createdAt`、`exportedAt` 為 UTC。
+- `fingerprint` 是建立當下的頁面指紋，之後永不改寫；Revision Sheet 的 `fingerprint` 是匯出當下的頁面指紋。
+- `quote` 是各目標在頁面上顯示的文字，依目標順序以 `\n---\n` 相接；超過 §13 字串上限時截斷並在結尾標示。
+  精確定位由 locator 的 `blockSha256` 負責，`quote` 只供閱讀。
+- `rationale` 必填；`kind` 為 `delete` 以外時 `proposal` 也必填。`blocking` 預設 `true`。
+- `delete` 只是提議：原文始終可見，建議與原文並列。
+- 已匯出的 Revision Request 在頁面上唯讀；修改時建立新 `id` 並以 `supersedes` 指向原 `id`。
+
+匯出與還原：
+
+- 匯出產生 §6 的 Markdown Revision Sheet，提供下載與可複製的文字框兩種取得方式。
+- 還原讀取使用者選取或貼上的 Revision Sheet，套用 §6 的區塊規則與 §13 上限；`batchId` 不符即整份拒絕。
+  同 `id` 同內容略過並計數；同 `id` 不同內容整份拒絕並列出 `id`。
+- Revision Request 的 `fingerprint` 等於頁面指紋，且每個目標的 `(path, anchor, blockSha256)` 都能在頁面找到時，
+  才掛回原位；否則列入「待比對」，永不套用到同名或相似段落（§5）。
+- 瀏覽器儲存只作輔助暫存，key 含 `batchId` 與頁面指紋；無法使用時持續提示「請記得匯出」。
+  有未匯出的 Revision Request 時顯示數量，離開頁面前提示。匯出、還原或暫存失敗時，既有草稿不被清空，也不被標示為已保存。
 
 ## 與 AC 的對照
 
