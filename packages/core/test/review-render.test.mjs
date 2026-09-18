@@ -990,7 +990,8 @@ test("TST023-AC-009: exactly one hashed script, a matching CSP, connect-src stay
       html,
     )?.[1];
   assert.ok(csp);
-  assert.match(csp, new RegExp(`script-src 'sha256-${expectedHash}'`));
+  // Compare literally: a base64 hash may contain regex metacharacters such as +.
+  assert.ok(csp.includes(`script-src 'sha256-${expectedHash}'`), csp);
   // No other script source is allowed, and every other directive TST-022
   // already pinned stays exactly as strict.
   assert.equal(csp.match(/script-src/g)?.length, 1);

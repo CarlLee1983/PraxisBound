@@ -477,3 +477,63 @@ test("TST023-AC-011/security: reader text and restored content stay plain data �
   assert.equal(result.requests[0].proposal, proposal);
   assert.equal(result.requests[0].rationale, rationale);
 });
+
+test("TST023-AC-004/012: batchLocator builds the #batch locator shape from a caller-supplied digest, and bytesToHex matches Node's own hex digest", () => {
+  const locator = api.batchLocator(MANIFEST_PATH, hex64(FINGERPRINT));
+  assert.deepEqual(locator, {
+    path: MANIFEST_PATH,
+    anchor: "#batch",
+    blockSha256: hex64(FINGERPRINT),
+  });
+
+  const bytes = createHash("sha256").update(FINGERPRINT).digest();
+  assert.equal(
+    api.bytesToHex(new Uint8Array(bytes)),
+    createHash("sha256").update(FINGERPRINT).digest("hex"),
+  );
+});
+
+test("TST023-AC-001/012: groupPendingRequests splits by the pending flag and targetsSummary/buildExcerpt render compact display text", () => {
+  const attached = createOk({});
+  const pending = { ...createOk({}), pending: true };
+  const groups = api.groupPendingRequests([attached, pending]);
+  assert.deepEqual(groups.attached, [attached]);
+  assert.deepEqual(groups.pending, [pending]);
+  assert.deepEqual(api.groupPendingRequests([]), { attached: [], pending: [] });
+
+  assert.equal(
+    api.targetsSummary([TARGET_R001, TARGET_R002]),
+    "specs/features/fixture/spec.md#R-001/Acceptance、specs/stories/RF-001/story.md#Rules",
+  );
+  assert.equal(api.targetsSummary([]), "");
+
+  assert.equal(api.buildExcerpt("短文字"), "短文字");
+  assert.equal(api.buildExcerpt("一行\n換行  多個空白"), "一行 換行 多個空白");
+  const long = "a".repeat(100);
+  const excerpt = api.buildExcerpt(long, 10);
+  assert.equal(excerpt, "a".repeat(10) + "…");
+});
+
+test("TST023-security: ANNOTATION_SCRIPT never contains a banned DOM/network/script-escaping primitive", () => {
+  const banned = [
+    "innerHTML",
+    "insertAdjacentHTML",
+    "outerHTML",
+    "document.write",
+    "eval(",
+    "new Function",
+    "fetch(",
+    "XMLHttpRequest",
+    "WebSocket",
+    "sendBeacon",
+    "</script",
+    "javascript:",
+  ];
+  for (const needle of banned) {
+    assert.equal(
+      ANNOTATION_SCRIPT.includes(needle),
+      false,
+      `ANNOTATION_SCRIPT must not contain ${needle}`,
+    );
+  }
+});
