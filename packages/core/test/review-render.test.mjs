@@ -1005,6 +1005,15 @@ test("TST023-AC-009: exactly one hashed script, a matching CSP, connect-src stay
   assert.match(csp, /form-action 'none'/);
 
   assert.match(html, /\.pb-annotation \{ display: none !important; \}/);
+  // Selection outlines never reach print, and touch readers see the inline entry.
+  assert.match(
+    html,
+    /@media print \{[^}]*(?:\}[^}]*)*\.pb-annotation-selectable, \.pb-annotation-target-selected \{ outline: none !important; \}/,
+  );
+  assert.match(
+    html,
+    /@media \(hover: none\), \(max-width: 24\.375em\) \{\n {2}\.pb-annotation-inline-add \{ opacity: 1; \}/,
+  );
   assert.match(
     html,
     new RegExp(

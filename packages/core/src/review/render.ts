@@ -675,11 +675,12 @@ th.num { white-space: nowrap; min-width: 6rem; }
   details > summary::-webkit-details-marker { display: none; }
   a { color: inherit; text-decoration: none; }
   .pb-annotation { display: none !important; }
+  .pb-annotation-selectable, .pb-annotation-target-selected { outline: none !important; }
 }
 
 /* 審閱層（contract §19, Story TST-023）：抽屜、行內入口、頁面標記，皆以 .pb-annotation 標記以便列印隱藏。 */
-.pb-annotation-toggle { position: fixed; top: 1rem; right: 1rem; z-index: 40; font: 600 .85rem ui-sans-serif, system-ui, sans-serif; padding: .5rem .9rem; border-radius: 999px; border: 1px solid #8a5a2b; background: #fffaf0; color: #5c3a15; cursor: pointer; }
-.pb-annotation-drawer { position: fixed; top: 0; right: 0; bottom: 0; width: min(26rem, 100vw); overflow-y: auto; background: #fff; border-left: 1px solid #d8d0c3; box-shadow: -0.4rem 0 1.2rem rgba(0, 0, 0, .12); padding: 1rem; z-index: 50; font: .92rem/1.6 ui-sans-serif, system-ui, sans-serif; }
+.pb-annotation-toggle { position: fixed; top: 1rem; right: 1rem; z-index: 55; font: 600 .85rem ui-sans-serif, system-ui, sans-serif; padding: .5rem .9rem; border-radius: 999px; border: 1px solid #8a5a2b; background: #fffaf0; color: #5c3a15; cursor: pointer; }
+.pb-annotation-drawer { position: fixed; top: 0; right: 0; bottom: 0; width: min(26rem, 100vw); overflow-y: auto; background: #fff; border-left: 1px solid #d8d0c3; box-shadow: -0.4rem 0 1.2rem rgba(0, 0, 0, .12); padding: 1rem; z-index: 50; font: .92rem/1.6 ui-sans-serif, system-ui, sans-serif; padding-top: 3.75rem; padding-bottom: 6rem; }
 .pb-annotation-drawer-header { display: flex; flex-wrap: wrap; align-items: center; gap: .6rem; justify-content: space-between; border-bottom: 1px solid #d8d0c3; padding-bottom: .6rem; margin-bottom: .6rem; }
 .pb-annotation-toolbar { display: flex; gap: .5rem; align-items: center; flex-wrap: wrap; }
 .pb-annotation-section { margin: 1rem 0; }
@@ -694,6 +695,7 @@ th.num { white-space: nowrap; min-width: 6rem; }
 .pb-annotation-badge { font: 600 .72rem ui-sans-serif, system-ui, sans-serif; border: 1px solid #d8d0c3; border-radius: 10px; padding: 0 .5em; color: #6f675c; }
 .pb-annotation-badge-blocking { color: #8a251e; border-color: #8a251e; }
 .pb-annotation-targets, .pb-annotation-excerpt { font-size: .85rem; color: #4a4640; overflow-wrap: anywhere; }
+.pb-annotation-request-text { margin: .3rem 0; white-space: pre-wrap; overflow-wrap: anywhere; }
 .pb-annotation-card-actions { display: flex; gap: .5rem; margin-top: .4rem; }
 .pb-annotation-inline-add { opacity: 0; margin-left: .4rem; font: 600 .72rem ui-sans-serif, system-ui, sans-serif; border: 1px solid #8a5a2b; background: #fffaf0; color: #5c3a15; border-radius: 999px; padding: 0 .5em; cursor: pointer; }
 :hover > .pb-annotation-inline-add, :focus-within > .pb-annotation-inline-add, .pb-annotation-inline-add:focus { opacity: 1; }
@@ -705,5 +707,8 @@ th.num { white-space: nowrap; min-width: 6rem; }
 .pb-annotation-muted { color: #6f675c; }
 @media (max-width: 24.375em) {
   .pb-annotation-drawer { width: 100vw; }
+}
+@media (hover: none), (max-width: 24.375em) {
+  .pb-annotation-inline-add { opacity: 1; }
 }
 `;

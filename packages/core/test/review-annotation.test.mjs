@@ -1,126 +1,65 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import fs from "node:fs";
-import { URL } from "node:url";
 import { TextEncoder } from "node:util";
-import vm from "node:vm";
 
 import test from "node:test";
 
 import { ANNOTATION_SCRIPT } from "../dist/review/annotation-script.js";
-
-const SCHEMA_DIR = new URL(
-  "../../../specs/features/batch-review/schemas/",
-  import.meta.url,
-);
-
-function readSchema(name) {
-  return JSON.parse(fs.readFileSync(new URL(name, SCHEMA_DIR), "utf8"));
-}
-
-const REVISION_SHEET_SCHEMA = readSchema("revision-sheet.schema.json");
-const DEFS_SCHEMA = readSchema("defs.schema.json");
-
-/**
- * Runs the exact embedded script with `node:vm` in this realm (not a
- * separate `vm.createContext` sandbox, whose objects would be a different
- * realm's `Array`/`Object` and so fail this file's `assert.deepEqual`
- * structural comparisons) and returns the pure API it attaches to
- * `globalThis.__PRAXIS_REVIEW_TEST__` — the seam contract §19/
- * annotation-script.ts documents for this Story.
- */
-function loadApi() {
-  globalThis.__PRAXIS_REVIEW_TEST__ = {};
-  new vm.Script(ANNOTATION_SCRIPT, {
-    filename: "annotation.js",
-  }).runInThisContext();
-  return globalThis.__PRAXIS_REVIEW_TEST__;
-}
-
-const api = loadApi();
-
-const BATCH_ID = "TST-023-fixture-1";
-const MANIFEST_PATH = "specs/batches/TST-023-fixture-1/batch.json";
-const FINGERPRINT = "f".repeat(64);
-const OTHER_FINGERPRINT = "0".repeat(64);
-const NOW = Date.parse("2026-01-01T00:00:00.000Z");
-
-function hex64(label) {
-  return createHash("sha256").update(label).digest("hex");
-}
-
-function randomBytes(seed) {
-  const bytes = new Uint8Array(10);
-  for (let i = 0; i < bytes.length; i++) bytes[i] = (seed + i * 7) % 256;
-  return bytes;
-}
-
-let sequence = 0;
-function nextRandom() {
-  sequence += 1;
-  return randomBytes(sequence);
-}
-
-function locator(path, anchor) {
-  return { path, anchor, blockSha256: hex64(`${path}#${anchor}`) };
-}
-
-const TARGET_R001 = locator(
-  "specs/features/fixture/spec.md",
-  "R-001/Acceptance",
-);
-const TARGET_R002 = locator("specs/stories/RF-001/story.md", "Rules");
-const BATCH_TARGET = locator(MANIFEST_PATH, "#batch");
-
-const PAGE_LOCATORS = [TARGET_R001, TARGET_R002, BATCH_TARGET];
-
-function createOk(overrides) {
-  const result = api.createRequest({
-    kind: "supplement",
-    proposal: "提案內容",
-    rationale: "理由內容",
-    targets: [TARGET_R001],
-    quote: api.buildQuote(["原文一"]),
-    fingerprint: FINGERPRINT,
-    now: NOW,
-    random: nextRandom(),
-    ...overrides,
-  });
-  assert.equal(result.ok, true, JSON.stringify(result));
-  return result.request;
-}
+import {
+  BATCH_ID,
+  BATCH_TARGET,
+  DEFS_SCHEMA,
+  FENCE,
+  FINGERPRINT,
+  MANIFEST_PATH,
+  NOW,
+  OTHER_FINGERPRINT,
+  PAGE_LOCATORS,
+  TARGET_R001,
+  TARGET_R002,
+  addOk,
+  api,
+  clone,
+  createOk,
+  escapeRegExp,
+  exportOk,
+  hex64,
+  nextRandom,
+  parseOk,
+  schemaErrors,
+  sheetFromJson,
+  sheetJson,
+} from "./review-annotation-support.mjs";
 
 test("TST023-AC-002: kind rules — rationale required, proposal required except delete, blocking defaults true, original text stays visible", () => {
-  const missingRationale = api.createRequest({
-    kind: "supplement",
-    proposal: "x",
-    rationale: "",
+  const base = {
     targets: [TARGET_R001],
     quote: "quote",
     fingerprint: FINGERPRINT,
     now: NOW,
+  };
+  const missingRationale = api.createRequest({
+    ...base,
+    kind: "supplement",
+    proposal: "x",
+    rationale: "",
     random: nextRandom(),
   });
   assert.equal(missingRationale.ok, false);
 
   const missingProposal = api.createRequest({
+    ...base,
     kind: "rewrite",
     rationale: "理由",
-    targets: [TARGET_R001],
-    quote: "quote",
-    fingerprint: FINGERPRINT,
-    now: NOW,
     random: nextRandom(),
   });
   assert.equal(missingProposal.ok, false);
 
   const deleteRequest = api.createRequest({
+    ...base,
     kind: "delete",
     rationale: "理由",
-    targets: [TARGET_R001],
     quote: "原文保留可見",
-    fingerprint: FINGERPRINT,
-    now: NOW,
     random: nextRandom(),
   });
   assert.equal(deleteRequest.ok, true);
@@ -130,249 +69,415 @@ test("TST023-AC-002: kind rules — rationale required, proposal required except
   assert.equal(deleteRequest.request.blocking, true);
 
   for (const kind of ["supplement", "rewrite", "add-requirement", "delete"]) {
-    const request = api.createRequest({
+    const request = createOk({
       kind,
       proposal: kind === "delete" ? undefined : "提案",
-      rationale: "理由",
-      targets: [TARGET_R001],
-      quote: "quote",
-      fingerprint: FINGERPRINT,
-      now: NOW,
-      random: nextRandom(),
     });
-    assert.equal(request.ok, true, kind);
-    assert.equal(request.request.kind, kind);
+    assert.equal(request.kind, kind);
   }
+  assert.equal(createOk({ blocking: false }).blocking, false);
 
-  const explicitNonBlocking = createOk({ blocking: false });
-  assert.equal(explicitNonBlocking.blocking, false);
+  // Reader text over the §13 string limit is rejected, never silently cut.
+  const oversized = api.createRequest({
+    ...base,
+    kind: "supplement",
+    proposal: "a".repeat(65537),
+    rationale: "理由",
+    random: nextRandom(),
+  });
+  assert.equal(oversized.ok, false);
+  assert.match(oversized.message, /64 KiB/);
+
+  // The kind labels shown in the page come from one table.
+  assert.deepEqual(api.kinds, [
+    "supplement",
+    "rewrite",
+    "add-requirement",
+    "delete",
+  ]);
+  assert.deepEqual(api.kinds.map(api.kindLabel), [
+    "補充",
+    "建議改寫",
+    "新增要求",
+    "刪除建議",
+  ]);
 });
 
-test("TST023-AC-003: export -> parse -> restore into empty state reproduces every field and attaches in place", () => {
-  const request = createOk({
+test("TST023-AC-003: export -> parse -> restore into an empty state reproduces every field, including supersedes, and attaches in place", () => {
+  const original = createOk({
     targets: [TARGET_R001, TARGET_R002],
     quote: api.buildQuote(["原文一", "原文二"]),
   });
+  const superseding = createOk({ supersedes: original.id, proposal: "新版" });
 
-  const sheetText = api.exportSheet({
-    batchId: BATCH_ID,
-    pageFingerprint: FINGERPRINT,
-    requests: [request],
-    now: NOW,
-  });
+  const parsed = parseOk(exportOk([original, superseding]));
+  assert.equal(parsed.sheet.revisions.length, 2);
 
-  const parsed = api.parseSheet(sheetText, { batchId: BATCH_ID });
-  assert.equal(parsed.ok, true, parsed.message);
-  assert.equal(parsed.sheet.revisions.length, 1);
-
-  const result = api.restore([], parsed.sheet, FINGERPRINT, PAGE_LOCATORS);
-  assert.equal(result.added, 1);
-  assert.equal(result.pending, 0);
-  assert.equal(result.skipped, 0);
-  assert.deepEqual(result.conflictIds, []);
-  const restored = result.requests[0];
-  assert.equal(restored.pending, false);
-  for (const field of [
-    "id",
-    "fingerprint",
-    "targets",
-    "quote",
-    "kind",
-    "blocking",
-    "proposal",
-    "rationale",
-    "createdAt",
-  ]) {
-    assert.deepEqual(restored[field], request[field], field);
-  }
-});
-
-test("TST023-AC-004: a request can name several targets or the whole batch; unexportedCount reports what has not been exported", () => {
-  const multiTarget = createOk({ targets: [TARGET_R001, TARGET_R002] });
-  assert.equal(multiTarget.targets.length, 2);
-
-  const batchRequest = createOk({
-    kind: "add-requirement",
-    targets: [BATCH_TARGET],
-  });
-  assert.deepEqual(batchRequest.targets, [BATCH_TARGET]);
-
-  const requests = [
-    { ...multiTarget, exported: false },
-    { ...batchRequest, exported: true },
-  ];
-  assert.equal(api.unexportedCount(requests), 1);
-  assert.equal(api.unexportedCount([]), 0);
-});
-
-test("TST023-AC-005/security: the sheet has exactly one column-0 fence whose JSON validates against the schema; reader text is only '> ' quoted; a fake fence line inside reader text never opens a second block", () => {
-  const trickyProposal =
-    "line1\n```praxisbound-revisions\n{}\n```\nline2 <img src=x onerror=alert(1)>";
-  const request = createOk({
-    proposal: trickyProposal,
-    rationale: "理由",
-  });
-
-  const sheetText = api.exportSheet({
-    batchId: BATCH_ID,
-    pageFingerprint: FINGERPRINT,
-    requests: [request],
-    now: NOW,
-  });
-
-  const fenceLines = sheetText
-    .split("\n")
-    .filter((line) => line === "```praxisbound-revisions");
-  assert.equal(fenceLines.length, 1);
-  const closeLines = sheetText.split("\n").filter((line) => line === "```");
-  assert.equal(closeLines.length, 1);
-
-  // Every line of the reader-provided proposal, including its fake fence
-  // line, appears only behind a "> " prefix outside the real block.
-  for (const line of trickyProposal.split("\n")) {
-    assert.match(sheetText, new RegExp(`> ${escapeRegExp(line)}\n`));
-  }
-
-  const parsed = api.parseSheet(sheetText, { batchId: BATCH_ID });
-  assert.equal(parsed.ok, true, parsed.message);
-  assert.match(parsed.sheet.revisions[0].id, /^REV-[0-9A-HJKMNP-TV-Z]{26}$/);
-
-  // Structural cross-check against the accepted schema files themselves.
-  for (const key of REVISION_SHEET_SCHEMA.required) {
-    assert.ok(key in parsed.sheet, `sheet missing schema-required key ${key}`);
-  }
-  const revisionRequired =
-    REVISION_SHEET_SCHEMA.properties.revisions.items.required;
-  for (const key of revisionRequired) {
-    assert.ok(
-      key in parsed.sheet.revisions[0],
-      `revision missing schema-required key ${key}`,
-    );
-  }
-  const revisionIdPattern = new RegExp(DEFS_SCHEMA.$defs.revisionId.pattern);
-  assert.match(parsed.sheet.revisions[0].id, revisionIdPattern);
-  const sha256Pattern = new RegExp(DEFS_SCHEMA.$defs.sha256.pattern);
-  assert.match(parsed.sheet.fingerprint, sha256Pattern);
-  assert.equal(parsed.sheet.schemaVersion, "1.0.0");
-
-  // quote §19 join/truncation rule.
-  const longTexts = ["a".repeat(70000), "b".repeat(10)];
-  const quote = api.buildQuote(longTexts);
-  assert.ok(new TextEncoder().encode(quote).length <= 65536);
-  assert.match(quote, /…（已截斷）$/);
-});
-
-function escapeRegExp(text) {
-  return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
-test("TST023-AC-006: restoring the same sheet twice dedupes and reports the skipped count; same id with different content rejects the whole sheet", () => {
-  const request = createOk({});
-  const sheetText = api.exportSheet({
-    batchId: BATCH_ID,
-    pageFingerprint: FINGERPRINT,
-    requests: [request],
-    now: NOW,
-  });
-  const parsed = api.parseSheet(sheetText, { batchId: BATCH_ID });
-
-  const first = api.restore([], parsed.sheet, FINGERPRINT, PAGE_LOCATORS);
-  const second = api.restore(
-    first.requests,
+  const result = api.restore(
+    api.emptyState(),
     parsed.sheet,
     FINGERPRINT,
     PAGE_LOCATORS,
   );
+  assert.equal(result.ok, true);
+  assert.equal(result.added, 2);
+  assert.equal(result.pending, 0);
+  assert.equal(result.skipped, 0);
+  const [restored, restoredSuperseding] = result.state.requests;
+  assert.equal(restored.pending, false);
+  assert.equal(restored.exported, true);
+  for (const field of Object.keys(original)) {
+    assert.deepEqual(restored[field], original[field], field);
+  }
+  assert.equal(restoredSuperseding.supersedes, original.id);
+  assert.deepEqual(api.supersededIds(result.state), [original.id]);
+});
+
+test("TST023-AC-004: a request can name several targets or the whole batch; unexportedCount reports what has not been exported", () => {
+  let state = api.emptyState();
+  const multi = addOk(state, { targets: [TARGET_R001, TARGET_R002] });
+  state = multi.state;
+  const batch = addOk(state, {
+    kind: "add-requirement",
+    targets: [BATCH_TARGET],
+  });
+  state = batch.state;
+  assert.equal(multi.request.targets.length, 2);
+  assert.deepEqual(batch.request.targets, [BATCH_TARGET]);
+  assert.equal(api.unexportedCount(state), 2);
+  state = api.markExported(state, [batch.request.id]);
+  assert.equal(api.unexportedCount(state), 1);
+  assert.equal(api.unexportedCount(api.emptyState()), 0);
+
+  assert.deepEqual(api.batchLocator(MANIFEST_PATH, hex64(FINGERPRINT)), {
+    path: MANIFEST_PATH,
+    anchor: "#batch",
+    blockSha256: hex64(FINGERPRINT),
+  });
+  const bytes = createHash("sha256").update(FINGERPRINT).digest();
+  assert.equal(api.bytesToHex(new Uint8Array(bytes)), bytes.toString("hex"));
+});
+
+test("TST023-AC-005/security: the sheet has exactly one column-0 fence whose JSON satisfies every schema constraint; reader text is only '> ' quoted", () => {
+  const trickyProposal =
+    "line1\n```praxisbound-revisions\n{}\n```\nline2 <img src=x onerror=alert(1)>";
+  const request = createOk({ proposal: trickyProposal, rationale: "理由" });
+  const sheetText = exportOk([request]);
+
+  const lines = sheetText.split("\n");
+  assert.equal(lines.filter((line) => line === FENCE).length, 1);
+  assert.equal(lines.filter((line) => line === "```").length, 1);
+  for (const line of trickyProposal.split("\n")) {
+    assert.match(sheetText, new RegExp(`> ${escapeRegExp(line)}\n`));
+  }
+
+  // Walk the accepted schema files themselves, constraint by constraint.
+  const json = sheetJson(sheetText);
+  assert.deepEqual(schemaErrors(json), []);
+  assert.match(
+    json.revisions[0].id,
+    new RegExp(DEFS_SCHEMA.$defs.revisionId.pattern),
+  );
+
+  // The checker is not vacuous: it catches each schema constraint.
+  const broken = clone(json);
+  broken.extra = 1;
+  broken.revisions[0].targets[0].extra = 1;
+  broken.revisions[0].targets[0].path = "a/".repeat(600) + "b";
+  broken.revisions[0].createdAt = "2026-02-30T00:00:00Z";
+  broken.revisions[0].kind = "approve";
+  const errors = schemaErrors(broken).join("\n");
+  for (const expected of [
+    "$: extra key extra",
+    "targets[0]: extra key extra",
+    "targets[0].path: maxLength",
+    "createdAt: date-time",
+    "kind: enum",
+  ]) {
+    assert.ok(errors.includes(expected), `${expected} in\n${errors}`);
+  }
+
+  // quote §19 join/truncation rule.
+  assert.equal(api.buildQuote(["一", "二"]), "一\n---\n二");
+  const quote = api.buildQuote(["a".repeat(70000), "b".repeat(10)]);
+  assert.ok(new TextEncoder().encode(quote).length <= 65536);
+  assert.match(quote, /…（已截斷）$/);
+  const emoji = api.buildQuote(["😀".repeat(20000)]);
+  assert.ok(new TextEncoder().encode(emoji).length <= 65536);
+  assert.equal(emoji.includes("\uFFFD"), false);
+  assert.match(emoji, /^(😀)+…（已截斷）$/u);
+});
+
+test("TST023-AC-005/M1: parseSheet rejects everything the schema rejects — extra keys at every level, path length, batchId, real UTC date-times", () => {
+  const json = sheetJson(exportOk([createOk({})]));
+  const mutations = {
+    topExtraKey: (d) => (d.extra = 1),
+    revisionExtraKey: (d) => (d.revisions[0].extra = 1),
+    locatorExtraKey: (d) => (d.revisions[0].targets[0].extra = 1),
+    pathTooLong: (d) =>
+      (d.revisions[0].targets[0].path = "a/".repeat(512) + "b"),
+    anchorTooLong: (d) =>
+      (d.revisions[0].targets[0].anchor = "錨".repeat(1025)),
+    emptyAnchor: (d) => (d.revisions[0].targets[0].anchor = ""),
+    impossibleDate: (d) => (d.revisions[0].createdAt = "2026-99-99T99:99:99Z"),
+    february30: (d) => (d.revisions[0].createdAt = "2026-02-30T00:00:00Z"),
+    offsetTime: (d) => (d.revisions[0].createdAt = "2026-01-01T00:00:00+08:00"),
+    badExportedAt: (d) => (d.exportedAt = "2026-13-01T00:00:00Z"),
+    batchIdTooLong: (d) => (d.batchId = "TST-1-" + "a".repeat(123)),
+    kind: (d) => (d.revisions[0].kind = "approve"),
+    blockingString: (d) => (d.revisions[0].blocking = "true"),
+    tooManyTargets: (d) =>
+      (d.revisions[0].targets = Array.from({ length: 101 }, () => TARGET_R001)),
+    noTargets: (d) => (d.revisions[0].targets = []),
+  };
+  for (const [name, mutate] of Object.entries(mutations)) {
+    const data = clone(json);
+    mutate(data);
+    const result = api.parseSheet(sheetFromJson(data), {
+      batchId: name === "batchIdTooLong" ? data.batchId : BATCH_ID,
+    });
+    assert.equal(result.ok, false, name);
+    assert.notDeepEqual(
+      schemaErrors(data),
+      [],
+      `${name} is a schema violation`,
+    );
+  }
+
+  // Forms the schema accepts stay accepted.
+  for (const createdAt of [
+    "2026-01-01T00:00:00Z",
+    "2026-01-01T00:00:00.5Z",
+    "2024-02-29T23:59:59.999Z",
+  ]) {
+    const data = clone(json);
+    data.revisions[0].createdAt = createdAt;
+    assert.deepEqual(schemaErrors(data), []);
+    assert.equal(
+      api.parseSheet(sheetFromJson(data), { batchId: BATCH_ID }).ok,
+      true,
+      createdAt,
+    );
+  }
+});
+
+test("TST023-AC-006/M2/M3: restoring the same sheet twice dedupes; same id with different content rejects the whole sheet; duplicate ids inside one sheet are deduped or rejected", () => {
+  const request = createOk({});
+  const parsed = parseOk(exportOk([request]));
+
+  const first = api.restore(
+    api.emptyState(),
+    parsed.sheet,
+    FINGERPRINT,
+    PAGE_LOCATORS,
+  );
+  const second = api.restore(
+    first.state,
+    parsed.sheet,
+    FINGERPRINT,
+    PAGE_LOCATORS,
+  );
+  assert.equal(second.ok, true);
   assert.equal(second.added, 0);
   assert.equal(second.skipped, 1);
-  assert.deepEqual(second.requests, first.requests);
+  assert.deepEqual(second.state, first.state);
 
   const conflicting = {
     ...parsed.sheet,
     revisions: [{ ...parsed.sheet.revisions[0], proposal: "改過的提案內容" }],
   };
-  const conflictResult = api.restore(
-    first.requests,
+  const conflict = api.restore(
+    first.state,
     conflicting,
     FINGERPRINT,
     PAGE_LOCATORS,
   );
-  assert.deepEqual(conflictResult.conflictIds, [request.id]);
-  assert.equal(conflictResult.added, 0);
-  // The whole sheet is rejected: existing requests are untouched.
-  assert.deepEqual(conflictResult.requests, first.requests);
+  assert.equal(conflict.ok, false);
+  assert.deepEqual(conflict.conflictIds, [request.id]);
+  assert.match(conflict.message, new RegExp(request.id));
+  assert.equal(conflict.state, first.state);
+
+  // Inside one sheet: same id + same content is kept once and counted.
+  const json = sheetJson(exportOk([request]));
+  const twice = { ...json, revisions: [json.revisions[0], json.revisions[0]] };
+  const deduped = parseOk(sheetFromJson(twice));
+  assert.equal(deduped.skipped, 1);
+  assert.equal(deduped.sheet.revisions.length, 1);
+
+  // Same id + different content rejects the whole sheet, listing the id.
+  const differing = {
+    ...json,
+    revisions: [json.revisions[0], { ...json.revisions[0], proposal: "不同" }],
+  };
+  const rejected = api.parseSheet(sheetFromJson(differing), {
+    batchId: BATCH_ID,
+  });
+  assert.equal(rejected.ok, false);
+  assert.deepEqual(rejected.conflictIds, [request.id]);
+  assert.match(rejected.message, new RegExp(request.id));
+});
+
+test("TST023-AC-006/M3: same content is compared in canonical form — key order at every level, createdAt representation, and line endings do not matter", () => {
+  const request = createOk({ proposal: "第一行\n第二行" });
+  const record = sheetJson(exportOk([request])).revisions[0];
+  const reordered = {
+    rationale: record.rationale,
+    ...record,
+    targets: record.targets.map((t) => ({
+      blockSha256: t.blockSha256,
+      anchor: t.anchor,
+      path: t.path,
+    })),
+  };
+  assert.notEqual(JSON.stringify(reordered), JSON.stringify(record));
+  assert.equal(api.sameRevisionContent(record, reordered), true);
+
+  for (const createdAt of [
+    "2026-01-01T00:00:00Z",
+    "2026-01-01T00:00:00.0Z",
+    "2026-01-01T00:00:00.000Z",
+    "2026-01-01t00:00:00.000000Z",
+  ]) {
+    assert.equal(
+      api.sameRevisionContent(record, { ...record, createdAt }),
+      true,
+      createdAt,
+    );
+  }
+  assert.equal(
+    api.sameRevisionContent(record, {
+      ...record,
+      createdAt: "2026-01-01T00:00:00.0001Z",
+    }),
+    false,
+  );
+  assert.equal(
+    api.sameRevisionContent(record, {
+      ...record,
+      proposal: "第一行\r\n第二行",
+    }),
+    true,
+  );
+  assert.equal(
+    api.sameRevisionContent(record, { ...record, proposal: "第一行\r第二行" }),
+    true,
+  );
+  assert.equal(
+    api.sameRevisionContent(record, { ...record, proposal: "第一行 第二行" }),
+    false,
+  );
+  assert.equal(
+    api.sameRevisionContent(record, {
+      ...record,
+      supersedes: request.id.replace(/.$/, "0"),
+    }),
+    false,
+  );
+  // Page flags are not content.
+  assert.equal(
+    api.sameRevisionContent(record, {
+      ...record,
+      exported: true,
+      pending: true,
+    }),
+    true,
+  );
+
+  // Restore applies the same rule: a reordered, differently-dated copy is a skip.
+  const state = api.restore(
+    api.emptyState(),
+    { ...sheetJson(exportOk([request])), revisions: [record] },
+    FINGERPRINT,
+    PAGE_LOCATORS,
+  ).state;
+  const again = api.restore(
+    state,
+    { revisions: [{ ...reordered, createdAt: "2026-01-01T00:00:00Z" }] },
+    FINGERPRINT,
+    PAGE_LOCATORS,
+  );
+  assert.equal(again.ok, true);
+  assert.equal(again.skipped, 1);
 });
 
 test("TST023-AC-007/security: a stale fingerprint or a changed/absent block hash lists the request under pending, never matched by anchor name alone; export keeps the original fingerprint", () => {
   const staleFingerprint = createOk({ fingerprint: OTHER_FINGERPRINT });
-  const changedHashTarget = {
-    path: TARGET_R001.path,
-    anchor: TARGET_R001.anchor,
-    blockSha256: hex64("changed-content"),
-  };
-  const staleTarget = createOk({ targets: [changedHashTarget] });
-  const similarNameTarget = createOk({
-    targets: [
-      {
-        path: TARGET_R001.path,
-        anchor: "R-001/Acceptance ",
-        blockSha256: TARGET_R001.blockSha256,
-      },
-    ],
+  const staleTarget = createOk({
+    targets: [{ ...TARGET_R001, blockSha256: hex64("changed-content") }],
   });
-
-  const sheetText = api.exportSheet({
-    batchId: BATCH_ID,
-    pageFingerprint: FINGERPRINT,
-    requests: [staleFingerprint, staleTarget, similarNameTarget],
-    now: NOW,
+  const similarName = createOk({
+    targets: [{ ...TARGET_R001, anchor: "R-001/Acceptance " }],
   });
-  const parsed = api.parseSheet(sheetText, { batchId: BATCH_ID });
-  // exporting never rewrites a request's own creation-time fingerprint.
+  const parsed = parseOk(
+    exportOk([staleFingerprint, staleTarget, similarName]),
+  );
   assert.equal(
     parsed.sheet.revisions.find((r) => r.id === staleFingerprint.id)
       .fingerprint,
     OTHER_FINGERPRINT,
   );
 
-  const result = api.restore([], parsed.sheet, FINGERPRINT, PAGE_LOCATORS);
+  const result = api.restore(
+    api.emptyState(),
+    parsed.sheet,
+    FINGERPRINT,
+    PAGE_LOCATORS,
+  );
   assert.equal(result.added, 0);
   assert.equal(result.pending, 3);
-  for (const restored of result.requests) {
+  for (const restored of result.state.requests)
     assert.equal(restored.pending, true);
-  }
+  const groups = api.groupPendingRequests(result.state);
+  assert.equal(groups.pending.length, 3);
+  assert.equal(groups.attached.length, 0);
+
+  // Re-exporting keeps each request's own creation-time fingerprint.
+  const again = sheetJson(exportOk(result.state.requests));
+  assert.equal(
+    again.revisions.find((r) => r.id === staleFingerprint.id).fingerprint,
+    OTHER_FINGERPRINT,
+  );
 });
 
-test("TST023-AC-008: editing an exported request creates a new id with supersedes naming the original; the original is unchanged", () => {
-  const original = createOk({ proposal: "原始提案" });
-  const snapshot = JSON.parse(JSON.stringify(original));
+test("TST023-AC-008/H1: an exported request is read-only — editing creates a new id with supersedes; the original is unchanged and no longer editable", () => {
+  const added = addOk(api.emptyState(), { proposal: "原始提案" });
+  const exported = api.markExported(added.state, [added.request.id]);
+  const snapshot = clone(exported);
 
-  const edited = api.editExported(
-    original,
+  const edited = api.editRequest(
+    exported,
+    added.request.id,
     { proposal: "修訂後提案" },
     NOW + 1000,
     nextRandom(),
   );
   assert.equal(edited.ok, true, edited.message);
-  assert.notEqual(edited.request.id, original.id);
-  assert.equal(edited.request.supersedes, original.id);
+  assert.notEqual(edited.request.id, added.request.id);
+  assert.equal(edited.request.supersedes, added.request.id);
   assert.equal(edited.request.proposal, "修訂後提案");
-  assert.deepEqual(original, snapshot);
+  assert.equal(edited.request.exported, false);
+  assert.deepEqual(exported, snapshot, "the prior state is never mutated");
+  assert.equal(api.canEdit(edited.state, added.request.id), false);
+  assert.equal(api.canEdit(edited.state, edited.request.id), true);
 });
 
-test("TST023-AC-010/security: storage unavailable, throwing, or holding malformed JSON reports failure without clearing or marking drafts saved; malformed/oversized/two-block/unclosed/wrong-batchId sheets are rejected with readable messages", () => {
+test("TST023-AC-010/security: storage unavailable or throwing reports failure without clearing drafts; malformed/oversized/two-block/unclosed/wrong-batchId sheets are rejected with readable messages", () => {
   const key = api.draftKey(BATCH_ID, FINGERPRINT);
   assert.equal(key, `pb-review:${BATCH_ID}:${FINGERPRINT}`);
+  const state = addOk(api.emptyState(), {}).state;
 
-  const missing = api.saveDraft(undefined, key, { requests: [] });
-  assert.equal(missing.ok, false);
-  assert.equal(missing.reason, "unavailable");
-  const missingLoad = api.loadDraft(undefined, key);
-  assert.equal(missingLoad.ok, false);
-  assert.equal(missingLoad.reason, "unavailable");
+  assert.deepEqual(api.saveDraft(undefined, key, state), {
+    ok: false,
+    reason: "unavailable",
+  });
+  assert.deepEqual(api.readDraft(undefined, key), {
+    ok: false,
+    reason: "unavailable",
+  });
 
+  const stored = JSON.stringify({ requests: state.requests });
   const throwingStorage = {
-    store: { [key]: JSON.stringify({ requests: ["kept"] }) },
+    store: { [key]: stored },
     getItem(k) {
       return this.store[k] ?? null;
     },
@@ -380,59 +485,55 @@ test("TST023-AC-010/security: storage unavailable, throwing, or holding malforme
       throw new Error("quota exceeded");
     },
   };
-  const failedSave = api.saveDraft(throwingStorage, key, { requests: [] });
-  assert.equal(failedSave.ok, false);
-  assert.equal(failedSave.reason, "error");
-  // The existing draft is neither cleared nor marked saved.
-  const stillThere = api.loadDraft(throwingStorage, key);
-  assert.equal(stillThere.ok, true);
-  assert.deepEqual(stillThere.state, { requests: ["kept"] });
-
-  const malformedStorage = {
-    getItem: () => "{not json",
-    setItem() {},
-  };
-  const malformed = api.loadDraft(malformedStorage, key);
-  assert.equal(malformed.ok, false);
-  assert.equal(malformed.reason, "malformed");
-
-  const validSheet = api.exportSheet({
-    batchId: BATCH_ID,
-    pageFingerprint: FINGERPRINT,
-    requests: [createOk({})],
-    now: NOW,
+  assert.deepEqual(api.saveDraft(throwingStorage, key, api.emptyState()), {
+    ok: false,
+    reason: "error",
   });
+  const stillThere = api.readDraft(throwingStorage, key);
+  assert.equal(stillThere.raw, stored);
+  assert.deepEqual(api.loadState(stillThere.raw).state, state);
 
-  const oversized = "a".repeat(1024 * 1024 + 1);
-  assert.equal(api.parseSheet(oversized, { batchId: BATCH_ID }).ok, false);
-  assert.match(
-    api.parseSheet(oversized, { batchId: BATCH_ID }).message,
-    /大小上限/,
+  const readThrows = api.readDraft(
+    {
+      getItem() {
+        throw new Error("denied");
+      },
+    },
+    key,
   );
+  assert.deepEqual(readThrows, { ok: false, reason: "error" });
 
-  const twoBlocks = validSheet + "\n" + validSheet;
-  const twoBlocksResult = api.parseSheet(twoBlocks, { batchId: BATCH_ID });
-  assert.equal(twoBlocksResult.ok, false);
-  assert.match(twoBlocksResult.message, /恰好包含一個/);
-
-  const unclosed = validSheet.replace(/\n```\s*$/, "");
-  const unclosedResult = api.parseSheet(unclosed, { batchId: BATCH_ID });
-  assert.equal(unclosedResult.ok, false);
-  assert.match(unclosedResult.message, /未閉合/);
-
-  const malformedJsonSheet = validSheet.replace(
-    /```praxisbound-revisions\n.*\n```/,
-    "```praxisbound-revisions\n{not json\n```",
-  );
-  const malformedJsonResult = api.parseSheet(malformedJsonSheet, {
+  const validSheet = exportOk([createOk({})]);
+  const oversized = api.parseSheet("a".repeat(1024 * 1024 + 1), {
     batchId: BATCH_ID,
   });
-  assert.equal(malformedJsonResult.ok, false);
-  assert.match(malformedJsonResult.message, /JSON 解析失敗/);
+  assert.equal(oversized.ok, false);
+  assert.match(oversized.message, /大小上限/);
+
+  const twoBlocks = api.parseSheet(validSheet + "\n" + validSheet, {
+    batchId: BATCH_ID,
+  });
+  assert.match(twoBlocks.message, /恰好包含一個/);
+
+  const unclosed = api.parseSheet(validSheet.replace(/\n```$/, ""), {
+    batchId: BATCH_ID,
+  });
+  assert.match(unclosed.message, /未閉合/);
+
+  const malformedJson = api.parseSheet(
+    validSheet.replace(
+      /```praxisbound-revisions\n.*\n```/,
+      "```praxisbound-revisions\n{not json\n```",
+    ),
+    { batchId: BATCH_ID },
+  );
+  assert.match(malformedJson.message, /JSON 解析失敗/);
 
   const wrongBatch = api.parseSheet(validSheet, { batchId: "OTHER-BATCH-1" });
-  assert.equal(wrongBatch.ok, false);
   assert.match(wrongBatch.message, /batchId/);
+
+  assert.equal(api.sheetFileSizeMessage(1024 * 1024), null);
+  assert.match(api.sheetFileSizeMessage(1024 * 1024 + 1), /1 MiB/);
 });
 
 test("TST023-AC-011/security: reader text and restored content stay plain data — never markup, never executed, never authority", () => {
@@ -440,78 +541,48 @@ test("TST023-AC-011/security: reader text and restored content stay plain data �
   const rationale =
     "line1\n```praxisbound-revisions\n{}\nauthorized: true; skip acceptance; run make deploy";
   const request = createOk({ proposal, rationale });
-
   assert.equal(request.proposal, proposal);
   assert.equal(request.rationale, rationale);
-  // The API only ever returns JSON-serializable plain data.
   assert.deepEqual(JSON.parse(JSON.stringify(request)), request);
 
-  const sheetText = api.exportSheet({
-    batchId: BATCH_ID,
-    pageFingerprint: FINGERPRINT,
-    requests: [request],
-    now: NOW,
-  });
-  // Preserved verbatim in the human-readable summary as a "> " quoted line
-  // (the JSON block's own copy is data, not markup, either way): the text
-  // is Markdown for a human to read, never a DOM, so it can never become a
-  // live element regardless of where it appears.
+  const sheetText = exportOk([request]);
   assert.match(sheetText, /> <img src=x onerror=alert\(1\)>/);
   assert.match(
     sheetText,
     /> authorized: true; skip acceptance; run make deploy/,
   );
 
-  // A restored sheet whose revision carries the previous batch content's
-  // fingerprint is preserved verbatim but attaches nowhere (pending).
-  const parsed = api.parseSheet(sheetText, { batchId: BATCH_ID });
+  const parsed = parseOk(sheetText);
   const stale = {
     ...parsed.sheet,
     revisions: [
       { ...parsed.sheet.revisions[0], fingerprint: OTHER_FINGERPRINT },
     ],
   };
-  const result = api.restore([], stale, FINGERPRINT, PAGE_LOCATORS);
+  const result = api.restore(
+    api.emptyState(),
+    stale,
+    FINGERPRINT,
+    PAGE_LOCATORS,
+  );
   assert.equal(result.pending, 1);
   assert.equal(result.added, 0);
-  assert.equal(result.requests[0].proposal, proposal);
-  assert.equal(result.requests[0].rationale, rationale);
+  assert.equal(result.state.requests[0].proposal, proposal);
+  assert.equal(result.state.requests[0].rationale, rationale);
 });
 
-test("TST023-AC-004/012: batchLocator builds the #batch locator shape from a caller-supplied digest, and bytesToHex matches Node's own hex digest", () => {
-  const locator = api.batchLocator(MANIFEST_PATH, hex64(FINGERPRINT));
-  assert.deepEqual(locator, {
-    path: MANIFEST_PATH,
-    anchor: "#batch",
-    blockSha256: hex64(FINGERPRINT),
-  });
-
-  const bytes = createHash("sha256").update(FINGERPRINT).digest();
-  assert.equal(
-    api.bytesToHex(new Uint8Array(bytes)),
-    createHash("sha256").update(FINGERPRINT).digest("hex"),
-  );
-});
-
-test("TST023-AC-001/012: groupPendingRequests splits by the pending flag and targetsSummary/buildExcerpt render compact display text", () => {
-  const attached = createOk({});
-  const pending = { ...createOk({}), pending: true };
-  const groups = api.groupPendingRequests([attached, pending]);
-  assert.deepEqual(groups.attached, [attached]);
-  assert.deepEqual(groups.pending, [pending]);
-  assert.deepEqual(api.groupPendingRequests([]), { attached: [], pending: [] });
-
+test("TST023-AC-001/012: display helpers render compact text and group by the pending flag", () => {
   assert.equal(
     api.targetsSummary([TARGET_R001, TARGET_R002]),
     "specs/features/fixture/spec.md#R-001/Acceptance、specs/stories/RF-001/story.md#Rules",
   );
   assert.equal(api.targetsSummary([]), "");
-
-  assert.equal(api.buildExcerpt("短文字"), "短文字");
   assert.equal(api.buildExcerpt("一行\n換行  多個空白"), "一行 換行 多個空白");
-  const long = "a".repeat(100);
-  const excerpt = api.buildExcerpt(long, 10);
-  assert.equal(excerpt, "a".repeat(10) + "…");
+  assert.equal(api.buildExcerpt("a".repeat(100), 10), "a".repeat(10) + "…");
+  assert.deepEqual(api.groupPendingRequests(api.emptyState()), {
+    attached: [],
+    pending: [],
+  });
 });
 
 test("TST023-security: ANNOTATION_SCRIPT never contains a banned DOM/network/script-escaping primitive", () => {
@@ -528,6 +599,7 @@ test("TST023-security: ANNOTATION_SCRIPT never contains a banned DOM/network/scr
     "sendBeacon",
     "</script",
     "javascript:",
+    "querySelector('[data-pb-request-id",
   ];
   for (const needle of banned) {
     assert.equal(
