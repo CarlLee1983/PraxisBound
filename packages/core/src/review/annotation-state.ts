@@ -2,13 +2,17 @@
  * 審閱層 script 的第二段：Revision Request 建立與頁面狀態轉換（contract §19）。
  *
  * 頁面狀態是不可變的 `{ requests: [...] }`；每則意見是 schema 欄位加上兩個
- * 頁面旗標 `exported`、`pending`。每個轉換函式都回傳新狀態，永不就地修改
+ * 頁面旗標 `exported`、`pending`，從瀏覽器暫存載入者另帶 `fromStorage`（只在
+ * 記憶體中，永不寫回暫存）。每個轉換函式都回傳新狀態，永不就地修改
  * 意見物件或狀態；annotation-ui.ts 只負責呈現狀態與呼叫這些函式。
  * 撰寫規則同 annotation-script.ts：`String.raw`，不含反引號與 `${`。
  */
 
 export const ANNOTATION_STATE = String.raw`
   var STATE_FLAG_KEYS = ['exported', 'pending'];
+  var TOTAL_LIMIT_MESSAGE = '意見總數已達上限（' + MAX_REVISIONS + '），超過就無法匯出';
+  // 狀態不可變，所以同一個狀態物件的「被取代 id」表只需算一次，供每次渲染共用。
+  var supersededCache = new WeakMap();
 
   // ---------- createRequest（§6/§19） ----------
 
@@ -91,17 +95,37 @@ export const ANNOTATION_STATE = String.raw`
     };
   }
 
-  function supersededIds(state) {
+  function supersededIndex(state) {
+    var cacheable = isPlainObject(state);
+    if (cacheable && supersededCache.has(state)) return supersededCache.get(state);
     var ids = [];
+    var index = Object.create(null);
     stateRequests(state).forEach(function (request) {
-      if (isString(request.supersedes) && ids.indexOf(request.supersedes) === -1) ids.push(request.supersedes);
+      if (isString(request.supersedes) && !index[request.supersedes]) {
+        index[request.supersedes] = true;
+        ids.push(request.supersedes);
+      }
     });
-    return ids;
+    var result = { ids: ids, index: index };
+    if (cacheable) supersededCache.set(state, result);
+    return result;
+  }
+
+  function supersededIds(state) {
+    return supersededIndex(state).ids.slice();
+  }
+
+  function isSuperseded(state, id) {
+    return supersededIndex(state).index[id] === true;
   }
 
   /** 存在且未被取代的意見才可修改（H1：已取代者只顯示「已取代」）。 */
   function canEdit(state, id) {
-    return findRequest(state, id) !== null && supersededIds(state).indexOf(id) === -1;
+    return findRequest(state, id) !== null && !isSuperseded(state, id);
+  }
+
+  function atTotalLimit(state) {
+    return stateRequests(state).length >= MAX_REVISIONS;
   }
 
   function unexportedCount(state) {
@@ -121,13 +145,66 @@ export const ANNOTATION_STATE = String.raw`
     return { attached: attached, pending: pending };
   }
 
-  /** 卡片與頁面標記的狀態標籤：類型、阻擋與否、已取代、待比對、匯出狀態。 */
+  /** 卡片與頁面標記的狀態標籤：類型、阻擋與否、已取代、待比對、匯出狀態、來源。 */
   function requestBadges(state, request) {
     var badges = [kindLabel(request.kind), request.blocking ? '阻擋' : '非阻擋'];
-    if (supersededIds(state).indexOf(request.id) !== -1) badges.push('已取代');
+    if (isSuperseded(state, request.id)) badges.push('已取代');
     if (request.pending) badges.push('待比對');
     badges.push(request.exported ? '已匯出' : '未匯出');
+    if (request.fromStorage === true) badges.push('來自暫存');
     return badges;
+  }
+
+  /**
+   * supersedes 的目標必須在同一份清單中，且是已匯出的意見（§6、§19）。
+   * 沒有 exported 旗標的紀錄（修訂單內容）視為已匯出。
+   */
+  function supersedesTargetProblems(list) {
+    var byId = Object.create(null);
+    list.forEach(function (request) {
+      byId[request.id] = request;
+    });
+    var problems = [];
+    list.forEach(function (request) {
+      if (!isString(request.supersedes) || request.supersedes === request.id) return;
+      var target = byId[request.supersedes];
+      if (!target) {
+        problems.push({
+          id: request.id,
+          message: '意見 ' + request.id + ' 取代的 ' + request.supersedes + ' 不存在',
+        });
+      } else if (target.exported === false) {
+        problems.push({
+          id: request.id,
+          message: '意見 ' + request.supersedes + ' 尚未匯出，不可被 ' + request.id + ' 取代',
+        });
+      }
+    });
+    return problems;
+  }
+
+  function supersedesProblems(list) {
+    return supersedesConflicts(list).concat(supersedesTargetProblems(list));
+  }
+
+  /** 隔離 rejected 後，沿 supersedes 反向把因此懸空的後繼者一併隔離。 */
+  function withDanglingSuccessors(list, rejected, messages) {
+    var successors = Object.create(null);
+    list.forEach(function (request) {
+      if (!isString(request.supersedes)) return;
+      (successors[request.supersedes] = successors[request.supersedes] || []).push(request.id);
+    });
+    var queue = Object.keys(rejected);
+    while (queue.length > 0) {
+      var id = queue.pop();
+      (successors[id] || []).forEach(function (successor) {
+        if (rejected[successor]) return;
+        rejected[successor] = true;
+        messages.push('意見 ' + successor + ' 取代的 ' + id + ' 已被隔離');
+        queue.push(successor);
+      });
+    }
+    return rejected;
   }
 
   // ---------- 驗證暫存（H4：與 parseSheet 相同的驗證，無效者隔離） ----------
@@ -160,6 +237,7 @@ export const ANNOTATION_STATE = String.raw`
     }
     if (!isPlainObject(data) || !Array.isArray(data.requests) || unknownKey(data, ['requests']) !== null)
       return quarantineAll('暫存資料的格式不符');
+    if (data.requests.length > MAX_REVISIONS) return quarantineAll('暫存資料超過 ' + MAX_REVISIONS + ' 則意見');
 
     var messages = [];
     var seen = Object.create(null);
@@ -172,15 +250,18 @@ export const ANNOTATION_STATE = String.raw`
         return;
       }
       seen[entry.id] = true;
-      valid.push(withFlags(entry, entry.exported, entry.pending));
+      var loaded = withFlags(entry, entry.exported, entry.pending);
+      loaded.fromStorage = true;
+      valid.push(loaded);
     });
-    var conflicts = supersedesConflicts(valid);
-    var rejected = conflicts.map(function (conflict) {
-      messages.push(conflict.message);
-      return conflict.id;
+    var rejected = Object.create(null);
+    supersedesProblems(valid).forEach(function (problem) {
+      messages.push(problem.message);
+      rejected[problem.id] = true;
     });
+    withDanglingSuccessors(valid, rejected, messages);
     var kept = valid.filter(function (entry) {
-      return rejected.indexOf(entry.id) === -1;
+      return !rejected[entry.id];
     });
     return { ok: messages.length === 0, state: { requests: kept }, messages: messages };
   }
@@ -188,6 +269,7 @@ export const ANNOTATION_STATE = String.raw`
   // ---------- 狀態轉換 ----------
 
   function addDraft(state, input) {
+    if (atTotalLimit(state)) return { ok: false, message: TOTAL_LIMIT_MESSAGE };
     var result = createRequest(input);
     if (!result.ok) return result;
     if (findRequest(state, result.request.id)) return { ok: false, message: '產生的 id 重複，請再試一次' };
@@ -228,6 +310,7 @@ export const ANNOTATION_STATE = String.raw`
     if (!current) return { ok: false, message: '找不到這則意見' };
     if (!current.exported) return { ok: false, message: '這則意見尚未匯出，請直接修改草稿' };
     if (!canEdit(state, id)) return { ok: false, message: '這則意見已被取代，請修改最新版本' };
+    if (atTotalLimit(state)) return { ok: false, message: TOTAL_LIMIT_MESSAGE };
     var result = createRequest({
       kind: pick(changes, 'kind', current.kind),
       proposal: pick(changes, 'proposal', current.proposal),
@@ -299,6 +382,8 @@ export const ANNOTATION_STATE = String.raw`
     });
     if (conflictIds.length > 0)
       return rejectRestore(state, '還原失敗，以下 id 內容衝突：' + conflictIds.join('、'), conflictIds);
+    if (existing.length + fresh.length > MAX_REVISIONS)
+      return rejectRestore(state, '還原失敗：' + TOTAL_LIMIT_MESSAGE, []);
 
     var added = 0;
     var pending = 0;
@@ -309,7 +394,7 @@ export const ANNOTATION_STATE = String.raw`
       return withFlags(normalizedRevision(revision), true, !attached);
     });
     var merged = existing.concat(entries);
-    var chain = supersedesConflicts(merged);
+    var chain = supersedesProblems(merged);
     if (chain.length > 0) {
       return rejectRestore(
         state,
@@ -357,7 +442,10 @@ export const ANNOTATION_STATE = String.raw`
   function saveDraft(storage, key, state) {
     if (!storage || typeof storage.setItem !== 'function') return { ok: false, reason: 'unavailable' };
     try {
-      storage.setItem(key, JSON.stringify({ requests: stateRequests(state) }));
+      var requests = stateRequests(state).map(function (request) {
+        return withFlags(request, request.exported, request.pending);
+      });
+      storage.setItem(key, JSON.stringify({ requests: requests }));
       return { ok: true };
     } catch (e) {
       return { ok: false, reason: 'error' };

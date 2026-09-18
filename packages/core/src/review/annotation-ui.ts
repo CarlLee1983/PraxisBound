@@ -27,6 +27,7 @@ export const ANNOTATION_UI = String.raw`
       panel: null,
       batchBlockSha256: null,
       storageMessage: '',
+      storedMessage: '',
       quarantine: null,
       initMessage: '',
     };
@@ -69,6 +70,7 @@ export const ANNOTATION_UI = String.raw`
       var messages = [];
       if (ui.initMessage) messages.push(ui.initMessage);
       if (ui.storageMessage) messages.push(ui.storageMessage);
+      if (ui.storedMessage) messages.push(ui.storedMessage);
       if (ui.quarantine) {
         messages.push(
           '瀏覽器暫存中有 ' + ui.quarantine.length + ' 項無效資料，已隔離且不會匯出；在捨棄前暫停寫入暫存，請記得匯出。',
@@ -116,6 +118,11 @@ export const ANNOTATION_UI = String.raw`
       var loaded = reviewApi.loadState(read.raw);
       state = loaded.state;
       if (!loaded.ok) ui.quarantine = loaded.messages;
+      // 同一瀏覽器的其他本機頁面也能寫入這份暫存（Q19），所以載入的意見一律常駐提示。
+      if (state.requests.length > 0) {
+        ui.storedMessage =
+          '已從瀏覽器暫存載入 ' + state.requests.length + ' 則意見；標示「來自暫存」者請確認是你寫的再匯出。';
+      }
     }
 
     /** 狀態的唯一寫入點；任何非匯出的變更都讓已開啟的匯出內容失效。 */

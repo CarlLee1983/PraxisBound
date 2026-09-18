@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import { performance } from "node:perf_hooks";
+import { TextEncoder } from "node:util";
 
 import test from "node:test";
 
@@ -13,6 +15,7 @@ import {
   TARGET_R002,
   addOk,
   api,
+  asLoaded,
   clone,
   createOk,
   exportOk,
@@ -20,6 +23,7 @@ import {
   hex64,
   nextRandom,
   parseOk,
+  schemaErrors,
   sheetFromJson,
   sheetJson,
 } from "./review-annotation-support.mjs";
@@ -158,10 +162,16 @@ test("TST023-AC-005/H1: export and parse reject self, cyclic, and doubled supers
 
   // Restoring a sheet whose request supersedes an id a local request
   // already supersedes is a conflict, not a silent second successor.
-  const local = { requests: [{ ...b, exported: false, pending: false }] };
-  const incoming = parseOk(exportOk([c])).sheet;
+  const local = {
+    requests: [
+      { ...a, exported: true, pending: false },
+      { ...b, exported: false, pending: false },
+    ],
+  };
+  const incoming = parseOk(exportOk([a, c])).sheet;
   const restored = api.restore(local, incoming, FINGERPRINT, PAGE_LOCATORS);
   assert.equal(restored.ok, false);
+  assert.match(restored.message, /同時被/);
   assert.equal(restored.state, local);
 });
 
@@ -296,11 +306,11 @@ test("TST023-AC-010/H4: loadState keeps valid entries and quarantines duplicates
   const good = storedEntry({});
   const loaded = api.loadState(stored([good, null]));
   assert.equal(loaded.ok, false);
-  assert.deepEqual(loaded.state.requests, [good]);
+  assert.deepEqual(loaded.state.requests, asLoaded([good]));
   assert.match(loaded.messages[0], /第 2 則/);
 
   const duplicate = api.loadState(stored([good, { ...good, proposal: "x" }]));
-  assert.deepEqual(duplicate.state.requests, [good]);
+  assert.deepEqual(duplicate.state.requests, asLoaded([good]));
   assert.match(duplicate.messages[0], /id 重複/);
 
   const self = api.loadState(stored([{ ...good, supersedes: good.id }]));
@@ -312,7 +322,7 @@ test("TST023-AC-010/H4: loadState keeps valid entries and quarantines duplicates
     stored([{ ...x, supersedes: y.id }, { ...y, supersedes: x.id }, good]),
   );
   assert.equal(cycle.ok, false);
-  assert.deepEqual(cycle.state.requests, [good]);
+  assert.deepEqual(cycle.state.requests, asLoaded([good]));
 
   // A valid stored state round-trips exactly.
   const state = addOk(addOk(api.emptyState(), {}).state, {}).state;
@@ -324,10 +334,11 @@ test("TST023-AC-010/H4: loadState keeps valid entries and quarantines duplicates
   );
   const reloaded = api.loadState(saved.k);
   assert.equal(reloaded.ok, true);
-  assert.deepEqual(
-    reloaded.state,
-    api.markExported(state, [state.requests[0].id]),
-  );
+  assert.deepEqual(reloaded.state, {
+    requests: asLoaded(
+      api.markExported(state, [state.requests[0].id]).requests,
+    ),
+  });
 });
 
 // ---------- security-M1: every line terminator ----------
@@ -549,4 +560,270 @@ test("TST023-AC-002/M6: badges carry kind, blocking, and status for every reques
     "待比對",
     "已匯出",
   ]);
+});
+
+// ---------- §6: supersedes targets must exist and be exported ----------
+
+function restoreSheet(state, requests) {
+  return api.restore(
+    state,
+    parseOk(exportOk(requests)).sheet,
+    FINGERPRINT,
+    PAGE_LOCATORS,
+  );
+}
+
+test("TST023-AC-006/§6: restore rejects a supersedes whose target is in neither the page nor the sheet; a later full sheet dedupes first and checks only new requests", () => {
+  const { state, id: x } = exportedState({});
+  const original = state.requests[0];
+  const y = createOk({ supersedes: x });
+
+  const dangling = restoreSheet(api.emptyState(), [y]);
+  assert.equal(dangling.ok, false);
+  assert.match(dangling.message, /不存在/);
+  assert.deepEqual(dangling.conflictIds, [y.id]);
+  assert.deepEqual(dangling.state, api.emptyState());
+
+  const onPage = restoreSheet(state, [y]);
+  assert.equal(onPage.ok, true, onPage.message);
+  assert.equal(onPage.added, 1);
+
+  // Every export carries every request, so the second sheet holds both the
+  // superseded X and its successor Y; restoring it again only dedupes.
+  const second = restoreSheet(state, [original, y]);
+  assert.equal(second.ok, true, second.message);
+  assert.equal(second.skipped, 1);
+  assert.equal(second.added, 1);
+  const again = restoreSheet(second.state, [original, y]);
+  assert.equal(again.ok, true, again.message);
+  assert.equal(again.skipped, 2);
+  assert.equal(again.state.requests.length, 2);
+});
+
+test("TST023-AC-010/§6: loadState quarantines a supersedes whose target is absent, and anything left dangling by that quarantine", () => {
+  const good = storedEntry({});
+  const orphan = storedEntry({ supersedes: storedEntry({}).id });
+  const loaded = api.loadState(stored([good, orphan]));
+  assert.equal(loaded.ok, false);
+  assert.deepEqual(loaded.state.requests, asLoaded([good]));
+  assert.match(loaded.messages.join("\n"), /不存在/);
+
+  // `looped` supersedes itself and is quarantined, which leaves `onLoop`
+  // dangling; `successor` supersedes an exported target and stays.
+  const looped = storedEntry({});
+  const onLoop = storedEntry({ supersedes: looped.id });
+  const target = storedEntry({ exported: true });
+  const successor = storedEntry({ supersedes: target.id });
+  const cascade = api.loadState(
+    stored([
+      good,
+      { ...looped, supersedes: looped.id },
+      onLoop,
+      target,
+      successor,
+    ]),
+  );
+  assert.equal(cascade.ok, false);
+  assert.deepEqual(
+    cascade.state.requests.map((r) => r.id),
+    [good.id, target.id, successor.id],
+  );
+});
+
+test("TST023-AC-008/§6: only an exported request can be superseded — loadState and restore reject a superseded draft", () => {
+  const draft = storedEntry({});
+  const successor = storedEntry({ supersedes: draft.id });
+  const loaded = api.loadState(stored([draft, successor]));
+  assert.equal(loaded.ok, false);
+  assert.deepEqual(loaded.state.requests, asLoaded([draft]));
+  assert.match(loaded.messages.join("\n"), /尚未匯出/);
+
+  const local = addOk(api.emptyState(), {});
+  const incoming = createOk({ supersedes: local.request.id });
+  const restored = restoreSheet(local.state, [incoming]);
+  assert.equal(restored.ok, false);
+  assert.match(restored.message, /尚未匯出/);
+  assert.equal(restored.state, local.state);
+});
+
+// ---------- §13: the page never holds more requests than it can export ----------
+
+function fullState(count) {
+  return {
+    requests: Array.from({ length: count }, (_, i) => ({
+      ...createOk({ now: NOW + i }),
+      exported: true,
+      pending: false,
+    })),
+  };
+}
+
+test("TST023-AC-010/§13: adding, superseding, or restoring past 1000 requests is refused and leaves the state unchanged", () => {
+  const full = fullState(1000);
+
+  const added = api.addDraft(full, {
+    ...createOk({}),
+    now: NOW,
+    random: nextRandom(),
+  });
+  assert.equal(added.ok, false);
+  assert.match(added.message, /上限（1000）/);
+
+  const edited = edit(full, full.requests[0].id, { proposal: "新版" });
+  assert.equal(edited.ok, false);
+  assert.match(edited.message, /上限（1000）/);
+
+  const almost = { requests: full.requests.slice(0, 999) };
+  const restored = restoreSheet(almost, [createOk({}), createOk({})]);
+  assert.equal(restored.ok, false);
+  assert.match(restored.message, /上限（1000）/);
+  assert.equal(restored.state, almost);
+
+  // 999 + 1 is still exportable.
+  const last = api.addDraft(almost, {
+    kind: "supplement",
+    proposal: "p",
+    rationale: "r",
+    targets: [TARGET_R001],
+    quote: "q",
+    fingerprint: FINGERPRINT,
+    now: NOW + 5000,
+    random: nextRandom(),
+  });
+  assert.equal(last.ok, true, last.message);
+  assert.equal(
+    api.exportSheet({
+      batchId: BATCH_ID,
+      pageFingerprint: FINGERPRINT,
+      requests: last.state.requests,
+      now: NOW,
+    }).ok,
+    true,
+  );
+});
+
+test("TST023-AC-008/§13: a 1000-long supersedes chain validates and renders badges without quadratic work", () => {
+  const requests = [];
+  for (let i = 0; i < 1000; i++) {
+    const request = createOk({
+      now: NOW + i,
+      ...(i > 0 ? { supersedes: requests[i - 1].id } : {}),
+    });
+    requests.push({ ...request, exported: true, pending: false });
+  }
+  const started = performance.now();
+  const loaded = api.loadState(stored(requests));
+  for (const request of loaded.state.requests) {
+    api.requestBadges(loaded.state, request);
+    api.canEdit(loaded.state, request.id);
+  }
+  const elapsed = performance.now() - started;
+  assert.equal(loaded.ok, true, loaded.messages.join("\n"));
+  assert.equal(api.canEdit(loaded.state, requests[998].id), false);
+  assert.equal(api.canEdit(loaded.state, requests[999].id), true);
+  assert.ok(elapsed < 1000, `took ${elapsed} ms`);
+});
+
+// ---------- §6: leap seconds ----------
+
+test("TST023-AC-005/§6: a leap-second createdAt is accepted exactly where the schema accepts it and keeps :60 in canonical form", () => {
+  const json = sheetJson(exportOk([createOk({})]));
+  const leap = clone(json);
+  leap.revisions[0].createdAt = "2016-12-31T23:59:60Z";
+  assert.deepEqual(schemaErrors(leap), []);
+  const parsed = api.parseSheet(sheetFromJson(leap), { batchId: BATCH_ID });
+  assert.equal(parsed.ok, true, parsed.message);
+
+  for (const bad of [
+    "2016-12-31T12:00:60Z",
+    "2016-12-31T23:59:61Z",
+    "2016-12-32T23:59:60Z",
+  ]) {
+    const sheet = clone(json);
+    sheet.revisions[0].createdAt = bad;
+    assert.notDeepEqual(schemaErrors(sheet), [], bad);
+    assert.equal(
+      api.parseSheet(sheetFromJson(sheet), { batchId: BATCH_ID }).ok,
+      false,
+      bad,
+    );
+  }
+
+  const revision = leap.revisions[0];
+  assert.equal(
+    api.sameRevisionContent(revision, {
+      ...revision,
+      createdAt: "2016-12-31T23:59:60.000Z",
+    }),
+    true,
+  );
+  assert.equal(
+    api.sameRevisionContent(revision, {
+      ...revision,
+      createdAt: "2017-01-01T00:00:00Z",
+    }),
+    false,
+  );
+});
+
+// ---------- Q18: the readable summary carries excerpts; the JSON is authoritative ----------
+
+test("TST023-AC-005/Q18: the summary quotes at most 200 characters of each reader field while the JSON keeps the full text", () => {
+  const long = "漢".repeat(150) + "😀".repeat(100) + "尾";
+  const request = createOk({ proposal: long, rationale: long, quote: long });
+  const text = exportOk([request]);
+  const summary = text.slice(0, text.indexOf(FENCE));
+
+  const excerpt = [...long].slice(0, 200).join("");
+  assert.ok(summary.includes(`> ${excerpt}…\n`));
+  assert.equal(summary.includes("😀".repeat(51)), false);
+  assert.equal(summary.includes("尾"), false);
+  assert.match(summary, /完整內容以 JSON 區塊為準/);
+  const revision = sheetJson(text).revisions[0];
+  assert.equal(revision.proposal, long);
+  assert.equal(revision.rationale, long);
+  assert.equal(revision.quote, long);
+
+  // A near-limit restored sheet can still be re-exported with one more request.
+  const big = "漢".repeat(21000);
+  const requests = Array.from({ length: 5 }, (_, i) =>
+    createOk({ now: NOW + i, proposal: big, rationale: big, quote: big }),
+  );
+  const nearLimit = exportOk(requests);
+  assert.ok(new TextEncoder().encode(nearLimit).length > 900000);
+  const restored = api.restore(
+    api.emptyState(),
+    parseOk(nearLimit).sheet,
+    FINGERPRINT,
+    PAGE_LOCATORS,
+  );
+  const more = addOk(restored.state, {});
+  exportOk(more.state.requests);
+});
+
+// ---------- Q19: requests loaded from browser storage are marked ----------
+
+test("TST023-AC-010/Q19: requests loaded from browser storage carry a 來自暫存 badge that is never saved back", () => {
+  const entry = storedEntry({});
+  const loaded = api.loadState(stored([entry]));
+  assert.equal(loaded.ok, true);
+  const [request] = loaded.state.requests;
+  assert.deepEqual(api.requestBadges(loaded.state, request), [
+    "補充",
+    "阻擋",
+    "未匯出",
+    "來自暫存",
+  ]);
+
+  const saved = {};
+  api.saveDraft({ setItem: (k, v) => (saved[k] = v) }, "k", loaded.state);
+  assert.deepEqual(JSON.parse(saved.k), { requests: [entry] });
+  assert.equal(api.loadState(saved.k).ok, true);
+
+  // Drafts made on this page never carry it.
+  const fresh = addOk(loaded.state, {});
+  assert.equal(
+    api.requestBadges(fresh.state, fresh.request).includes("來自暫存"),
+    false,
+  );
 });

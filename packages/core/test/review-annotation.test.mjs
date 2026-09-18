@@ -19,6 +19,7 @@ import {
   TARGET_R002,
   addOk,
   api,
+  asLoaded,
   clone,
   createOk,
   escapeRegExp,
@@ -491,7 +492,9 @@ test("TST023-AC-010/security: storage unavailable or throwing reports failure wi
   });
   const stillThere = api.readDraft(throwingStorage, key);
   assert.equal(stillThere.raw, stored);
-  assert.deepEqual(api.loadState(stillThere.raw).state, state);
+  assert.deepEqual(api.loadState(stillThere.raw).state, {
+    requests: asLoaded(state.requests),
+  });
 
   const readThrows = api.readDraft(
     {

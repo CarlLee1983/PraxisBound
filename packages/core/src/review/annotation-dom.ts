@@ -76,7 +76,8 @@ export const ANNOTATION_DOM = String.raw`
   }
 
   function markerText(reviewApi, request) {
-    var text = reviewApi.kindLabel(request.kind) + (request.blocking ? '・阻擋' : '・非阻擋') + '：';
+    var text = (request.fromStorage === true ? '來自暫存・' : '') + reviewApi.kindLabel(request.kind) +
+      (request.blocking ? '・阻擋' : '・非阻擋') + '：';
     if (request.proposal) text += reviewApi.buildExcerpt(request.proposal, 40) + '／';
     return text + '理由：' + reviewApi.buildExcerpt(request.rationale, 40);
   }

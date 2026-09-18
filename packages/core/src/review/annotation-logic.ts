@@ -17,6 +17,7 @@ export const ANNOTATION_LOGIC = String.raw`
   var MAX_LOCATOR_FIELD_LENGTH = 1024;
   var MAX_BATCH_ID_LENGTH = 128;
   var TRUNCATE_MARKER = '…（已截斷）';
+  var SUMMARY_EXCERPT_LENGTH = 200;
   // Built from char codes, not a literal backtick: this source is authored
   // inside a String.raw template (see annotation-script.ts), where a raw
   // backtick would end the template.
@@ -158,25 +159,29 @@ export const ANNOTATION_LOGIC = String.raw`
 
   // ---------- UTC 時間：defs 的 pattern 加上真實日期檢查 ----------
 
+  /** 同 schema 的 date-time（RFC 3339）：閏秒 :60 只能出現在 UTC 的 23:59。 */
   function isUtcDateTime(value) {
     if (!isString(value)) return false;
     var match = UTC_TIME_PATTERN.exec(value);
     if (!match) return false;
     var parts = match.slice(1, 7).map(Number);
+    var leap = parts[5] === 60;
+    if (leap && (parts[3] !== 23 || parts[4] !== 59)) return false;
+    var seconds = leap ? 59 : parts[5];
     var date = new Date(0);
     date.setUTCFullYear(parts[0], parts[1] - 1, parts[2]);
-    date.setUTCHours(parts[3], parts[4], parts[5], 0);
+    date.setUTCHours(parts[3], parts[4], seconds, 0);
     return (
       date.getUTCFullYear() === parts[0] &&
       date.getUTCMonth() === parts[1] - 1 &&
       date.getUTCDate() === parts[2] &&
       date.getUTCHours() === parts[3] &&
       date.getUTCMinutes() === parts[4] &&
-      date.getUTCSeconds() === parts[5]
+      date.getUTCSeconds() === seconds
     );
   }
 
-  /** 標準 UTC 形式：大寫 T、小數秒去除尾端 0（全為 0 則省略）、結尾 Z。 */
+  /** 標準 UTC 形式：大寫 T、小數秒去除尾端 0（全為 0 則省略）、結尾 Z；閏秒保留 :60。 */
   function canonicalUtcTime(value) {
     var match = isString(value) ? UTC_TIME_PATTERN.exec(value) : null;
     if (!match) return value;
@@ -278,7 +283,10 @@ export const ANNOTATION_LOGIC = String.raw`
 
   // ---------- supersedes 鏈：不可指向自己、不可成環、同一 id 只能被一則取代 ----------
 
-  /** 回傳違規清單 [{ id, message }]；ids 為參與違規、應拒絕或隔離的意見。 */
+  /**
+   * 回傳違規清單 [{ id, message }]；ids 為參與違規、應拒絕或隔離的意見。
+   * 每則意見至多一個 supersedes，沿鏈判定循環時記下每個節點的結論，整體為線性時間。
+   */
   function supersedesConflicts(list) {
     var byId = Object.create(null);
     var supersededBy = Object.create(null);
@@ -302,17 +310,29 @@ export const ANNOTATION_LOGIC = String.raw`
       }
       supersededBy[request.supersedes] = request.id;
     });
+    var reachesCycle = Object.create(null);
     list.forEach(function (request) {
-      var seen = Object.create(null);
+      var path = [];
+      var onPath = Object.create(null);
+      var cyclic = false;
       var current = request;
       while (current && isString(current.supersedes)) {
-        if (seen[current.id]) {
-          conflicts.push({ id: request.id, message: '意見 ' + request.id + ' 的 supersedes 形成循環' });
-          return;
+        if (reachesCycle[current.id] !== undefined) {
+          cyclic = reachesCycle[current.id];
+          break;
         }
-        seen[current.id] = true;
+        if (onPath[current.id]) {
+          cyclic = true;
+          break;
+        }
+        onPath[current.id] = true;
+        path.push(current.id);
         current = byId[current.supersedes];
       }
+      path.forEach(function (id) {
+        reachesCycle[id] = cyclic;
+      });
+      if (cyclic) conflicts.push({ id: request.id, message: '意見 ' + request.id + ' 的 supersedes 形成循環' });
     });
     return conflicts;
   }
@@ -503,6 +523,13 @@ export const ANNOTATION_LOGIC = String.raw`
     return JSON.stringify(value).replace(/\u2028/g, '\\u2028').replace(/\u2029/g, '\\u2029');
   }
 
+  /** 摘要只放每段讀者文字的前 200 個字元（碼位），完整內容以 JSON 區塊為準（Q18）。 */
+  function summaryExcerpt(text) {
+    var chars = Array.from(isString(text) ? text : '');
+    if (chars.length <= SUMMARY_EXCERPT_LENGTH) return chars.join('');
+    return chars.slice(0, SUMMARY_EXCERPT_LENGTH).join('') + '…';
+  }
+
   function sheetText(batchId, pageFingerprint, exportedAt, records) {
     var lines = [];
     lines.push('# 修訂單 — ' + batchId);
@@ -510,6 +537,8 @@ export const ANNOTATION_LOGIC = String.raw`
     lines.push('- Fingerprint：' + pageFingerprint);
     lines.push('- 匯出時間：' + exportedAt);
     lines.push('- 意見數：' + records.length);
+    lines.push('');
+    lines.push('以下摘要中的原文引用、提案與理由只列前 ' + SUMMARY_EXCERPT_LENGTH + ' 字；完整內容以 JSON 區塊為準。');
     lines.push('');
     records.forEach(function (record) {
       lines.push('## ' + record.id + '（' + record.kind + '）');
@@ -521,13 +550,13 @@ export const ANNOTATION_LOGIC = String.raw`
       lines.push(quoteLines(record.targets.map(targetSummaryLine).join('\n')));
       lines.push('');
       lines.push('原文引用：');
-      lines.push(quoteLines(record.quote));
+      lines.push(quoteLines(summaryExcerpt(record.quote)));
       lines.push('');
       lines.push('提案：');
-      lines.push(quoteLines(record.proposal));
+      lines.push(quoteLines(summaryExcerpt(record.proposal)));
       lines.push('');
       lines.push('理由：');
-      lines.push(quoteLines(record.rationale));
+      lines.push(quoteLines(summaryExcerpt(record.rationale)));
       lines.push('');
     });
     lines.push(FENCE_OPEN);

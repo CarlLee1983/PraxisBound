@@ -130,6 +130,11 @@ export function fenceLinesAnyBreak(text) {
     .length;
 }
 
+/** Stored entries as loadState returns them: marked as loaded from storage. */
+export function asLoaded(requests) {
+  return requests.map((request) => ({ ...request, fromStorage: true }));
+}
+
 /** A deep copy of JSON-shaped fixture data. */
 export function clone(value) {
   return JSON.parse(JSON.stringify(value));
@@ -157,23 +162,32 @@ const ANNOTATION_KEYWORDS = new Set([
 const RFC3339_DATE_TIME =
   /^(\d{4})-(\d{2})-(\d{2})[Tt](\d{2}):(\d{2}):(\d{2})(\.\d+)?([Zz]|[+-]\d{2}:\d{2})$/;
 
+/** RFC 3339 §5.7: a leap second (:60) is valid only at 23:59 UTC. */
 function isDateTime(value) {
   const match = RFC3339_DATE_TIME.exec(value);
   if (!match) return false;
   const [year, month, day, hour, minute, second] = match
     .slice(1, 7)
     .map(Number);
+  const leap = second === 60;
+  const seconds = leap ? 59 : second;
   const date = new Date(0);
   date.setUTCFullYear(year, month - 1, day);
-  date.setUTCHours(hour, minute, second);
-  return (
+  date.setUTCHours(hour, minute, seconds);
+  const valid =
     date.getUTCFullYear() === year &&
     date.getUTCMonth() === month - 1 &&
     date.getUTCDate() === day &&
     date.getUTCHours() === hour &&
     date.getUTCMinutes() === minute &&
-    date.getUTCSeconds() === second
-  );
+    date.getUTCSeconds() === seconds;
+  if (!valid || !leap) return valid;
+  const offset = /^[Zz]$/.test(match[8])
+    ? 0
+    : (match[8][0] === "-" ? -1 : 1) *
+      (Number(match[8].slice(1, 3)) * 60 + Number(match[8].slice(4, 6)));
+  const utcMinutes = (((hour * 60 + minute - offset) % 1440) + 1440) % 1440;
+  return utcMinutes === 23 * 60 + 59;
 }
 
 function resolveRef(ref, document) {
