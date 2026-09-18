@@ -195,3 +195,16 @@ test("TST022-AC-005: paragraph lines join with a space for ASCII neighbors and n
   assert.match(asciiHtml, /<p>line one line two<\/p>/);
   assert.match(cjkHtml, /<p>第一行第二行<\/p>/);
 });
+
+test("TST022-AC-004/005: intraword underscores and spaced asterisks stay literal text", () => {
+  const bytes = new TextEncoder().encode(
+    "Blocked by REVIEW_SOURCE_MISSING and snake_case_name; 2 * 3 * 4.\n\nThis _is_ emphasis and *so* is this.\n",
+  );
+  const html = renderMarkdownHtml(bytes, 0, bytes.length);
+
+  assert.match(html, /REVIEW_SOURCE_MISSING/);
+  assert.match(html, /snake_case_name/);
+  assert.match(html, /2 \* 3 \* 4\./);
+  assert.match(html, /<em>is<\/em>/);
+  assert.match(html, /<em>so<\/em>/);
+});

@@ -70,6 +70,42 @@ function renderLink(label: string, href: string): string {
     : `<a class="unsafe-link">${rendered}</a>`;
 }
 
+const wordCharacter = /[\p{L}\p{N}]/u;
+const whitespace = /\s/u;
+
+/**
+ * A single `*` or `_` opens emphasis only when followed by non-whitespace;
+ * `_` must also not follow a word character, so identifiers such as
+ * `REVIEW_SOURCE_MISSING` keep their underscores (CommonMark flanking rules).
+ */
+function canOpenEmphasis(text: string, index: number): boolean {
+  const next = text[index + 1];
+  if (next === undefined || whitespace.test(next)) return false;
+  const previous = text[index - 1];
+  return (
+    text[index] !== "_" ||
+    previous === undefined ||
+    !wordCharacter.test(previous)
+  );
+}
+
+function findEmphasisClose(
+  text: string,
+  delimiter: string,
+  from: number,
+): number {
+  for (let index = from; index < text.length; index += 1) {
+    if (text[index] !== delimiter) continue;
+    const previous = text[index - 1];
+    if (previous === undefined || whitespace.test(previous)) continue;
+    const next = text[index + 1];
+    if (delimiter === "_" && next !== undefined && wordCharacter.test(next))
+      continue;
+    return index;
+  }
+  return -1;
+}
+
 /** Code spans, links, strong and em; every other character is escaped text. */
 function renderInline(text: string): string {
   let output = "";
@@ -125,8 +161,11 @@ function renderInline(text: string): string {
       }
     }
 
-    if (character === "*" || character === "_") {
-      const end = text.indexOf(character, index + 1);
+    if (
+      (character === "*" || character === "_") &&
+      canOpenEmphasis(text, index)
+    ) {
+      const end = findEmphasisClose(text, character, index + 1);
       if (end !== -1 && end > index + 1) {
         flush();
         output += `<em>${renderInline(text.slice(index + 1, end))}</em>`;
