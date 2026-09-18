@@ -265,13 +265,14 @@ export function indexReviewBatch(
       .map((story) => [story.id, story.acceptanceIds] as const),
   );
 
+  const requirementsByKey = groupBy(
+    plan.requirements,
+    (requirement) => `${requirement.spec}#${requirement.anchor}`,
+  );
   const trace: TraceEntry[] = [];
   for (const spec of specs) {
     for (const entry of spec.entries) {
-      const matches = plan.requirements.filter(
-        (requirement) =>
-          requirement.spec === spec.path && requirement.anchor === entry.id,
-      );
+      const matches = requirementsByKey.get(`${spec.path}#${entry.id}`) ?? [];
 
       const referencedStoryIds = matches.flatMap(
         (requirement) => requirement.stories,
@@ -323,10 +324,13 @@ export function indexReviewBatch(
   // A mapped anchor that does not name any recognized entry in its Spec
   // (including one excluded as a duplicate, which is reported separately) is
   // diagnosed once per requirement rather than silently ignored.
+  const recognizedIdsBySpec = new Map<string, ReadonlySet<string>>();
+  for (const spec of specs)
+    if (!recognizedIdsBySpec.has(spec.path))
+      recognizedIdsBySpec.set(spec.path, new Set(spec.allRecognizedIds));
   for (const requirement of plan.requirements) {
-    const spec = specs.find((candidate) => candidate.path === requirement.spec);
-    if (spec === undefined) continue;
-    const recognizedIds = new Set(spec.allRecognizedIds);
+    const recognizedIds = recognizedIdsBySpec.get(requirement.spec);
+    if (recognizedIds === undefined) continue;
     if (!recognizedIds.has(requirement.anchor)) {
       diagnostics.push(
         diagnostic(
@@ -505,17 +509,35 @@ function indexSpec(
 
   // Entry-level vocabulary (contract §5): a third-level heading nested inside
   // one recognized (non-duplicate) entry's own block, keyed by entry id.
+  // Each heading's owner: the nearest preceding `##`/`#` heading. A
+  // `##` block ends at the next heading of level 2 or higher, so a deeper
+  // heading lies inside a `##` block exactly when that block is its owner —
+  // one pass instead of a range test against every block per heading.
+  const ownerOf = new Map<HeadingBlock, HeadingBlock>();
+  let currentOwner: HeadingBlock | undefined;
+  for (const heading of headings) {
+    if (heading.level <= 2) {
+      currentOwner = heading;
+      continue;
+    }
+    if (currentOwner !== undefined && currentOwner.level === 2)
+      ownerOf.set(heading, currentOwner);
+  }
+  const entryHeadingSet = new Set(entryRanges);
+  const headingsByEntry = new Map<HeadingBlock, HeadingBlock[]>();
+  for (const [heading, owner] of ownerOf) {
+    if (!entryHeadingSet.has(owner)) continue;
+    const group = headingsByEntry.get(owner) ?? [];
+    group.push(heading);
+    headingsByEntry.set(owner, group);
+  }
+
   const entrySectionsById = new Map<string, SpecEntrySections>();
   for (const entryHeading of entryRanges) {
     const entryId = readSpecEntryId(entryHeading) as string;
     const groups = new Map<EntrySectionVocabKey, HeadingBlock[]>();
-    for (const heading of headings) {
+    for (const heading of headingsByEntry.get(entryHeading) ?? []) {
       if (heading.level !== 3) continue;
-      if (
-        heading.startOffset <= entryHeading.startOffset ||
-        heading.startOffset >= entryHeading.endOffset
-      )
-        continue;
       const key = matchEntrySectionVocab(heading.text);
       if (key === undefined) continue;
       const group = groups.get(key) ?? [];
@@ -628,11 +650,8 @@ function indexSpec(
     // is that block's own content, the same way a heading nested inside an
     // entry is that entry's content: no unrecognized-section diagnostic, but
     // it is still indexed by heading path so its own locator exists.
-    const nestedInTopVocab = [...topVocabHeadings].some(
-      (vocabHeading) =>
-        heading.startOffset > vocabHeading.startOffset &&
-        heading.startOffset < vocabHeading.endOffset,
-    );
+    const owner = ownerOf.get(heading);
+    const nestedInTopVocab = owner !== undefined && topVocabHeadings.has(owner);
     if (nestedInTopVocab) {
       const blockSha256 = sha256Hex(
         bytes.subarray(heading.startOffset, heading.endOffset),
@@ -646,11 +665,7 @@ function indexSpec(
 
     // A heading nested inside a recognized entry's own block is that entry's
     // content, not a separate, unrecognized top-level section.
-    const nestedInEntry = entryRanges.some(
-      (entry) =>
-        heading.startOffset > entry.startOffset &&
-        heading.startOffset < entry.endOffset,
-    );
+    const nestedInEntry = owner !== undefined && entryHeadingSet.has(owner);
     if (nestedInEntry) continue;
 
     // An unrecognized heading is still indexed by heading path so no source

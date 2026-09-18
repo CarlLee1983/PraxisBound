@@ -145,6 +145,8 @@ packed_packages_have_the_bounded_public_contract() {
     './dist/review/render-locators.js' \
     './dist/review/render-source.d.ts' \
     './dist/review/render-source.js' \
+    './dist/review/render-spec.d.ts' \
+    './dist/review/render-spec.js' \
     './dist/review/render.d.ts' \
     './dist/review/render.js' \
     './dist/review/types.d.ts' \

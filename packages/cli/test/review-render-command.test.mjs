@@ -424,3 +424,49 @@ test("TST022 review finding 5: an output path that case-differs into the batch r
     );
   });
 });
+
+test("TST022 Security Fixture Matrix: an internal error reaches stderr without the repository root or raw control characters", async () => {
+  await fixture(async (root, manifest) => {
+    const escape = String.fromCharCode(0x1b);
+    const bell = String.fromCharCode(0x07);
+    const written = [];
+    const originalWrite = globalThis.process.stderr.write;
+    globalThis.process.stderr.write = (chunk) => {
+      written.push(String(chunk));
+      return true;
+    };
+    let execution;
+    try {
+      execution = await runReviewRender(
+        [manifest, "--output", "out.html", "--json"],
+        root,
+        {
+          async rename() {
+            // Reading `code` in the publication's own error handler throws,
+            // so this escapes as an unexpected internal failure.
+            throw {
+              get code() {
+                throw new Error(
+                  `EACCES: open '${root}/secret/path'${escape}[31mRED${escape}]0;title${bell}\nsecond line ${root}`,
+                );
+              },
+            };
+          },
+        },
+      );
+    } finally {
+      globalThis.process.stderr.write = originalWrite;
+    }
+
+    assertEnvelope(execution);
+    assert.equal(execution.result.outcome, "ERROR");
+    assert.equal(execution.result.exit, 3);
+    const stderr = written.join("");
+    assert.match(stderr, /internal error: EACCES: open '<root>\/secret\/path'/);
+    assert.ok(!stderr.includes(root), "stderr must not carry the root path");
+    assert.ok(!stderr.includes(escape) && !stderr.includes(bell));
+    assert.match(stderr, /\\x1b\[31mRED\\x1b]0;title\\x07/);
+    assert.doesNotMatch(stderr, /second line/);
+    assert.equal(stderr.split("\n").length, 2, "one line plus its newline");
+  });
+});

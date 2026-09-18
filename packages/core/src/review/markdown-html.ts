@@ -1,41 +1,29 @@
 /**
  * Converts one byte range of the shared Markdown block model into inert HTML.
  *
- * Built on `scanMarkdownLines` / `scanHeadingBlocks` (`markdown.ts`) so index
- * and projection agree on every heading and fence boundary; this module adds
- * no second line/fence scanner of its own. A caller scans a document once
- * with `scanMarkdownDocument` and passes the result to every
- * `renderMarkdownHtml` call for that document, so rendering many blocks from
- * the same source never rescans it. Pure: no I/O, no globals, no mutation of
- * its inputs. Source text is always escaped; only `http:`, `https:` and
+ * Built on the shared block model (`scanMarkdownDocument`, `markdown.ts`) so
+ * index and projection agree on every heading and fence boundary; this module
+ * adds no second line/fence scanner of its own and never re-guesses a fence
+ * boundary from a marker-looking line. A caller scans a document once and
+ * passes the result to every `renderMarkdownHtml` call for that document, so
+ * rendering many blocks from the same source never rescans it. Pure: no I/O,
+ * no globals, no mutation of its inputs. Source text is always escaped; only `http:`, `https:` and
  * in-page fragment links ever carry an `href` (contract §18).
  */
 
+import { trimDeclarationText } from "../declarations.js";
 import { escapeHtml } from "./html.js";
 import {
-  scanHeadingBlocks,
-  scanMarkdownLines,
+  indentOf,
+  lowerBoundByStart,
+  parseItemMarker,
+  scanMarkdownDocument,
   type HeadingBlock,
+  type MarkdownDocument,
   type MarkdownLine,
 } from "./markdown.js";
 
-/** One document scanned once; share this across every `renderMarkdownHtml` call for it. */
-export interface MarkdownDocument {
-  readonly bytes: Uint8Array;
-  readonly lines: readonly MarkdownLine[];
-  readonly headings: readonly HeadingBlock[];
-  readonly headingByStart: ReadonlyMap<number, HeadingBlock>;
-}
-
-/** Scans `bytes` once for lines and headings; reuse the result across calls. */
-export function scanMarkdownDocument(bytes: Uint8Array): MarkdownDocument {
-  const lines = scanMarkdownLines(bytes);
-  const headings = scanHeadingBlocks(bytes, lines);
-  const headingByStart = new Map(
-    headings.map((heading) => [heading.startOffset, heading]),
-  );
-  return { bytes, lines, headings, headingByStart };
-}
+export { scanMarkdownDocument, type MarkdownDocument };
 
 export interface MarkdownHtmlOptions {
   /** Added to every source heading level (clamped to 6). */
@@ -165,6 +153,20 @@ function renderInline(text: string): string {
   const underscoreCloses = emphasisClosePositions(text, "_");
   const asteriskCloses = emphasisClosePositions(text, "*");
 
+  // Link scanning stays linear however many `[` precede one `]` or an
+  // unclosed `(`: the scan position only moves forward, so the next `]` at
+  // or after it is found once and reused until the scan passes it, and a
+  // destination scan that failed after one `]` is remembered, since every
+  // later `[` before that `]` would repeat exactly the same scan.
+  let closeBracketCache = -2;
+  let failedDestinationBracket = -1;
+  const nextCloseBracket = (from: number): number => {
+    if (closeBracketCache === -1 || closeBracketCache >= from)
+      return closeBracketCache;
+    closeBracketCache = text.indexOf("]", from);
+    return closeBracketCache;
+  };
+
   let index = 0;
   while (index < text.length) {
     const character = text[index] as string;
@@ -180,8 +182,12 @@ function renderInline(text: string): string {
     }
 
     if (character === "[") {
-      const closeBracket = text.indexOf("]", index + 1);
-      if (closeBracket !== -1 && text[closeBracket + 1] === "(") {
+      const closeBracket = nextCloseBracket(index + 1);
+      if (
+        closeBracket !== -1 &&
+        closeBracket !== failedDestinationBracket &&
+        text[closeBracket + 1] === "("
+      ) {
         let depth = 1;
         let cursor = closeBracket + 2;
         while (cursor < text.length && depth > 0) {
@@ -198,6 +204,7 @@ function renderInline(text: string): string {
           index = cursor;
           continue;
         }
+        failedDestinationBracket = closeBracket;
       }
     }
 
@@ -270,24 +277,8 @@ function renderHeading(
   return `<h${level}${renderAttributes(attributes)}>${renderInline(heading.text)}</h${level}>`;
 }
 
-function isFenceMarkerLine(trimmed: string): boolean {
-  const character = trimmed[0];
-  if (character !== "`" && character !== "~") return false;
-  let run = 0;
-  while (trimmed[run] === character) run += 1;
-  return run >= 3 && run === trimmed.length;
-}
-
-/** Renders one contiguous run of fenced lines, dropping the fence markers themselves. */
-function renderFence(group: readonly MarkdownLine[]): string {
-  const body = group.slice(1);
-  const last = body[body.length - 1];
-  const content =
-    last !== undefined && isFenceMarkerLine(last.trimmed)
-      ? body.slice(0, -1)
-      : body;
-  const text = content.map((line) => line.text).join("\n");
-  return `<pre><code>${escapeHtml(text)}</code></pre>`;
+function renderFenceBody(body: readonly string[]): string {
+  return `<pre><code>${escapeHtml(body.join("\n"))}</code></pre>`;
 }
 
 function isBlockQuoteLine(trimmed: string): boolean {
@@ -298,30 +289,39 @@ function stripBlockQuote(trimmed: string): string {
   return trimmed.replace(/^>[ \t]?/, "");
 }
 
+/** Past this many nested `>` levels a quote's remaining lines render as one paragraph. */
+const MAX_BLOCK_QUOTE_DEPTH = 32;
+
 /**
- * A block quote whose stripped first line starts a list renders that list
- * (the simplest correct behavior for the common case); anything else still
- * renders as one joined paragraph, as before. Full block-quote nesting
- * (mixed prose and lists, nested quotes) is out of scope here.
+ * A block quote renders its stripped content through the same block loop as
+ * the document itself, so a list, a later paragraph, or a blank-line-separated
+ * second list inside one quote are all kept (AC-004). Each stripped line keeps
+ * its source `start`, so per-line options still find it.
  */
 function renderBlockQuote(
   group: readonly MarkdownLine[],
-  headingByStart: ReadonlyMap<number, HeadingBlock>,
-  options: MarkdownHtmlOptions,
+  context: BlockContext,
 ): string {
-  const stripped = group.map((line) => ({
-    ...line,
-    text: stripBlockQuote(line.trimmed),
-    trimmed: stripBlockQuote(line.trimmed),
-    fenced: false,
-  }));
-  const first = stripped[0];
-  if (first !== undefined && parseItemMarker(first.trimmed) !== undefined) {
-    const list = parseList(stripped, 0, headingByStart, options);
-    return `<blockquote>${list.html}</blockquote>`;
+  if (context.quoteDepth >= MAX_BLOCK_QUOTE_DEPTH) {
+    const texts = group.map((line) => stripBlockQuote(line.trimmed));
+    return `<blockquote><p>${joinInline(texts)}</p></blockquote>`;
   }
-  const texts = group.map((line) => stripBlockQuote(line.trimmed));
-  return `<blockquote><p>${joinInline(texts)}</p></blockquote>`;
+  const stripped = group.map((line): MarkdownLine => {
+    const text = stripBlockQuote(line.trimmed);
+    return {
+      start: line.start,
+      end: line.end,
+      text,
+      trimmed: trimDeclarationText(text),
+      fenced: false,
+      fence: undefined,
+    };
+  });
+  const inner = renderBlocks(stripped, {
+    ...context,
+    quoteDepth: context.quoteDepth + 1,
+  });
+  return `<blockquote>${inner}</blockquote>`;
 }
 
 function renderParagraph(group: readonly MarkdownLine[]): string {
@@ -344,10 +344,41 @@ function isThematicBreak(trimmed: string): boolean {
   return count >= 3;
 }
 
-// A single column still has one leading and one trailing `-{3,}` run with no
-// further `|`-separated repeats, so the repeated group is optional.
+function isDividerSpace(character: string | undefined): boolean {
+  return character !== undefined && /\s/u.test(character);
+}
+
+/**
+ * A pipe-table divider row: optional outer pipes, and one or more cells of
+ * `:?-{3,}:?`, each separated by `|` and optional whitespace. A single
+ * column still has one leading and one trailing `-{3,}` run. Hand-written in
+ * one forward pass so a long whitespace run can never make it backtrack.
+ */
 function isTableDivider(trimmed: string): boolean {
-  return /^\s*\|?\s*:?-{3,}:?\s*(?:\|\s*:?-{3,}:?\s*)*\|?\s*$/.test(trimmed);
+  let index = 0;
+  const skipSpace = (): void => {
+    while (isDividerSpace(trimmed[index])) index += 1;
+  };
+
+  skipSpace();
+  if (trimmed[index] === "|") index += 1;
+  for (;;) {
+    skipSpace();
+    if (trimmed[index] === ":") index += 1;
+    let dashes = 0;
+    while (trimmed[index] === "-") {
+      dashes += 1;
+      index += 1;
+    }
+    if (dashes < 3) return false;
+    if (trimmed[index] === ":") index += 1;
+    skipSpace();
+    if (index === trimmed.length) return true;
+    if (trimmed[index] !== "|") return false;
+    index += 1;
+    skipSpace();
+    if (index === trimmed.length) return true;
+  }
 }
 
 /** Splits one pipe-table row into cells; `\|` stays a literal pipe rather than a separator. */
@@ -410,30 +441,6 @@ function renderTable(
   return { html, consumed: cursor - index };
 }
 
-function indentOf(line: MarkdownLine): number {
-  const match = /^[ \t]*/.exec(line.text);
-  return match === null ? 0 : match[0].length;
-}
-
-/**
- * Matches an unordered (`-`, `*`, `+`) or ordered (`1.`, `1)`) list marker at
- * the start of `trimmed`, returning the unconsumed rest. A hand-rolled
- * prefix match plus `slice` rather than a single `(.*)$` capture group, so a
- * line holding a stray `\r` (which `.` never matches) cannot force the regex
- * engine to backtrack across the whole line looking for a split that works.
- */
-function parseItemMarker(
-  trimmed: string,
-): { readonly ordered: boolean; readonly rest: string } | undefined {
-  const bullet = /^[-*+][ \t]+/.exec(trimmed);
-  if (bullet !== null)
-    return { ordered: false, rest: trimmed.slice(bullet[0].length) };
-  const ordered = /^\d+[.)][ \t]+/.exec(trimmed);
-  if (ordered !== null)
-    return { ordered: true, rest: trimmed.slice(ordered[0].length) };
-  return undefined;
-}
-
 /** Same hand-rolled-prefix approach as `parseItemMarker`, for the same reason. */
 function parseCheckbox(
   text: string,
@@ -471,9 +478,9 @@ function listItemPrefixHtml(
 function parseList(
   lines: readonly MarkdownLine[],
   start: number,
-  headingByStart: ReadonlyMap<number, HeadingBlock>,
-  options: MarkdownHtmlOptions,
+  context: BlockContext,
 ): { html: string; consumed: number } {
+  const { headingByStart, options } = context;
   const baseIndent = indentOf(lines[start] as MarkdownLine);
   const ordered = (
     parseItemMarker((lines[start] as MarkdownLine).trimmed) as {
@@ -530,7 +537,7 @@ function parseList(
         cursor += 1;
         continue;
       }
-      const sub = parseList(nested, cursor, headingByStart, options);
+      const sub = parseList(nested, cursor, context);
       body += sub.html;
       lastPlain = undefined;
       cursor += Math.max(sub.consumed, 1);
@@ -550,40 +557,29 @@ function parseList(
   };
 }
 
-/** First index in the ascending-by-`start` `lines` whose `start` is `>= value`. */
-function lowerBoundByStart(
-  lines: readonly MarkdownLine[],
-  value: number,
-): number {
-  let low = 0;
-  let high = lines.length;
-  while (low < high) {
-    const mid = (low + high) >>> 1;
-    if ((lines[mid] as MarkdownLine).start < value) low = mid + 1;
-    else high = mid;
-  }
-  return low;
+interface BlockContext {
+  readonly headingByStart: ReadonlyMap<number, HeadingBlock>;
+  readonly options: MarkdownHtmlOptions;
+  readonly quoteDepth: number;
 }
 
-/**
- * Renders the Markdown lines whose `start` lies in `[start, end)` as HTML,
- * sharing block boundaries with `scanMarkdownLines` / `scanHeadingBlocks` (via
- * `document`) so index and projection locators agree (contract §18). Scan
- * `document` once per source with `scanMarkdownDocument` and reuse it across
- * every call for that source; this function itself never rescans.
- */
-export function renderMarkdownHtml(
-  document: MarkdownDocument,
-  start: number,
-  end: number,
-  options: MarkdownHtmlOptions = {},
-): string {
-  const { headingByStart } = document;
-  const lines = document.lines.slice(
-    lowerBoundByStart(document.lines, start),
-    lowerBoundByStart(document.lines, end),
+function startsTable(lines: readonly MarkdownLine[], index: number): boolean {
+  const line = lines[index] as MarkdownLine;
+  const next = lines[index + 1];
+  return (
+    next !== undefined &&
+    !next.fenced &&
+    line.trimmed.includes("|") &&
+    isTableDivider(next.trimmed)
   );
+}
 
+/** The block loop shared by a document range and a block quote's stripped content. */
+function renderBlocks(
+  lines: readonly MarkdownLine[],
+  context: BlockContext,
+): string {
+  const { headingByStart, options } = context;
   const blocks: string[] = [];
   let index = 0;
 
@@ -591,31 +587,26 @@ export function renderMarkdownHtml(
     const line = lines[index] as MarkdownLine;
 
     if (line.fenced) {
-      // A maximal run of fenced lines may hold more than one fence: split it
-      // on every fence-marker line so two adjacent fences render as two
-      // separate blocks instead of one, with the second fence's opener
-      // showing up as literal text (AC-005).
-      while (index < lines.length && (lines[index] as MarkdownLine).fenced) {
-        const group: MarkdownLine[] = [lines[index] as MarkdownLine];
+      // Fence boundaries come from the scanner's own opener/closer marks, so
+      // a shorter or different-character marker inside a fence stays body
+      // text (AC-004). A closer whose opener lies before this range carries
+      // no content of its own; a body line whose opener lies before the
+      // range still starts a block here.
+      if (line.fence?.role === "close") {
         index += 1;
-        while (
-          index < lines.length &&
-          (lines[index] as MarkdownLine).fenced &&
-          !isFenceMarkerLine((lines[index] as MarkdownLine).trimmed)
-        ) {
-          group.push(lines[index] as MarkdownLine);
-          index += 1;
-        }
-        if (
-          index < lines.length &&
-          (lines[index] as MarkdownLine).fenced &&
-          isFenceMarkerLine((lines[index] as MarkdownLine).trimmed)
-        ) {
-          group.push(lines[index] as MarkdownLine);
-          index += 1;
-        }
-        blocks.push(renderFence(group));
+        continue;
       }
+      const body: string[] = [];
+      let cursor = line.fence?.role === "open" ? index + 1 : index;
+      while (cursor < lines.length) {
+        const candidate = lines[cursor] as MarkdownLine;
+        if (!candidate.fenced || candidate.fence?.role === "open") break;
+        cursor += 1;
+        if (candidate.fence?.role === "close") break;
+        body.push(candidate.text);
+      }
+      blocks.push(renderFenceBody(body));
+      index = cursor;
       continue;
     }
 
@@ -637,13 +628,7 @@ export function renderMarkdownHtml(
       continue;
     }
 
-    const next = lines[index + 1];
-    if (
-      next !== undefined &&
-      !next.fenced &&
-      line.trimmed.includes("|") &&
-      isTableDivider(next.trimmed)
-    ) {
+    if (startsTable(lines, index)) {
       const table = renderTable(lines, index);
       blocks.push(table.html);
       index += table.consumed;
@@ -660,12 +645,12 @@ export function renderMarkdownHtml(
         group.push(lines[index] as MarkdownLine);
         index += 1;
       }
-      blocks.push(renderBlockQuote(group, headingByStart, options));
+      blocks.push(renderBlockQuote(group, context));
       continue;
     }
 
     if (parseItemMarker(line.trimmed) !== undefined) {
-      const list = parseList(lines, index, headingByStart, options);
+      const list = parseList(lines, index, context);
       blocks.push(list.html);
       index += list.consumed;
       continue;
@@ -680,14 +665,7 @@ export function renderMarkdownHtml(
       if (isThematicBreak(candidate.trimmed)) break;
       if (isBlockQuoteLine(candidate.trimmed)) break;
       if (parseItemMarker(candidate.trimmed) !== undefined) break;
-      const following = lines[index + 1];
-      if (
-        following !== undefined &&
-        !following.fenced &&
-        candidate.trimmed.includes("|") &&
-        isTableDivider(following.trimmed)
-      )
-        break;
+      if (startsTable(lines, index)) break;
       group.push(candidate);
       index += 1;
     }
@@ -695,4 +673,28 @@ export function renderMarkdownHtml(
   }
 
   return blocks.join("\n");
+}
+
+/**
+ * Renders the Markdown lines whose `start` lies in `[start, end)` as HTML,
+ * sharing block boundaries with the scanner (via `document`) so index and
+ * projection locators agree (contract §18). Scan `document` once per source
+ * with `scanMarkdownDocument` and reuse it across every call for that
+ * source; this function itself never rescans.
+ */
+export function renderMarkdownHtml(
+  document: MarkdownDocument,
+  start: number,
+  end: number,
+  options: MarkdownHtmlOptions = {},
+): string {
+  const lines = document.lines.slice(
+    lowerBoundByStart(document.lines, start),
+    lowerBoundByStart(document.lines, end),
+  );
+  return renderBlocks(lines, {
+    headingByStart: document.headingByStart,
+    options,
+    quoteDepth: 0,
+  });
 }

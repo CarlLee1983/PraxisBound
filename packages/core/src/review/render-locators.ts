@@ -21,30 +21,30 @@ import type {
 } from "./types.js";
 
 /**
- * Every Locator the index carries for one `(path, anchor)` pair. Kept as a
- * list rather than a single value: two headings can share the same
- * heading-path anchor (contract §5 rule 2, no explicit ID), and the caller
- * must be able to tell which one belongs to the heading it is rendering
- * (`headingBlockLocatorAttributes`) instead of always taking the first.
+ * Every Locator the index carries, keyed by its full identity `(path,
+ * anchor, blockSha256)`. A key the index carries more than once maps to
+ * `undefined`: two blocks can legitimately share an anchor (contract §5 rule
+ * 2 heading paths, or a duplicated `acceptance.md` AC id) and even the same
+ * bytes, and such an ambiguous match never gets a locator, so no two
+ * elements ever share an HTML `id` and no `data-block-sha256` is ever
+ * misattributed. One Map lookup per rendered block, never a scan.
  */
-export type LocatorLookup = ReadonlyMap<
-  string,
-  ReadonlyMap<string, readonly Locator[]>
->;
+export type LocatorLookup = ReadonlyMap<string, Locator | undefined>;
+
+function blockKey(path: string, anchor: string, blockSha256: string): string {
+  return `${path}\u0000${anchor}\u0000${blockSha256}`;
+}
 
 function addLocator(
-  target: Map<string, Map<string, Locator[]>>,
+  target: Map<string, Locator | undefined>,
   locator: Locator,
 ): void {
-  const forPath = target.get(locator.path) ?? new Map<string, Locator[]>();
-  if (!target.has(locator.path)) target.set(locator.path, forPath);
-  const forAnchor = forPath.get(locator.anchor) ?? [];
-  if (!forPath.has(locator.anchor)) forPath.set(locator.anchor, forAnchor);
-  forAnchor.push(locator);
+  const key = blockKey(locator.path, locator.anchor, locator.blockSha256);
+  target.set(key, target.has(key) ? undefined : locator);
 }
 
 function addSpecLocators(
-  target: Map<string, Map<string, Locator[]>>,
+  target: Map<string, Locator | undefined>,
   spec: SpecIndex,
 ): void {
   if (spec.goal !== undefined) addLocator(target, spec.goal);
@@ -61,7 +61,7 @@ function addSpecLocators(
 }
 
 function addStoryLocators(
-  target: Map<string, Map<string, Locator[]>>,
+  target: Map<string, Locator | undefined>,
   story: StoryIndex,
 ): void {
   for (const locator of story.locators.story) addLocator(target, locator);
@@ -69,15 +69,15 @@ function addStoryLocators(
 }
 
 function addAdrLocators(
-  target: Map<string, Map<string, Locator[]>>,
+  target: Map<string, Locator | undefined>,
   adr: AdrIndex,
 ): void {
   for (const locator of adr.locators) addLocator(target, locator);
 }
 
-/** Every Locator the index carries, indexed by `path` then `anchor`. */
+/** Every Locator the index carries, keyed by `(path, anchor, blockSha256)`. */
 export function buildLocatorLookup(index: ReviewIndex): LocatorLookup {
-  const target = new Map<string, Map<string, Locator[]>>();
+  const target = new Map<string, Locator | undefined>();
   for (const spec of index.specs) addSpecLocators(target, spec);
   for (const story of index.stories) addStoryLocators(target, story);
   for (const adr of index.adrs) addAdrLocators(target, adr);
@@ -85,24 +85,22 @@ export function buildLocatorLookup(index: ReviewIndex): LocatorLookup {
 }
 
 /**
- * The first Locator recognized for `(path, anchor)`. Safe for anchors the
- * index guarantees unique per path (explicit IDs, protected by
- * `REVIEW_ANCHOR_DUPLICATE`); a heading-path anchor that can legitimately
- * repeat must instead go through `headingBlockLocatorAttributes`, which
- * disambiguates by the heading's own block bytes.
+ * The index's Locator for exactly this block, when the index carries it
+ * exactly once; `undefined` when it is absent or ambiguous.
  */
-export function findLocator(
+function uniqueLocator(
   lookup: LocatorLookup,
   path: string,
   anchor: string,
+  blockSha256: string,
 ): Locator | undefined {
-  return lookup.get(path)?.get(anchor)?.[0];
+  return lookup.get(blockKey(path, anchor, blockSha256));
 }
 
 const encoder = new TextEncoder();
 
 /**
- * A deterministic, safe HTML `id` for one `(path, anchor)` locator. Derived
+ * A deterministic, safe HTML `id` for one `(path, anchor)` pair. Derived
  * rather than carried on the Locator itself, so an arbitrary source anchor
  * string never becomes an unescaped `id` (R-005 second half: "HTML `id`s are
  * generated safe tokens, not raw anchors").
@@ -112,35 +110,41 @@ export function elementId(path: string, anchor: string): string {
 }
 
 /**
- * The attribute set for one rendered heading or AC list item whose anchor is
- * `anchor`, when the index recognizes that block; `undefined` when it does
- * not (an unrecognized nested heading carries no locator to attach).
+ * The one `id` derivation for a located block: every element that carries a
+ * locator gets this id, and every in-page link to a locator targets it, so a
+ * link can never name an id that no element has.
  */
-export function locatorAttributes(
+function locatorElementId(locator: Locator): string {
+  return elementId(locator.path, `${locator.anchor} ${locator.blockSha256}`);
+}
+
+/**
+ * The attribute set for one rendered block — a heading block or an AC line —
+ * whose bytes are `bytes[start, end)`. Attaches a locator only when the
+ * index carries exactly one Locator with this `(path, anchor, blockSha256)`;
+ * an ambiguous or absent match renders the block with no locator rather
+ * than a wrong one.
+ */
+export function blockLocatorAttributes(
   lookup: LocatorLookup,
   path: string,
   anchor: string,
+  bytes: Uint8Array,
+  start: number,
+  end: number,
 ): Record<string, string> | undefined {
-  const locator = findLocator(lookup, path, anchor);
+  const blockSha256 = sha256Hex(bytes.subarray(start, end));
+  const locator = uniqueLocator(lookup, path, anchor, blockSha256);
   if (locator === undefined) return undefined;
   return {
-    id: elementId(path, anchor),
+    id: locatorElementId(locator),
     "data-path": locator.path,
     "data-anchor": locator.anchor,
     "data-block-sha256": locator.blockSha256,
   };
 }
 
-/**
- * The attribute set for one rendered heading block, disambiguated by its own
- * bytes when its anchor is shared by more than one heading in the same
- * document (contract §5 rule 2: two headings can carry the same heading-path
- * anchor). Attaches a locator only when exactly one of the index's Locators
- * for `(path, anchor)` has this heading's own `blockSha256`; an ambiguous or
- * absent match renders the heading with no locator rather than a wrong one,
- * so no two headings ever share an HTML `id` and no `data-block-sha256` is
- * ever misattributed.
- */
+/** `blockLocatorAttributes` for one heading's own block (contract §5). */
 export function headingBlockLocatorAttributes(
   lookup: LocatorLookup,
   path: string,
@@ -148,29 +152,30 @@ export function headingBlockLocatorAttributes(
   bytes: Uint8Array,
   heading: HeadingBlock,
 ): Record<string, string> | undefined {
-  const blockSha256 = sha256Hex(
-    bytes.subarray(heading.startOffset, heading.endOffset),
+  return blockLocatorAttributes(
+    lookup,
+    path,
+    anchor,
+    bytes,
+    heading.startOffset,
+    heading.endOffset,
   );
-  const candidates = lookup.get(path)?.get(anchor) ?? [];
-  const matches = candidates.filter(
-    (candidate) => candidate.blockSha256 === blockSha256,
-  );
-  if (matches.length !== 1) return undefined;
-  const locator = matches[0] as Locator;
-  return {
-    id: elementId(path, `${anchor} ${blockSha256}`),
-    "data-path": locator.path,
-    "data-anchor": locator.anchor,
-    "data-block-sha256": locator.blockSha256,
-  };
 }
 
-/** An in-page `href` to the element `locatorAttributes` would render for `anchor`, when recognized. */
+/**
+ * An in-page `href` to the element `blockLocatorAttributes` renders for
+ * `locator`, when that element gets a locator at all (the same uniqueness
+ * rule), so the link always resolves to exactly one `id`.
+ */
 export function locatorHref(
   lookup: LocatorLookup,
-  path: string,
-  anchor: string,
+  locator: Locator,
 ): string | undefined {
-  if (findLocator(lookup, path, anchor) === undefined) return undefined;
-  return `#${elementId(path, anchor)}`;
+  const unique = uniqueLocator(
+    lookup,
+    locator.path,
+    locator.anchor,
+    locator.blockSha256,
+  );
+  return unique === undefined ? undefined : `#${locatorElementId(unique)}`;
 }

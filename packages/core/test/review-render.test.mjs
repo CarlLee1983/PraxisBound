@@ -29,6 +29,23 @@ Batch exclusion sentence NONGOALS_SENTENCE_SPEC.
 
 Unrecognized-section sentence UNRECOGNIZED_SENTENCE_SPEC.
 
+> - Quoted list sentence QUOTE_LIST_SENTENCE.
+> Quoted text after the list QUOTE_AFTER_LIST_SENTENCE.
+>
+> - Second quoted list sentence QUOTE_SECOND_LIST_SENTENCE.
+
+\`\`\`\`md
+\`\`\`
+Nested fence sentence NESTED_FENCE_SENTENCE.
+\`\`\`
+\`\`\`\`
+
+\`\`\`
+~~~
+Mixed-marker fence sentence MIXED_FENCE_SENTENCE.
+~~~
+\`\`\`
+
 ## R-001：Fixture Requirement One
 
 ### Goal
@@ -60,6 +77,10 @@ Entry two goal sentence GOAL_SENTENCE_R002.
 
 - AC-001：Entry two acceptance sentence AC_SENTENCE_R002_1.
 
+### Notes
+
+- AC-002：Entry two notes-block acceptance sentence AC_NOTES_SENTENCE_R002_2.
+
 ## R-003：Fixture Requirement Three Unmapped
 
 ### Goal
@@ -76,10 +97,25 @@ Entry four intro sentence INTRO_SENTENCE_R004.
 
 - AC-001：Entry four acceptance sentence AC_SENTENCE_R004_1.
 - AC-002：Entry four acceptance sentence AC_SENTENCE_R004_2.
+- AC-003：Entry four multi-line acceptance sentence AC_SENTENCE_R004_3.
+  - Entry four sub-bullet sentence AC_SUB_SENTENCE_R004_3.
+  Entry four continuation sentence AC_CONT_SENTENCE_R004_3.
+
+### Goal
+
+Entry four goal sentence GOAL_SENTENCE_R004.
+
+- AC-004：Entry four goal-block acceptance sentence AC_IN_GOAL_R004_4.
 
 ### Dependencies
 
 Entry four dependency sentence DEPENDENCIES_SENTENCE_R004.
+
+## R-005：Fixture Requirement Five Acceptance Prose Only
+
+### Acceptance
+
+Acceptance prose with no AC line ACCEPTANCE_PROSE_R005.
 `;
 
 const SHARED_STORY_MD = `# Story: RF-SHARED Fixture Shared Story
@@ -142,9 +178,15 @@ Orphan story goal sentence GOAL_SENTENCE_ORPHAN.
 
 const ORPHAN_ACCEPTANCE_MD = `Leading text before any heading, sentinel LEADING_TEXT_SENTENCE_ORPHAN.
 
+### Deep Heading Before The Title
+
+Deep leading sentence DEEP_LEADING_SENTENCE_ORPHAN.
+
 # Acceptance Criteria
 
 * [ ] AC-001: Orphan story acceptance sentence ACCEPTANCE_SENTENCE_ORPHAN_1.
+* [ ] AC-002: Orphan duplicate-id sentence ACCEPTANCE_SENTENCE_ORPHAN_DUP_A.
+* [ ] AC-002: Orphan duplicate-id sentence ACCEPTANCE_SENTENCE_ORPHAN_DUP_B.
 `;
 
 const NOID_STORY_MD = `# Story: No ID Fixture Story
@@ -487,6 +529,21 @@ test("TST022-AC-004: every source block renders exactly once outside the raw app
     "GOAL_SENTENCE_NOID",
     "ACCEPTANCE_SENTENCE_NOID_1",
     "ADR_BODY_SENTENCE",
+    "QUOTE_LIST_SENTENCE",
+    "QUOTE_AFTER_LIST_SENTENCE",
+    "QUOTE_SECOND_LIST_SENTENCE",
+    "NESTED_FENCE_SENTENCE",
+    "MIXED_FENCE_SENTENCE",
+    "AC_NOTES_SENTENCE_R002_2",
+    "AC_SENTENCE_R004_3",
+    "AC_SUB_SENTENCE_R004_3",
+    "AC_CONT_SENTENCE_R004_3",
+    "GOAL_SENTENCE_R004",
+    "AC_IN_GOAL_R004_4",
+    "ACCEPTANCE_SENTENCE_ORPHAN_DUP_A",
+    "ACCEPTANCE_SENTENCE_ORPHAN_DUP_B",
+    "DEEP_LEADING_SENTENCE_ORPHAN",
+    "ACCEPTANCE_PROSE_R005",
   ];
   for (const sentinel of onceOutsideRaw) {
     const count = withoutRaw.split(sentinel).length - 1;
@@ -509,8 +566,13 @@ test("TST022-AC-004: every source block renders exactly once outside the raw app
       // contiguous run; that transformation is covered by the dedicated
       // AC-010 security test instead of this literal substring check.
       if (/\[[^\]]*]\([^)]*\)/.test(rawLine)) continue;
+      // A fence's own opener/closer is markup, like a `#` or `- ` marker;
+      // the lines between them are content and stay checked (a marker-like
+      // line inside a fence is asserted verbatim in its own test below).
+      if (/^(?:`{3,}|~{3,})[\w-]*$/.test(rawLine.trim())) continue;
       const stripped = rawLine
         .replace(/^#{1,6}\s+/, "")
+        .replace(/^(?:>\s?)+/, "")
         .replace(/^\s*[-*]\s+(?:\[[ xX]\]\s+)?/, "")
         .replace(/^\*\s+Status:\s*/, "")
         .trim();
@@ -647,7 +709,10 @@ test("TST022-AC-004: an AC label always names its own <li>'s data-anchor, even w
   for (const match of html.matchAll(acListItem)) {
     const label = match[1];
     const anchor = withAnchor.exec(match[0])?.[1];
-    if (anchor === undefined) continue;
+    assert.ok(
+      anchor !== undefined,
+      `label ${label} must sit on an element that carries its own locator`,
+    );
     sawAny = true;
     const decodedAnchor = anchor.replaceAll("&gt;", ">");
     // The label is the qualified form of its own `<li>`'s anchor: identical
@@ -747,4 +812,159 @@ test("TST022 review finding 4: two headings sharing the same heading-path anchor
   assert.notEqual(shaOf(firstAttrs), shaOf(secondAttrs));
   assert.match(html, /NOTES_SENTENCE_SHARED_FIRST/);
   assert.match(html, /NOTES_SENTENCE_SHARED_SECOND/);
+});
+
+function outsideRawMarkdown(page) {
+  return page.replace(/<details class="raw no-print">[\s\S]*?<\/details>/, "");
+}
+
+function cardFor(page, entryId) {
+  const cards = page.slice(
+    page.indexOf('<section class="cards">'),
+    page.indexOf('<section class="orphan-stories">'),
+  );
+  const start = cards.indexOf(`<summary>${entryId}：`);
+  assert.ok(start !== -1, `card for ${entryId} rendered`);
+  return cards.slice(start, cards.indexOf("</details>", start));
+}
+
+test("TST022-AC-005: a nested fence and a mixed-marker fence keep every inner line verbatim", () => {
+  assert.match(
+    html,
+    /<pre><code>```\nNested fence sentence NESTED_FENCE_SENTENCE\.\n```<\/code><\/pre>/,
+  );
+  assert.match(
+    html,
+    /<pre><code>~~~\nMixed-marker fence sentence MIXED_FENCE_SENTENCE\.\n~~~<\/code><\/pre>/,
+  );
+});
+
+test("TST022-AC-004/005: a block quote that begins with a list keeps its later text and second list", () => {
+  const quote = /<blockquote>[\s\S]*?<\/blockquote>/.exec(
+    outsideRawMarkdown(html).slice(html.indexOf("QUOTE_LIST_SENTENCE") - 200),
+  );
+  assert.ok(quote, "block quote rendered");
+  assert.match(
+    quote[0],
+    /<li>Quoted list sentence QUOTE_LIST_SENTENCE\.<\/li>/,
+  );
+  assert.match(
+    quote[0],
+    /<p>Quoted text after the list QUOTE_AFTER_LIST_SENTENCE\.<\/p>/,
+  );
+  assert.match(
+    quote[0],
+    /<li>Second quoted list sentence QUOTE_SECOND_LIST_SENTENCE\.<\/li>/,
+  );
+});
+
+test("TST022-AC-005: every id is unique page-wide and every in-page href resolves to exactly one id", () => {
+  const ids = [...html.matchAll(/\sid="([^"]+)"/g)].map((match) => match[1]);
+  const counts = new Map();
+  for (const id of ids) counts.set(id, (counts.get(id) ?? 0) + 1);
+  for (const [id, count] of counts)
+    assert.equal(count, 1, `id ${id} must be unique, saw ${count}`);
+
+  const hrefs = [...html.matchAll(/href="#([^"]*)"/g)].map((match) => match[1]);
+  assert.ok(hrefs.length > 0);
+  for (const href of hrefs)
+    assert.equal(counts.get(href), 1, `href #${href} must resolve to one id`);
+
+  const decisions = html.slice(
+    html.indexOf("決策約束"),
+    html.indexOf("診斷摘要"),
+  );
+  assert.match(
+    decisions,
+    /<a href="#loc-[0-9a-f]+">ADR-014: Fixture Decision Title<\/a>/,
+  );
+});
+
+test("TST022-AC-004: an AC with sub-bullets and continuation lines, in an entry with no Acceptance heading, renders whole in 需求驗收 only", () => {
+  const card = cardFor(html, "R-004");
+  const requirementAcceptance = card.slice(
+    card.indexOf('class="req-ac"'),
+    card.indexOf('class="exec-ac"'),
+  );
+  const detail = card.slice(card.indexOf('class="detail"'));
+  for (const sentinel of [
+    "AC_SENTENCE_R004_3",
+    "AC_SUB_SENTENCE_R004_3",
+    "AC_CONT_SENTENCE_R004_3",
+  ]) {
+    assert.match(requirementAcceptance, new RegExp(sentinel));
+    assert.doesNotMatch(detail, new RegExp(sentinel));
+  }
+  assert.match(
+    requirementAcceptance,
+    /<li[^>]*data-anchor="R-004\/AC-003"[^>]*><span class="ac-id">R-004\/AC-003<\/span> AC-003：Entry four multi-line/,
+  );
+});
+
+test("TST022-AC-004: an AC under an entry's Goal renders once, labelled, in its Goal block", () => {
+  const withoutRaw = outsideRawMarkdown(html);
+  assert.equal(withoutRaw.split("AC_IN_GOAL_R004_4").length - 1, 1);
+  const matrix = html.slice(
+    html.indexOf("需求總覽矩陣"),
+    html.indexOf("批次目標"),
+  );
+  assert.match(
+    matrix,
+    /<li[^>]*data-anchor="R-004\/AC-004"[^>]*><span class="ac-id">R-004\/AC-004<\/span> AC-004：Entry four goal-block/,
+  );
+  const card = cardFor(html, "R-004");
+  assert.doesNotMatch(card, /AC_IN_GOAL_R004_4/);
+});
+
+test("TST022-AC-004: an AC outside the Acceptance block is labelled and located where it renders", () => {
+  const card = cardFor(html, "R-002");
+  const detail = card.slice(card.indexOf('class="detail"'));
+  assert.match(
+    detail,
+    /<li[^>]*data-anchor="R-002\/AC-002"[^>]*><span class="ac-id">R-002\/AC-002<\/span> AC-002：Entry two notes-block/,
+  );
+});
+
+test("TST022-AC-002/004: each matrix row's requirement AC count equals its labelled AC items", () => {
+  const withoutRaw = outsideRawMarkdown(html);
+  const tbody = html.slice(
+    html.indexOf("<tbody>", html.indexOf("需求總覽矩陣")),
+    html.indexOf("</tbody>", html.indexOf("需求總覽矩陣")),
+  );
+  let checked = 0;
+  for (const row of tbody.split("<tr>").slice(1)) {
+    const entryId = /<th scope="row"><a [^>]*>(R-\d+)/.exec(row)?.[1];
+    if (entryId === undefined) continue;
+    const count = Number(/<td class="num">(\d+)<\/td>/.exec(row)?.[1]);
+    const labelled =
+      withoutRaw.split(`<span class="ac-id">${entryId}/AC-`).length - 1;
+    assert.equal(labelled, count, `${entryId}: matrix count vs labelled items`);
+    checked += 1;
+  }
+  assert.ok(checked >= 4);
+});
+
+test("TST022-AC-005: duplicate AC ids in acceptance.md each keep their own locator, id, and block hash", () => {
+  const path = `${ORPHAN_DIR}/acceptance.md`.replaceAll("/", "\\/");
+  const items = [
+    ...html.matchAll(
+      new RegExp(
+        `<li([^>]*data-path="${path}" data-anchor="AC-002"[^>]*)>`,
+        "g",
+      ),
+    ),
+  ].map((match) => match[1]);
+  assert.equal(items.length, 2);
+  const idOf = (attrs) => /\sid="([^"]+)"/.exec(attrs)?.[1];
+  const shaOf = (attrs) => /data-block-sha256="([^"]+)"/.exec(attrs)?.[1];
+  assert.notEqual(idOf(items[0]), idOf(items[1]));
+  assert.notEqual(shaOf(items[0]), shaOf(items[1]));
+  const shas = index.stories
+    .flatMap((story) => story.locators.acceptance)
+    .filter(
+      (locator) =>
+        locator.anchor === "AC-002" && locator.path.startsWith(ORPHAN_DIR),
+    )
+    .map((locator) => locator.blockSha256);
+  assert.deepEqual(new Set([shaOf(items[0]), shaOf(items[1])]), new Set(shas));
 });

@@ -336,10 +336,25 @@ function buildSuccessEnvelope(index: ReviewIndex): ResultEnvelope {
   });
 }
 
-function sanitizeInternalError(error: unknown): string {
+/**
+ * One safe stderr line for an unexpected failure: the repository root (as
+ * given and resolved) becomes `<root>` so no absolute path leaks, only the
+ * first line is kept, and every remaining control character is escaped so a
+ * message can never inject terminal escape sequences.
+ */
+function sanitizeInternalError(error: unknown, root: string): string {
   const message = error instanceof Error ? error.message : String(error);
-  const oneLine = message.split("\n")[0] ?? "unexpected internal failure";
-  return oneLine.length > 200 ? `${oneLine.slice(0, 200)}...` : oneLine;
+  const roots = [...new Set([root, resolve(root)])]
+    .filter((candidate) => candidate.length > 1)
+    .sort((a, b) => b.length - a.length);
+  const relative = roots.reduce(
+    (text, candidate) => text.split(candidate).join("<root>"),
+    message,
+  );
+  const oneLine = relative.split("\n")[0] ?? "unexpected internal failure";
+  const bounded =
+    oneLine.length > 200 ? `${oneLine.slice(0, 200)}...` : oneLine;
+  return escapeHumanControlCharacters(bounded);
 }
 
 /** Runs `praxisbound review index <manifest>`. */
@@ -355,7 +370,7 @@ export async function runReviewIndex(
     // always reaches stderr, even in JSON mode, where stdout is reserved for
     // the one envelope. The envelope's own issue message stays generic.
     process.stderr.write(
-      `praxisbound review index: internal error: ${sanitizeInternalError(error)}\n`,
+      `praxisbound review index: internal error: ${sanitizeInternalError(error, root)}\n`,
     );
     return {
       mode,
@@ -918,7 +933,7 @@ export async function runReviewRender(
     // always reaches stderr, even in JSON mode; the envelope's own issue
     // message stays generic and never exposes an absolute path.
     process.stderr.write(
-      `praxisbound review render: internal error: ${sanitizeInternalError(error)}\n`,
+      `praxisbound review render: internal error: ${sanitizeInternalError(error, root)}\n`,
     );
     return {
       mode: parsed.mode,

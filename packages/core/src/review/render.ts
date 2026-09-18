@@ -23,21 +23,24 @@ import {
   MISSING_SECTION_TEXT,
   NO_STORY_TEXT,
   partitionAcceptanceDocument,
-  partitionSpecDocument,
   partitionStoryDocument,
   renderAdrAppendix,
   requirementLabelHtml,
   storyTitleWithoutId,
   type AcceptanceContent,
   type AppendixSection,
-  type SpecDocumentContent,
   type StoryContent,
 } from "./render-source.js";
+import {
+  partitionSpecDocument,
+  type SpecDocumentContent,
+} from "./render-spec.js";
 import type {
   ReviewDiagnostic,
   ReviewIndex,
   SpecEntryIndex,
   SpecIndex,
+  StoryIndex,
   TraceEntry,
 } from "./types.js";
 
@@ -86,6 +89,10 @@ interface MatrixEntry {
  */
 function buildMatrixOrder(index: ReviewIndex): readonly MatrixEntry[] {
   const specsByPath = new Map(index.specs.map((spec) => [spec.path, spec]));
+  const entriesByKey = new Map<string, SpecEntryIndex>();
+  for (const spec of index.specs)
+    for (const entry of spec.entries)
+      entriesByKey.set(`${spec.path}#${entry.id}`, entry);
   const seen = new Set<string>();
   const order: MatrixEntry[] = [];
 
@@ -94,9 +101,7 @@ function buildMatrixOrder(index: ReviewIndex): readonly MatrixEntry[] {
     if (seen.has(key)) continue;
     seen.add(key);
     const spec = specsByPath.get(requirement.spec);
-    const entry = spec?.entries.find(
-      (candidate) => candidate.id === requirement.anchor,
-    );
+    const entry = entriesByKey.get(key);
     order.push({
       spec,
       entry,
@@ -127,7 +132,7 @@ function missingSourceArticle(path: string): string {
 }
 
 interface MatrixRenderContext {
-  readonly index: ReviewIndex;
+  readonly storiesById: ReadonlyMap<string, StoryIndex>;
   readonly specContent: ReadonlyMap<string, SpecDocumentContent | undefined>;
   readonly storyDocuments: ReadonlyMap<string, StoryDocuments>;
 }
@@ -158,7 +163,7 @@ function renderMatrixRow(
   homeOf: ReadonlyMap<string, string>,
   trace: TraceEntry | undefined,
 ): string {
-  const { index, specContent, storyDocuments } = ctx;
+  const { storiesById, specContent, storyDocuments } = ctx;
   const { entry, specPath, anchor } = matrixEntry;
   const content = specContent.get(specPath);
   const entryContent = content?.entries.get(anchor);
@@ -170,9 +175,7 @@ function renderMatrixRow(
       ? `<span class="muted">${NO_STORY_TEXT}</span>`
       : storyIds
           .map((storyId) => {
-            const story = index.stories.find(
-              (candidate) => candidate.id === storyId,
-            );
+            const story = storiesById.get(storyId);
             const title =
               story === undefined
                 ? undefined
@@ -209,7 +212,7 @@ function renderRequirementCard(
   targetId: string,
   homeOf: ReadonlyMap<string, string>,
 ): string {
-  const { index, specContent, storyDocuments } = ctx;
+  const { storiesById, specContent, storyDocuments } = ctx;
   const { entry, specPath, anchor } = matrixEntry;
   const content = specContent.get(specPath);
   const entryContent = content?.entries.get(anchor);
@@ -221,9 +224,7 @@ function renderRequirementCard(
       ? `<p class="muted">${NO_STORY_TEXT}</p>`
       : storyIds
           .map((storyId) => {
-            const story = index.stories.find(
-              (candidate) => candidate.id === storyId,
-            );
+            const story = storiesById.get(storyId);
             if (story === undefined) return "";
             const home = homeOf.get(storyId);
             if (home !== targetId)
@@ -238,9 +239,7 @@ function renderRequirementCard(
       ? `<p class="muted">${NO_STORY_TEXT}</p>`
       : storyIds
           .map((storyId) => {
-            const story = index.stories.find(
-              (candidate) => candidate.id === storyId,
-            );
+            const story = storiesById.get(storyId);
             if (story === undefined) return "";
             const home = homeOf.get(storyId);
             if (home !== targetId)
@@ -296,7 +295,11 @@ function renderMatrixAndCards(
   readonly cards: string;
   readonly orphanStories: string;
 } {
-  const ctx: MatrixRenderContext = { index, specContent, storyDocuments };
+  const storiesById = new Map<string, StoryIndex>();
+  for (const story of index.stories)
+    if (story.id !== undefined && !storiesById.has(story.id))
+      storiesById.set(story.id, story);
+  const ctx: MatrixRenderContext = { storiesById, specContent, storyDocuments };
   const traceByKey = new Map(
     index.trace.map((trace) => [`${trace.spec}#${trace.anchor}`, trace]),
   );
@@ -445,7 +448,9 @@ export function renderReviewProjection(
     }
     const content = partitionSpecDocument(spec, bytes, lookup);
     specContent.set(spec.path, content);
-    specAppendix.push(...content.appendixSections);
+    // A loop, not `push(...sections)`: a document with hundreds of thousands
+    // of sections would overflow the call stack as spread arguments.
+    for (const section of content.appendixSections) specAppendix.push(section);
   }
 
   const storyDocuments = new Map<string, StoryDocuments>();
@@ -469,9 +474,11 @@ export function renderReviewProjection(
             lookup,
           );
     if (storyContent !== undefined)
-      storyAppendix.push(...storyContent.appendixSections);
+      for (const section of storyContent.appendixSections)
+        storyAppendix.push(section);
     if (acceptanceContent !== undefined)
-      storyAppendix.push(...acceptanceContent.appendixSections);
+      for (const section of acceptanceContent.appendixSections)
+        storyAppendix.push(section);
     storyDocuments.set(story.path, {
       title: storyBytes === undefined ? undefined : firstH1Text(storyBytes),
       story: storyContent,
@@ -509,11 +516,14 @@ export function renderReviewProjection(
       const document = documentsByPath.get(adr.path);
       const summary =
         document?.bytes === undefined ? undefined : adrSummary(document.bytes);
-      const titleAnchor = adr.locators[0]?.anchor;
+      // The title's own locator, through the same id derivation and
+      // uniqueness rule the appendix heading uses, so the link always lands
+      // on exactly one rendered element.
+      const titleLocator = adr.locators[0];
       const href =
-        titleAnchor === undefined
+        titleLocator === undefined || document?.bytes === undefined
           ? undefined
-          : locatorHref(lookup, adr.path, titleAnchor);
+          : locatorHref(lookup, titleLocator);
       const label =
         summary === undefined
           ? escapeHtml(adr.path)
