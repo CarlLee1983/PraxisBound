@@ -1,7 +1,8 @@
 {
-  "schemaVersion": "1.0.0",
+  "schemaVersion": "1.1.0",
   "batchId": "BR-001-checkout-refunds",
   "title": "退款流程第一批交付",
+  "preface": "本批先交付退款申請（RF-001），再交付主管核准（RF-002）。請特別確認 R-002 的核准門檻與 RF-002 的執行驗收是否一致。",
   "sources": {
     "adrs": [
       "specs/decisions/ADR-021-refund-ledger.md"
