@@ -516,8 +516,9 @@ h3 { margin-top: 1.4rem; }
 .digest { overflow-wrap: anywhere; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
 .doc-group { margin: 1rem 0; }
 pre, code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+code { overflow-wrap: anywhere; }
 pre { max-width: 100%; overflow: auto; padding: 1rem; background: #ece6da; white-space: pre-wrap; overflow-wrap: anywhere; }
-.table-scroll { max-width: 100%; overflow-x: auto; }
+.table-scroll { position: relative; max-width: 100%; overflow-x: auto; }
 table { width: 100%; border-collapse: collapse; font-size: .92rem; }
 th, td { padding: .6rem; border-bottom: 1px solid #d8d0c3; text-align: left; vertical-align: top; }
 td.num, th.num { text-align: center; }

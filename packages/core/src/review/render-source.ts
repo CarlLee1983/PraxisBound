@@ -114,6 +114,20 @@ function specHeadingAnchor(
   return heading.headingPath;
 }
 
+/**
+ * Heading attributes for one rendered block: the block's own heading gets
+ * `own`; any heading nested inside it keeps the locator the index assigned to
+ * that nested heading, and stays visible (R11, AC-005).
+ */
+function blockHeadingAttributes(
+  block: HeadingBlock,
+  own: () => Record<string, string> | undefined,
+  nested: (heading: HeadingBlock) => Record<string, string> | undefined,
+): (heading: HeadingBlock) => Record<string, string> | undefined {
+  return (heading) =>
+    heading.startOffset === block.startOffset ? own() : nested(heading);
+}
+
 /** Inserts one label span, in order, at the start of each sequential `<li>` in `html`. */
 function injectLabels(html: string, labels: readonly string[]): string {
   let index = 0;
@@ -160,6 +174,7 @@ function renderVocabBlock(
   path: string,
   anchor: string,
   lookup: LocatorLookup,
+  entryId: string | undefined,
   hideHeading = false,
 ): string | undefined {
   if (heading === undefined) return undefined;
@@ -169,10 +184,15 @@ function renderVocabBlock(
     boundedEnd(headings, heading),
     {
       headingLevelOffset: 4,
-      headingAttributes: () =>
-        hideHeading
-          ? hiddenLocatorAttributes(lookup, path, anchor)
-          : locatorAttributes(lookup, path, anchor),
+      headingAttributes: blockHeadingAttributes(
+        heading,
+        () =>
+          hideHeading
+            ? hiddenLocatorAttributes(lookup, path, anchor)
+            : locatorAttributes(lookup, path, anchor),
+        (nested) =>
+          locatorAttributes(lookup, path, specHeadingAnchor(nested, entryId)),
+      ),
     },
   );
 }
@@ -206,8 +226,17 @@ function renderEntryAcceptance(
     boundedEnd(headings, acceptanceHeading),
     {
       headingLevelOffset: 4,
-      headingAttributes: () =>
-        hiddenLocatorAttributes(lookup, specPath, `${entryId}/Acceptance`),
+      headingAttributes: blockHeadingAttributes(
+        acceptanceHeading,
+        () =>
+          hiddenLocatorAttributes(lookup, specPath, `${entryId}/Acceptance`),
+        (nested) =>
+          locatorAttributes(
+            lookup,
+            specPath,
+            specHeadingAnchor(nested, entryId),
+          ),
+      ),
       listItemAttributes: (line) => {
         const match = specAcceptanceLinePattern.exec(line.trimmed);
         if (match === null) return undefined;
@@ -341,6 +370,7 @@ export function partitionSpecDocument(
           spec.path,
           `${entry.id}/Goal`,
           lookup,
+          entry.id,
           true,
         ) ?? `<p class="muted">${MISSING_SECTION_TEXT}</p>`,
       nonGoalsCellHtml:
@@ -351,6 +381,7 @@ export function partitionSpecDocument(
           spec.path,
           `${entry.id}/Non-goals`,
           lookup,
+          entry.id,
           true,
         ) ?? `<p class="muted">${MISSING_SECTION_TEXT}</p>`,
       acceptanceHtml: renderEntryAcceptance(
@@ -415,6 +446,7 @@ export function partitionSpecDocument(
       spec.path,
       "Goal",
       lookup,
+      undefined,
     ),
     nonGoalsHtml: renderVocabBlock(
       bytes,
@@ -423,6 +455,7 @@ export function partitionSpecDocument(
       spec.path,
       "Non-goals",
       lookup,
+      undefined,
     ),
     entries,
     appendixSections,
@@ -479,8 +512,11 @@ export function partitionStoryDocument(
       boundedEnd(headings, heading),
       {
         headingLevelOffset: 4,
-        headingAttributes: () =>
-          hiddenLocatorAttributes(lookup, storyPath, field),
+        headingAttributes: blockHeadingAttributes(
+          heading,
+          () => hiddenLocatorAttributes(lookup, storyPath, field),
+          (nested) => locatorAttributes(lookup, storyPath, nested.headingPath),
+        ),
       },
     );
     return `<section class="focus-field"><h4>${escapeHtml(
@@ -551,8 +587,8 @@ export function partitionAcceptanceDocument(
     const labels = withinLines.map((line) => `${storyId}/${line.id}`);
     const body = renderMarkdownHtml(bytes, heading.startOffset, end, {
       headingLevelOffset: 2,
-      headingAttributes: () =>
-        locatorAttributes(lookup, acceptancePath, heading.headingPath),
+      headingAttributes: (candidate) =>
+        locatorAttributes(lookup, acceptancePath, candidate.headingPath),
       listItemAttributes: (line) => {
         const stripped =
           line.trimmed.startsWith("* ") || line.trimmed.startsWith("- ")

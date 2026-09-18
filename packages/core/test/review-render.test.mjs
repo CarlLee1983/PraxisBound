@@ -77,6 +77,10 @@ Shared story goal sentence GOAL_SENTENCE_SHARED.
 
 Shared story scope sentence SCOPE_SENTENCE_SHARED.
 
+### In Scope
+
+Nested scope sentence NESTED_IN_SCOPE_SENTENCE.
+
 ## Rules
 
 Shared story rules sentence RULES_SENTENCE_SHARED.
@@ -100,6 +104,10 @@ const SHARED_ACCEPTANCE_MD = `# Acceptance Criteria
 
 * [ ] AC-001: Shared story acceptance sentence ACCEPTANCE_SENTENCE_SHARED_1.
 * [ ] AC-002: Shared story acceptance sentence ACCEPTANCE_SENTENCE_SHARED_2.
+
+### Edge Cases
+
+* [ ] AC-003: Nested acceptance sentence ACCEPTANCE_SENTENCE_SHARED_3.
 
 ## Notes
 
@@ -508,4 +516,36 @@ test("TST022-AC-010/Security Fixture Matrix: untrusted markup and unsafe links a
   assert.match(html, /overflow-wrap: anywhere/);
   assert.match(html, /@media print/);
   assert.match(html, /details::details-content/);
+});
+
+test("TST022-AC-008: long unbroken tokens in inline code wrap instead of widening a narrow page", () => {
+  // A 64-character hash inside inline code has no break opportunity; without
+  // this rule a 390 px viewport scrolls horizontally.
+  assert.match(html, /(?:^|[\s,}])code \{[^}]*overflow-wrap: anywhere;/m);
+});
+
+test("TST022-AC-008: visually hidden headings stay inside the scrolling table container", () => {
+  // An absolutely positioned visually-hidden element with no positioned
+  // ancestor escapes the table's overflow clip and widens a narrow page.
+  assert.match(html, /\.table-scroll \{[^}]*position: relative;/);
+});
+
+test("TST022-AC-004/005: a heading nested in a promoted block keeps its own locator and stays visible", () => {
+  const nested = [
+    ["In Scope", "Story: RF-SHARED Fixture Shared Story > Scope > In Scope"],
+    ["Edge Cases", "Acceptance Criteria > Happy Path > Edge Cases"],
+  ];
+  for (const [text, anchor] of nested) {
+    const element = new RegExp(`<h[1-6][^>]*>${text}</h[1-6]>`).exec(html);
+    assert.ok(element, `${text} heading rendered`);
+    assert.doesNotMatch(element[0], /visually-hidden/, `${text} is visible`);
+    assert.ok(
+      element[0].includes(`data-anchor="${anchor.replaceAll(">", "&gt;")}"`),
+      `${text} carries its own locator`,
+    );
+  }
+  const anchors = [
+    ...html.matchAll(/data-path="([^"]+)" data-anchor="([^"]+)"/g),
+  ].map((match) => `${match[1]}#${match[2]}`);
+  assert.equal(new Set(anchors).size, anchors.length, "no locator repeats");
 });
