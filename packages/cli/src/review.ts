@@ -614,7 +614,7 @@ async function publishProjection(
   html: string,
   protectedPaths: readonly string[],
   filesystem: ReviewRenderFilesystem,
-): Promise<"success" | "conflict" | "failure"> {
+): Promise<"success" | "conflict" | "missing-directory" | "failure"> {
   const outputDirectory = dirname(output.absolute);
   const stage = resolve(
     outputDirectory,
@@ -622,6 +622,7 @@ async function publishProjection(
   );
   let handle: Awaited<ReturnType<typeof open>> | undefined;
   let renamed = false;
+  let staged = false;
   try {
     handle = await open(
       stage,
@@ -631,6 +632,7 @@ async function publishProjection(
         constants.O_NOFOLLOW,
       0o600,
     );
+    staged = true;
     await handle.writeFile(html, "utf8");
     await handle.close();
     handle = undefined;
@@ -643,7 +645,11 @@ async function publishProjection(
     await filesystem.rename(stage, output.absolute);
     renamed = true;
     return "success";
-  } catch {
+  } catch (error) {
+    // Only the staging open can report the parent directory as absent.
+    const code = (error as NodeJS.ErrnoException).code;
+    if (!staged && (code === "ENOENT" || code === "ENOTDIR"))
+      return "missing-directory";
     return "failure";
   } finally {
     if (handle !== undefined) await handle.close().catch(() => undefined);
@@ -766,6 +772,18 @@ export async function runReviewRender(
         ]),
       };
     }
+    if (publication === "missing-directory") {
+      return {
+        mode: parsed.mode,
+        result: envelope("fail", "failure", 1, [
+          issue(
+            "REVIEW_OUTPUT_WRITE_FAILED",
+            "output directory does not exist",
+            dirname(output.relativePath).split("\\").join("/"),
+          ),
+        ]),
+      };
+    }
     if (publication === "failure") {
       return {
         mode: parsed.mode,
@@ -871,6 +889,14 @@ export function renderReviewIndexHuman(
   return { stdout: `${lines.join("\n")}\n`, stderr: "" };
 }
 
+function formatRenderFailure(reported: ResultIssue): string {
+  const location =
+    reported.path === undefined
+      ? ""
+      : ` (${escapeHumanControlCharacters(reported.path)})`;
+  return `FAIL ${reported.code}: ${escapeHumanControlCharacters(reported.message)}${location}`;
+}
+
 /** Renders the human output for `review render`. */
 export function renderReviewRenderHuman(
   execution: ReviewIndexExecution,
@@ -888,7 +914,7 @@ export function renderReviewRenderHuman(
   if (result.outcome !== "success") {
     return {
       stdout: `PraxisBound Batch Review Renderer\n\nResult: ${result.outcome}\n`,
-      stderr: `${result.issues.map((reported) => `FAIL ${reported.code}`).join("\n")}\n`,
+      stderr: `${result.issues.map(formatRenderFailure).join("\n")}\n`,
     };
   }
   const data = result.data as

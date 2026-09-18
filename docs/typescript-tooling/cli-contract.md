@@ -187,7 +187,8 @@ publication failure is `failure`/`1`; invalid argv and unsafe input/output are
 The output must remain within the repository and cannot target the manifest,
 any declared source, the batch `records/` directory, or any symlink. It stages
 and renames the HTML atomically, retaining a prior successful output if
-publication fails. HTML is an offline, read-only projection: it includes no
+publication fails. It never creates the output directory; a missing one is a
+`REVIEW_OUTPUT_WRITE_FAILED` failure whose issue path names that directory. HTML is an offline, read-only projection: it includes no
 external resource loads, executes no source content, and never records
 approval, completion, verification, or Agent state.
 

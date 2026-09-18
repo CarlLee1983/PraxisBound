@@ -238,3 +238,40 @@ test("TST022-AC-008/009: render failure keeps a prior projection and cleans the 
     assert.equal(usage.result.exit, 2);
   });
 });
+
+test("TST022-AC-008/009: a missing output directory is named instead of reported as a generic write failure", async () => {
+  await fixture(async (root, manifest) => {
+    await writeFile(join(root, "plain-file"), "not a directory\n");
+    for (const [output, directory] of [
+      ["missing/review.html", "missing"],
+      ["plain-file/review.html", "plain-file"],
+    ]) {
+      const execution = await runReviewRender(
+        [manifest, "--output", output, "--json"],
+        root,
+      );
+
+      assertEnvelope(execution);
+      assert.equal(execution.result.outcome, "failure");
+      assert.equal(execution.result.exit, 1);
+      assert.deepEqual(execution.result.issues, [
+        {
+          code: "REVIEW_OUTPUT_WRITE_FAILED",
+          message: "output directory does not exist",
+          path: directory,
+        },
+      ]);
+    }
+    assert.equal((await readdir(root)).includes("missing"), false);
+
+    const human = runCli(
+      ["review", "render", manifest, "--output", "gone\u001b[2J/review.html"],
+      root,
+    );
+    assert.equal(human.status, 1);
+    assert.equal(
+      human.stderr,
+      "FAIL REVIEW_OUTPUT_WRITE_FAILED: output directory does not exist (gone\\x1b[2J)\n",
+    );
+  });
+});
