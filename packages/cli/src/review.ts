@@ -1,4 +1,4 @@
-import { constants } from "node:fs";
+import { constants, realpathSync } from "node:fs";
 import {
   lstat,
   open,
@@ -344,7 +344,20 @@ function buildSuccessEnvelope(index: ReviewIndex): ResultEnvelope {
  */
 function sanitizeInternalError(error: unknown, root: string): string {
   const message = error instanceof Error ? error.message : String(error);
-  const roots = [...new Set([root, resolve(root)])]
+  const resolvedRoot = resolve(root);
+  let realRoot: string | undefined;
+  try {
+    realRoot = realpathSync(resolvedRoot);
+  } catch {
+    realRoot = undefined;
+  }
+  const roots = [
+    ...new Set(
+      [root, resolvedRoot, realRoot].filter(
+        (candidate): candidate is string => candidate !== undefined,
+      ),
+    ),
+  ]
     .filter((candidate) => candidate.length > 1)
     .sort((a, b) => b.length - a.length);
   const relative = roots.reduce(

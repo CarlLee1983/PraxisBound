@@ -569,6 +569,7 @@ function startsTable(lines: readonly MarkdownLine[], index: number): boolean {
   return (
     next !== undefined &&
     !next.fenced &&
+    parseItemMarker(line.trimmed) === undefined &&
     line.trimmed.includes("|") &&
     isTableDivider(next.trimmed)
   );

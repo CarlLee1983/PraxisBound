@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
+import { realpathSync } from "node:fs";
 import {
   link,
   mkdir,
@@ -468,5 +469,49 @@ test("TST022 Security Fixture Matrix: an internal error reaches stderr without t
     assert.match(stderr, /\\x1b\[31mRED\\x1b]0;title\\x07/);
     assert.doesNotMatch(stderr, /second line/);
     assert.equal(stderr.split("\n").length, 2, "one line plus its newline");
+  });
+});
+
+test("TST022 Security Fixture Matrix: an internal error naming the root's realpath (e.g. /private/tmp vs /tmp) is also masked", async () => {
+  await fixture(async (root, manifest) => {
+    const realRoot = realpathSync(root);
+    if (realRoot === root) {
+      // Nothing to discriminate on this filesystem: the temp root has no
+      // symlinked alias, so this case degenerates to the plain-root test.
+      return;
+    }
+    const written = [];
+    const originalWrite = globalThis.process.stderr.write;
+    globalThis.process.stderr.write = (chunk) => {
+      written.push(String(chunk));
+      return true;
+    };
+    let execution;
+    try {
+      execution = await runReviewRender(
+        [manifest, "--output", "out.html", "--json"],
+        root,
+        {
+          async rename() {
+            throw {
+              get code() {
+                throw new Error(`EACCES: open '${realRoot}/secret/path'`);
+              },
+            };
+          },
+        },
+      );
+    } finally {
+      globalThis.process.stderr.write = originalWrite;
+    }
+
+    assertEnvelope(execution);
+    assert.equal(execution.result.outcome, "ERROR");
+    const stderr = written.join("");
+    assert.match(stderr, /internal error: EACCES: open '<root>\/secret\/path'/);
+    assert.ok(
+      !stderr.includes(realRoot),
+      "stderr must not carry the root's realpath",
+    );
   });
 });
