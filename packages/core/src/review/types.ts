@@ -48,6 +48,8 @@ export interface ReviewBatchStoryPlan {
 /** The pure, validated plan a manifest declares. */
 export interface ReviewBatchPlan {
   readonly batchId: string;
+  /** Optional human-readable batch objective from the manifest. */
+  readonly title?: string | undefined;
   readonly manifestSha256: string;
   readonly adrs: readonly string[];
   readonly specs: readonly string[];
@@ -134,6 +136,8 @@ export interface TraceEntry {
 
 export interface ReviewIndex {
   readonly batchId: string;
+  /** Optional human-readable batch objective from the manifest. */
+  readonly title?: string | undefined;
   readonly fingerprint: string;
   readonly manifestSha256: string;
   readonly sources: readonly SourceDigest[];

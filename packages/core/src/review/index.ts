@@ -333,6 +333,7 @@ export function indexReviewBatch(
     kind: "ok",
     index: {
       batchId: plan.batchId,
+      title: plan.title,
       fingerprint,
       manifestSha256: plan.manifestSha256,
       sources: sourceDigests,

@@ -12,6 +12,7 @@ praxisbound verification check [story ...]
 praxisbound handoff check [handoff-file]
 praxisbound release check [repository]
 praxisbound review index <manifest>
+praxisbound review render <manifest> --output <file>
 
 praxisbound codex activate <repository>
 ```
@@ -56,6 +57,7 @@ verify             = execute make verify
 | `praxisbound handoff check [file]`           | `scripts/handoff-check`               | Defaults to `specs/handoff.md`.                                                                  |
 | `praxisbound release check [repo]`           | `scripts/release-check` Node wrapper  | Local, read-only release inspection; target defaults to `.`; never performs remote checks.       |
 | `praxisbound review index <manifest>`        | none (new capability)                 | Reads one Batch Manifest and its declared sources; read-only; writes nothing.                    |
+| `praxisbound review render <manifest> --output <file>` | none (new capability) | Writes an additive, self-contained offline HTML Review Projection; never changes selected sources. |
 | `praxisbound codex activate <repo>`          | `scripts/codex-activate`              | Preview by default; supports `--apply`; stays a late migration wave.                             |
 
 Global options may appear after the selected command path and before or among
@@ -173,6 +175,21 @@ path with an unsafe segment, or an input over a contract §13 limit, rejects
 the whole command before any source content is read; every other gap is a
 diagnostic on a `success` result, aligned one-to-one between `issues` and
 `data.diagnostics`. The command writes no file.
+
+## `praxisbound review render` contract
+
+`praxisbound review render <manifest> --output <file> [--json]` reuses the
+same validated local batch and Requirement Fingerprint as `review index`, then
+writes one self-contained HTML Review Projection. This additive command uses
+the existing v1 envelope mappings: `success` is `pass`/`0`; a diagnosed output
+publication failure is `failure`/`1`; invalid argv and unsafe input/output are
+`usage-error` or `configuration-error`/`2`; unexpected failures are `ERROR`/`3`.
+The output must remain within the repository and cannot target the manifest,
+any declared source, the batch `records/` directory, or any symlink. It stages
+and renames the HTML atomically, retaining a prior successful output if
+publication fails. HTML is an offline, read-only projection: it includes no
+external resource loads, executes no source content, and never records
+approval, completion, verification, or Agent state.
 
 ## Static and execution trust boundary
 

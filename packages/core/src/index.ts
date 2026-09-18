@@ -168,6 +168,7 @@ export type {
 
 export { indexReviewBatch } from "./review/index.js";
 export { planReviewBatch } from "./review/manifest.js";
+export { renderReviewProjection } from "./review/render.js";
 export type {
   AdrIndex,
   IndexReviewBatchResult,
@@ -191,3 +192,4 @@ export type {
   TraceEntry,
   TraceStoryEntry,
 } from "./review/types.js";
+export type { ReviewProjectionDocument } from "./review/render.js";

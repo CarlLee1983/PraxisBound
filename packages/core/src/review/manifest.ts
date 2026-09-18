@@ -536,6 +536,7 @@ export function planReviewBatch(
 
   const plan: ReviewBatchPlan = {
     batchId: manifest.batchId,
+    title: manifest.title,
     manifestSha256: sha256Hex(manifestBytes),
     adrs: manifest.adrs,
     specs: manifest.specs,

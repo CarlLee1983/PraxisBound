@@ -19,8 +19,11 @@ import { serializeResultEnvelope } from "./machine.js";
 import { releaseHelp, renderReleaseHuman, runReleaseCheck } from "./release.js";
 import {
   renderReviewIndexHuman,
+  renderReviewRenderHuman,
   reviewHelp,
+  reviewRenderHelp,
   runReviewIndex,
+  runReviewRender,
 } from "./review.js";
 import { renderStoryHuman, runStoryCheck, storyHelp } from "./story.js";
 import {
@@ -58,6 +61,7 @@ Commands:
   release check      Inspect local Git release readiness
   story check        Check the static Story contract
   review index       Report the batch review source index
+  review render      Write an offline batch review HTML projection
   verification check Resolve plans and check recorded results
   help, --help       Show this help
   version, --version Print the CLI version
@@ -251,6 +255,23 @@ if (
     process.stdout.write(serializeResultEnvelope(execution.result));
   } else {
     const rendered = renderReviewIndexHuman(execution);
+    process.stdout.write(rendered.stdout);
+    process.stderr.write(rendered.stderr);
+  }
+  process.exitCode = execution.result.exit;
+} else if (
+  args.length === 3 &&
+  args[0] === "review" &&
+  args[1] === "render" &&
+  args[2] === "--help"
+) {
+  process.stdout.write(reviewRenderHelp);
+} else if (args[0] === "review" && args[1] === "render") {
+  const execution = await runReviewRender(args.slice(2));
+  if (execution.mode === "json") {
+    process.stdout.write(serializeResultEnvelope(execution.result));
+  } else {
+    const rendered = renderReviewRenderHuman(execution);
     process.stdout.write(rendered.stdout);
     process.stderr.write(rendered.stderr);
   }
