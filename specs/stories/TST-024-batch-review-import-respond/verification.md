@@ -8,7 +8,7 @@
 * integration: pass — `review-import-command.test.mjs, review-respond-command.test.mjs, and review-records-write.test.mjs run runReviewImport and runReviewRespond against temporary repositories and assert envelopes, data, exit codes, exact issue-code sets, and records/ bytes`
 * contract: pass — `every envelope passes validateResultEnvelope; cli-contract.md documents both commands, their ordered checks, outcomes, and issue codes; contract §6, §7, and §12 carry the R-005 amendments the tests assert`
 * e2e: pass — `the built praxisbound binary on a copy of the BR-TST-022 batch: a page-script export imported with target match, re-import reported REVIEW_REVISION_DUPLICATE, a source edit turned the target into hash-mismatch, respond rejected a stale toFingerprint (REVIEW_RESPONSE_STALE) and an old locator (REVIEW_RESPONSE_INVALID), and a correct response wrote records/responses-<to12>-1.json`
-* architecture: blocked — `awaiting Human Review of feat/tst-024-import-respond`
+* architecture: pass — `Human Review: carl accepted TST-024 in a Claude Code session on 2026-09-19, reviewing feat/tst-024-import-respond at 8297e7a after independent code and security reviews over three fix rounds whose final pass found no CRITICAL or HIGH issue`
 
 ## Evidence
 
