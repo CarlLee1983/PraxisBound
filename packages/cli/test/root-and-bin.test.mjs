@@ -26,6 +26,8 @@ Commands:
   story check        Check the static Story contract
   review index       Report the batch review source index
   review render      Write an offline batch review HTML projection
+  review import      Record an exported Revision Sheet
+  review respond     Record a Revision Response file
   verification check Resolve plans and check recorded results
   help, --help       Show this help
   version, --version Print the CLI version

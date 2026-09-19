@@ -208,6 +208,14 @@ Adapters remain behind the CLI or test seam:
 | Mutation execution     | sibling staging/rename/recovery         | fault-injecting Adapter        | interruption, partial rename, recovery evidence, cleanup          |
 | Template source        | files embedded in the published package | fixture bundle                 | `npm pack` content/provenance and offline execution               |
 
+Batch review records follow the same split (TST-024): Core owns the pure
+Revision Sheet and Revision Response validation, same-content judgement, and
+target matching, while the CLI adapter owns reading `records/`, symlink and
+identity checks, bounded reads, and the create-new write (exclusive temporary
+file, `fsync`, then `link` to the final name). The Story's Architecture section
+names Core as owning the reads and writes; the filesystem half lives in the CLI
+so Core stays free of I/O.
+
 These are real seams because each has at least two Adapters. They are not Core's
 external Interface. Tests exercise Core through `evaluate`/`planMutation`, then
 exercise CLI Adapters separately and together in black-box parity tests.

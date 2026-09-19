@@ -224,9 +224,11 @@ Schema：[`schemas/revision-responses.schema.json`](schemas/revision-responses.s
 3. `fromFingerprint` 等於某份所列修訂單的 `fingerprint`，也就是讀者匯出當下看到的版本：否則 `REVIEW_RESPONSE_INVALID`。
 4. `toFingerprint` 等於寫入當下以當前來源重算的指紋：否則 `REVIEW_RESPONSE_STALE`。回應因此只能描述已存在於來源中的修改。
 5. 所列修訂單中每個有效意見恰好一筆回應：否則 `REVIEW_RESPONSE_MISMATCH`。
-6. 上列欄位規則與兩指紋規則：否則 `REVIEW_RESPONSE_INVALID`。
+6. 上列欄位規則與兩指紋規則；`incorporated` 的每個 locator 依 §5 在當前來源判定為一致（與 `import` 的 `match` 同一判定），
+   否則 `REVIEW_RESPONSE_INVALID`。回應已被取代的意見屬第 5 步的「多出 ID」。
 
 全部通過時以排他建立把輸入 JSON 原樣寫入 `records/responses-<to12>-<n>.json`；任一檢查失敗為 `failure`，不寫入。
+`import` 與 `respond` 寫入失敗時為 `failure`、`REVIEW_RECORD_WRITE_FAILED`，不留下任何殘缺檔。
 寫入回應不代表人類核准，也不改變任何來源、確認或授權（ADR-014）。
 
 ## 8. Definition Confirmation

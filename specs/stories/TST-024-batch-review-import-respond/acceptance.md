@@ -36,11 +36,12 @@ seam; behavior is judged against contract §2, §5, §6, §7, §12 and §13.
   supersedes a missing or already-superseded id is `REVIEW_REVISION_CONFLICT`.
 * [ ] AC-007: A request whose `fingerprint` differs from the current
   fingerprint is written and reported with `REVIEW_REVISION_STALE_TARGET`.
-* [ ] AC-008: `respond` rejects a missing or extra response
-  (`REVIEW_RESPONSE_MISMATCH`), an answer to a superseded request, an empty
-  `rationale`, `incorporated` without `locators`, `needs-decision` without
-  `question`, and equal fingerprints with an `incorporated` response
-  (`REVIEW_RESPONSE_INVALID`), writing nothing.
+* [ ] AC-008: `respond` rejects a missing or extra response, including an
+  answer to a superseded request (`REVIEW_RESPONSE_MISMATCH`), and an empty
+  `rationale`, `incorporated` without `locators` or with a locator that does
+  not `match` current sources, `needs-decision` without `question`, and equal
+  fingerprints with an `incorporated` response (`REVIEW_RESPONSE_INVALID`),
+  writing nothing.
 * [ ] AC-009: `respond` rejects a `toFingerprint` that differs from the
   fingerprint at write time (`REVIEW_RESPONSE_STALE`), a `fromFingerprint`
   that equals no listed sheet's `fingerprint`, and a `revisionSheets` entry

@@ -40,7 +40,7 @@ export interface ReviewIndexExecution {
   readonly loaded?: LoadedReviewBatch;
 }
 
-interface LoadedReviewBatch {
+export interface LoadedReviewBatch {
   readonly manifestPath: string;
   readonly index: ReviewIndex;
   readonly observations: ReviewObservations;
@@ -90,32 +90,36 @@ starts an Agent. The output must remain inside the repository and cannot
 replace a declared source, manifest, records path, or symlink.
 `;
 
-function issue(code: string, message: string, path?: string): ResultIssue {
+export function issue(
+  code: string,
+  message: string,
+  path?: string,
+): ResultIssue {
   return path === undefined ? { code, message } : { code, message, path };
 }
 
-function envelope(
+export function envelope(
   status: "pass",
   outcome: "success",
   exit: 0,
   issues: readonly ResultIssue[],
   data?: Readonly<Record<string, ResultDataValue>>,
 ): ResultEnvelope;
-function envelope(
+export function envelope(
   status: "fail",
   outcome: "failure",
   exit: 1,
   issues: readonly ResultIssue[],
   data?: Readonly<Record<string, ResultDataValue>>,
 ): ResultEnvelope;
-function envelope(
+export function envelope(
   status: "error",
   outcome: "usage-error" | "configuration-error" | "ERROR",
   exit: 2 | 3,
   issues: readonly ResultIssue[],
   data?: Readonly<Record<string, ResultDataValue>>,
 ): ResultEnvelope;
-function envelope(
+export function envelope(
   status: "pass" | "fail" | "error",
   outcome:
     "success" | "failure" | "usage-error" | "configuration-error" | "ERROR",
@@ -227,7 +231,7 @@ function resolveManifestPath(
 }
 
 /** Finds the first declared path with a symlinked segment, checking every segment, not only the last. */
-async function findUnsafeSourcePath(
+export async function findUnsafeSourcePath(
   root: string,
   paths: readonly string[],
 ): Promise<string | undefined> {
@@ -306,7 +310,7 @@ async function readSourceObservation(
   }
 }
 
-function toDataValue(value: unknown): ResultDataValue {
+export function toDataValue(value: unknown): ResultDataValue {
   return value as ResultDataValue;
 }
 
@@ -342,7 +346,7 @@ function buildSuccessEnvelope(index: ReviewIndex): ResultEnvelope {
  * first line is kept, and every remaining control character is escaped so a
  * message can never inject terminal escape sequences.
  */
-function sanitizeInternalError(error: unknown, root: string): string {
+export function sanitizeInternalError(error: unknown, root: string): string {
   const message = error instanceof Error ? error.message : String(error);
   const resolvedRoot = resolve(root);
   let realRoot: string | undefined;
@@ -397,7 +401,7 @@ export async function runReviewIndex(
   }
 }
 
-async function runReviewIndexUnsafe(
+export async function runReviewIndexUnsafe(
   args: readonly string[],
   root: string,
 ): Promise<ReviewIndexExecution> {
@@ -964,16 +968,33 @@ export async function runReviewRender(
   }
 }
 
-function escapeHumanControlCharacters(value: string): string {
+/**
+ * True for a code point that can hide or reorder visible text without
+ * itself producing a glyph: C0/C1 controls and DEL, the two Unicode line
+ * separators, the zero-width/marker block U+200B–U+200F, the bidi
+ * embedding/override controls U+202A–U+202E, the bidi isolate controls
+ * U+2066–U+2069, and the byte-order mark U+FEFF. Untrusted text (a revision
+ * id, an issue message assembled from input) is never rendered to a human
+ * terminal without passing through this check first.
+ */
+function isHiddenOrReorderingCodePoint(codePoint: number): boolean {
+  return (
+    codePoint <= 0x1f ||
+    (codePoint >= 0x7f && codePoint <= 0x9f) ||
+    codePoint === 0x2028 ||
+    codePoint === 0x2029 ||
+    (codePoint >= 0x200b && codePoint <= 0x200f) ||
+    (codePoint >= 0x202a && codePoint <= 0x202e) ||
+    (codePoint >= 0x2066 && codePoint <= 0x2069) ||
+    codePoint === 0xfeff
+  );
+}
+
+export function escapeHumanControlCharacters(value: string): string {
   let out = "";
   for (const character of value) {
     const codePoint = character.codePointAt(0) ?? 0;
-    const isControl =
-      codePoint <= 0x1f ||
-      (codePoint >= 0x7f && codePoint <= 0x9f) ||
-      codePoint === 0x2028 ||
-      codePoint === 0x2029;
-    out += isControl
+    out += isHiddenOrReorderingCodePoint(codePoint)
       ? `\\x${codePoint.toString(16).padStart(codePoint > 0xff ? 4 : 2, "0")}`
       : character;
   }
