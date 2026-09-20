@@ -150,7 +150,7 @@ residual_identity_matches_allowlist() {
   find "$root" -type f -print | while IFS= read -r candidate; do
     relative=${candidate#"$root"/}
     case "$relative" in
-      .git|.git/*|graft/*|node_modules/*|*/node_modules/*|packages/core/dist/*|packages/cli/dist/*) continue ;;
+      .git|.git/*|graft/*|node_modules/*|*/node_modules/*|packages/core/dist/*|packages/cli/dist/*|.forgepilot/*) continue ;;
     esac
     if grep -Eiq 'forgeflow' "$candidate" 2>/dev/null; then
       printf '%s\n' "$relative"

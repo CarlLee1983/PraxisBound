@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "planId": "invalid-duplicate-node",
+  "revision": 1,
+  "nodes": [
+    {
+      "planNodeRef": "node-a",
+      "storyRef": "story-a",
+      "readinessContract": {
+        "identity": "readiness.md",
+        "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+      }
+    },
+    {
+      "planNodeRef": "node-a",
+      "storyRef": "story-a-copy",
+      "readinessContract": {
+        "identity": "readiness.md",
+        "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+      }
+    }
+  ],
+  "edges": [],
+  "reviewedSources": []
+}

@@ -111,6 +111,8 @@ packed_packages_have_the_bounded_public_contract() {
     './dist/adoption-next-steps.js' \
     './dist/declarations.d.ts' \
     './dist/declarations.js' \
+    './dist/goal-plan-artifacts.d.ts' \
+    './dist/goal-plan-artifacts.js' \
     './dist/handoff.d.ts' \
     './dist/handoff.js' \
     './dist/index.d.ts' \

@@ -1,0 +1,59 @@
+{
+  "schema_version": 1,
+  "story_ref": "specs/stories/FP-51-goal-plan-artifacts",
+  "story_md_digest": "sha256:fe2411059294277fccde1c2ab0fe45f5db69b84a0768ec27ba9156046d5a774e",
+  "acceptance_md_digest": "sha256:75d2a2bdf64ee88562ef3ee70698c79814564a1745bfa8c1c083b65355983fb8",
+  "criteria": [
+    {
+      "id": "AC-001",
+      "operations": ["plan", "modify"],
+      "owner": "runner_worker",
+      "future_identities": []
+    },
+    {
+      "id": "AC-002",
+      "operations": ["plan", "modify"],
+      "owner": "runner_worker",
+      "future_identities": []
+    },
+    {
+      "id": "AC-003",
+      "operations": ["plan", "modify"],
+      "owner": "runner_worker",
+      "future_identities": []
+    },
+    {
+      "id": "AC-004",
+      "operations": ["plan", "modify"],
+      "owner": "runner_worker",
+      "future_identities": []
+    },
+    {
+      "id": "AC-005",
+      "operations": ["plan", "modify"],
+      "owner": "runner_worker",
+      "future_identities": []
+    },
+    {
+      "id": "AC-006",
+      "operations": [],
+      "owner": "human",
+      "future_identities": []
+    },
+    {
+      "id": "AC-007",
+      "operations": ["plan", "modify"],
+      "owner": "runner_worker",
+      "future_identities": []
+    },
+    {
+      "id": "AC-008",
+      "operations": ["plan", "modify"],
+      "owner": "runner_worker",
+      "future_identities": []
+    }
+  ],
+  "inputs": [],
+  "outputs": [{ "id": "praxisbound-goal-plan-v1" }],
+  "decision_follow_ups": []
+}

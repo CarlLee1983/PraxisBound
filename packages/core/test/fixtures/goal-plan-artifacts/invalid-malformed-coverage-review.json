@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "reviewId": "malformed-review",
+  "manifestDigest": "not-a-sha256",
+  "coverageIndexIdentity": "coverage-index.md",
+  "conclusion": "approved",
+  "approvedBy": "Fixture Reviewer",
+  "approvedAt": "2025-01-02T03:04:05Z",
+  "reviewedSources": []
+}

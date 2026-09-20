@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "reviewId": "missing-manifest-digest",
+  "coverageIndexIdentity": "sources/coverage-index.md",
+  "conclusion": "approved",
+  "approvedBy": "Fixture Reviewer",
+  "approvedAt": "2025-01-02T03:04:05Z",
+  "reviewedSources": [
+    {
+      "identity": "sources/requirements.md",
+      "sha256": "2c39b1a43da19975cc767515193c1e975b109aa61b6a842cf1eaf9d4bc7260db"
+    },
+    {
+      "identity": "sources/plan-input.json",
+      "sha256": "76a14bc215277d52bae2fb2ed815b7ba6fa307aa795cdc9815a4febc4ac26e86"
+    },
+    {
+      "identity": "sources/readiness-contract.md",
+      "sha256": "5543e010d0504413b1e053680b1e277beda08d5f1780a438c70456796522d4e4"
+    },
+    {
+      "identity": "sources/coverage-index.md",
+      "sha256": "d137db68c92cb02f288bb149e1f934bfc852c13326efbe5a032251042ad1d765"
+    }
+  ]
+}

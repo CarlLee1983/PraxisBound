@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "planId": "invalid-self-edge",
+  "revision": 1,
+  "nodes": [
+    {
+      "planNodeRef": "node-a",
+      "storyRef": "story-a",
+      "readinessContract": {
+        "identity": "readiness.md",
+        "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+      }
+    }
+  ],
+  "edges": [{ "from": "node-a", "to": "node-a" }],
+  "reviewedSources": []
+}

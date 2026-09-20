@@ -5,7 +5,9 @@ test("AC-005/TST012-AC-004/TST014-AC-003: the Core package root exposes only the
   const core = await import("@praxisbound/core");
 
   assert.deepEqual(Object.keys(core).sort(), [
+    "GOAL_PLAN_MANIFEST_SCHEMA_VERSION",
     "IMPLEMENTED_PROTOCOL_VERSION",
+    "PLAN_COVERAGE_REVIEW_SCHEMA_VERSION",
     "RESULT_SCHEMA_VERSION",
     "ResultEnvelopeValidationError",
     "SUPPORTED_PROTOCOL_RANGE",
@@ -30,6 +32,8 @@ test("AC-005/TST012-AC-004/TST014-AC-003: the Core package root exposes only the
     "evaluateStoryContract",
     "evaluateStoryReadiness",
     "evaluateVerificationResult",
+    "exportGoalPlanManifest",
+    "exportPlanCoverageReview",
     "findActivationPreconditionMismatches",
     "findInitPreconditionMismatches",
     "getActivationObservationScope",
@@ -56,6 +60,8 @@ test("AC-005/TST012-AC-004/TST014-AC-003: the Core package root exposes only the
     "sameRevisionContent",
     "sha256Hex",
     "supersedesConflicts",
+    "validateGoalPlanManifest",
+    "validatePlanCoverageReview",
     "validateResultEnvelope",
     "validateRevisionRecordSet",
     "validateStoredResponsesRecord",

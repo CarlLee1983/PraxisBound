@@ -1,0 +1,126 @@
+{
+  "sourceDigests": {
+    "sources/requirements.md": "2c39b1a43da19975cc767515193c1e975b109aa61b6a842cf1eaf9d4bc7260db",
+    "sources/plan-input.json": "76a14bc215277d52bae2fb2ed815b7ba6fa307aa795cdc9815a4febc4ac26e86",
+    "sources/readiness-contract.md": "5543e010d0504413b1e053680b1e277beda08d5f1780a438c70456796522d4e4",
+    "sources/coverage-index.md": "d137db68c92cb02f288bb149e1f934bfc852c13326efbe5a032251042ad1d765"
+  },
+  "artifacts": [
+    {
+      "file": "invalid-approval-manifest-digest.json",
+      "artifact": "plan-coverage-review",
+      "manifestFile": "valid-manifest.json",
+      "sha256": "c3a7ecb9b3060ee27142e5bcbde99d1da289531fe8dc877a385bb7bcc29ecc3a",
+      "expected": { "ok": false, "category": "approval-binding-mismatch" }
+    },
+    {
+      "file": "invalid-approval-missing.json",
+      "artifact": "plan-coverage-review",
+      "manifestFile": "valid-manifest.json",
+      "sha256": "19829cc4b7a01212f4390e115875a47bdec2b1277241859f11f9dbafa15ab601",
+      "expected": { "ok": false, "category": "approval-binding-mismatch" }
+    },
+    {
+      "file": "invalid-approval-missing-manifest-digest.json",
+      "artifact": "plan-coverage-review",
+      "manifestFile": "valid-manifest.json",
+      "sha256": "36d83bd6c268e6b5b1a929d2caf01d8e839335c5d3cb9312350496df80a89742",
+      "expected": { "ok": false, "category": "approval-binding-mismatch" }
+    },
+    {
+      "file": "invalid-approval-missing-reviewed-sources.json",
+      "artifact": "plan-coverage-review",
+      "manifestFile": "valid-manifest.json",
+      "sha256": "1175e1ba043a058adcbe7dfd39d8063586feb949f9b13085b115f6895f3ba4ee",
+      "expected": { "ok": false, "category": "approval-binding-mismatch" }
+    },
+    {
+      "file": "invalid-approval-source-digest.json",
+      "artifact": "plan-coverage-review",
+      "manifestFile": "valid-manifest.json",
+      "sha256": "21a676896be39bb4b088333c87557c9b61d08426992b05593ffeffc83108580b",
+      "expected": { "ok": false, "category": "approval-binding-mismatch" }
+    },
+    {
+      "file": "invalid-digest-manifest.json",
+      "artifact": "goal-plan-manifest",
+      "sha256": "0a52546ef60474e2921e757dd68f57a01f5bec36a8746a09d2ec5a8d438716fe",
+      "expected": { "ok": false, "category": "digest-mismatch" }
+    },
+    {
+      "file": "invalid-malformed-coverage-review.json",
+      "artifact": "plan-coverage-review",
+      "manifestFile": "valid-manifest.json",
+      "sha256": "7917119bafda14ba07ca378aff2ce506e87445122ee6d041db8671506070c4d7",
+      "expected": { "ok": false, "category": "malformed-artifact" }
+    },
+    {
+      "file": "invalid-malformed-manifest.json",
+      "artifact": "goal-plan-manifest",
+      "sha256": "b83267f452f086240dace81dce6b6a1becf9d8803ad00db0c88bb1b40c9a4b18",
+      "expected": { "ok": false, "category": "malformed-artifact" }
+    },
+    {
+      "file": "invalid-schema-coverage-review.json",
+      "artifact": "plan-coverage-review",
+      "manifestFile": "valid-manifest.json",
+      "sha256": "b37ff761062049f41c394222b4765b4244dd969a8b8bccef554c52c577ae478f",
+      "expected": { "ok": false, "category": "unsupported-schema" }
+    },
+    {
+      "file": "invalid-schema-manifest.json",
+      "artifact": "goal-plan-manifest",
+      "sha256": "875bbb212efc1c1b1707a0667bb765cb3d31048b88ae3699bb500a865ad05417",
+      "expected": { "ok": false, "category": "unsupported-schema" }
+    },
+    {
+      "file": "invalid-topology-cycle.json",
+      "artifact": "goal-plan-manifest",
+      "sha256": "940b6d0990f6b075e496552a1195173b9b934262f21867b03d3027f386d375ca",
+      "expected": { "ok": false, "category": "invalid-topology" }
+    },
+    {
+      "file": "invalid-topology-duplicate-edge.json",
+      "artifact": "goal-plan-manifest",
+      "sha256": "fe2fdb80018a4643d4c86213de45e98ea278094a3cca6d91c7a3ec22dee3f574",
+      "expected": { "ok": false, "category": "invalid-topology" }
+    },
+    {
+      "file": "invalid-topology-duplicate-node.json",
+      "artifact": "goal-plan-manifest",
+      "sha256": "70bc7b9594e859a94f7811c7c6ad972f49c2403cdbbf39d3e33ed2c3687910a9",
+      "expected": { "ok": false, "category": "invalid-topology" }
+    },
+    {
+      "file": "invalid-topology-missing-node.json",
+      "artifact": "goal-plan-manifest",
+      "sha256": "f2f90418f21ba4469119d373bf0e34baab8a39aa3a2c548bb49eaf8f318caa0f",
+      "expected": { "ok": false, "category": "invalid-topology" }
+    },
+    {
+      "file": "invalid-topology-missing-reference.json",
+      "artifact": "goal-plan-manifest",
+      "sha256": "1e78477819d08a8cc841bfa9ded93f0d0ddcda16e27bc9e94c9849b109404931",
+      "expected": { "ok": false, "category": "invalid-topology" }
+    },
+    {
+      "file": "invalid-topology-self-edge.json",
+      "artifact": "goal-plan-manifest",
+      "sha256": "9decfd1933aee572c2ac327c499c5c2bdc8ed2f27ebb67f2877df5e23e4d3beb",
+      "expected": { "ok": false, "category": "invalid-topology" }
+    },
+    {
+      "file": "valid-coverage-review.json",
+      "artifact": "plan-coverage-review",
+      "manifestFile": "valid-manifest.json",
+      "sha256": "8354691639db1632a22c2d118ff58acf94bb4d73f77d172a605934f87256d724",
+      "expected": { "ok": true }
+    },
+    {
+      "file": "valid-manifest.json",
+      "artifact": "goal-plan-manifest",
+      "sha256": "a9c992ceb94003f2783ae044c187ff0e561ee04f15fcaca524046da250c319bf",
+      "expected": { "ok": true }
+    }
+  ]
+}

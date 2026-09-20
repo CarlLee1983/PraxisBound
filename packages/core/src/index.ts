@@ -243,3 +243,31 @@ export {
   matchRevisionTarget,
 } from "./review/revision-targets.js";
 export type { TargetLookup, TargetMatch } from "./review/revision-targets.js";
+
+export {
+  GOAL_PLAN_MANIFEST_SCHEMA_VERSION,
+  PLAN_COVERAGE_REVIEW_SCHEMA_VERSION,
+  exportGoalPlanManifest,
+  exportPlanCoverageReview,
+  validateGoalPlanManifest,
+  validatePlanCoverageReview,
+} from "./goal-plan-artifacts.js";
+export type {
+  GoalPlanArtifactClass,
+  GoalPlanEdge,
+  GoalPlanFailureCategory,
+  GoalPlanManifest,
+  GoalPlanManifestExportInput,
+  GoalPlanManifestValidation,
+  GoalPlanManifestValidationSuccess,
+  GoalPlanNode,
+  GoalPlanReadinessContract,
+  GoalPlanSourceBytes,
+  GoalPlanSourceDigest,
+  GoalPlanSourceFacts,
+  GoalPlanValidationFailure,
+  PlanCoverageReview,
+  PlanCoverageReviewExportInput,
+  PlanCoverageReviewValidation,
+  PlanCoverageReviewValidationSuccess,
+} from "./goal-plan-artifacts.js";
