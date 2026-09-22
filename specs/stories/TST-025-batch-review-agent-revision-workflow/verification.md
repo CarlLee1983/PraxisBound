@@ -8,7 +8,7 @@
 * integration: pass — `review-render-evidence-command.test.mjs and the four review-agent-workflow-*.test.mjs files run review index, import, respond, and render against temporary repositories and assert envelopes, diagnostics, records/ contents, and source bytes`
 * contract: pass — `contract §13 and §20 (R-005) carry the accepted projection rules; cli-contract.md documents the render evidence area and its diagnostics; render outcomes and the result-envelope schema are unchanged`
 * e2e: pass — `a manual scratch script, not committed, drove the built praxisbound binary on a temporary batch: import reported target match, respond wrote records/responses-<to12>-1.json for a needs-decision answer, render produced an evidence area showing the request id, response question, raw match judgement, and the historical-Evidence note, with the injected img tag and U+202E escaped and no diff wording; adding records/responses-000000000000.json made render report REVIEW_RECORD_INVALID with that path and still succeed`
-* architecture: blocked — `Human Review accepted the contract decisions (§13, §20, including the REVIEW_PATH_UNSAFE rule, prose line feeds, and the 16 MiB bound) on 2026-09-22; review of the implementation itself has not happened`
+* architecture: pass — `Human Review: carl accepted TST-025 in a Claude Code session on 2026-09-22, reviewing feat/tst-025-agent-revision-workflow at 341970d after one code and security review round and a second code review, and after accepting the contract decisions in §13 and §20`
 
 ## Evidence
 
@@ -22,7 +22,7 @@
 * `AC-008`: pass — `invalid and cross-record-conflicting records, and a records/ path that cannot be listed (a plain file), are REVIEW_RECORD_INVALID with paths; 201 files and 11000 entries are REVIEW_INPUT_TOO_LARGE with no record content, and more than 16 MiB of record files likewise, with no content read in the file-count and size cases; exactly 200 files and 10000 entries render; no source or record is written`
 * `AC-009`: pass — `review-agent-workflow-targets.test.mjs and -routes.test.mjs: stale, missing, duplicate, and accepted-ADR targets stop before any edit with a specific question or non-incorporated response`
 * `AC-010`: pass — `make verify exited 0; VERSION, protocol/, and templates/ are unchanged against origin/main; with no records, review render output from the built CLI at 192bb85's parent 375684d and from this tree has the same sha256 (2f26796f…), a Core test pins that hash, and review index output is unchanged when records exist`
-* `AC-011`: blocked — `the rehearsal is recorded under Agent Revision Rehearsal below; the human review this AC's human method requires has not happened yet`
+* `AC-011`: pass — `the rehearsal recorded under Agent Revision Rehearsal below was reviewed and accepted by carl on 2026-09-22 as bounded historical evidence, not a general semantic-correctness proof`
 
 ## Agent Revision Rehearsal
 
