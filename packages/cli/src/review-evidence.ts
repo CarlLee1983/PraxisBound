@@ -10,12 +10,18 @@
  */
 
 import type {
+  RecordSetConflict,
   ResponseEvidenceRecord,
   ResultIssue,
   ReviewProjectionEvidence,
   RevisionEvidenceRecord,
 } from "@praxisbound/core";
-import { validateRevisionRecordSet } from "@praxisbound/core";
+import {
+  compareUtf8,
+  escapeHiddenCharacters,
+  isSyntacticallySafeRepoPath,
+  validateRevisionRecordSet,
+} from "@praxisbound/core";
 
 import {
   countLooseRecordFileNames,
@@ -35,6 +41,25 @@ function buildIssue(code: string, message: string, path?: string): ResultIssue {
 }
 
 /**
+ * A `REVIEW_RECORD_INVALID` issue for one invalid record file. A record
+ * file name is an attacker-controlled filesystem byte string: it can carry
+ * a raw control character no envelope `path` field may ever hold
+ * (`result.ts`'s `isPath`), so the safe (repo-relative, control-character-
+ * free) case keeps the machine-readable `path` field, while the unsafe
+ * case instead folds a visibly escaped rendering into `message` and omits
+ * `path` — the envelope itself must always stay schema-valid, even when
+ * the very thing it is reporting on has an unsafe name.
+ */
+function invalidRecordIssue(path: string): ResultIssue {
+  if (isSyntacticallySafeRepoPath(path))
+    return buildIssue("REVIEW_RECORD_INVALID", "record is invalid", path);
+  return buildIssue(
+    "REVIEW_RECORD_INVALID",
+    `record is invalid: ${escapeHiddenCharacters(path)}`,
+  );
+}
+
+/**
  * `REVIEW_RECORD_INVALID` issues for a `validateRevisionRecordSet` failure,
  * one per involved file — the same shape `review-input.ts`'s
  * `recordSetInvalidIssues` produces for `review import`/`review respond`,
@@ -42,11 +67,7 @@ function buildIssue(code: string, message: string, path?: string): ResultIssue {
  * through `review.ts`.
  */
 function recordSetConflictIssues(
-  conflicts: readonly {
-    readonly id: string;
-    readonly paths: readonly string[];
-    readonly message: string;
-  }[],
+  conflicts: readonly RecordSetConflict[],
 ): ResultIssue[] {
   const seen = new Set<string>();
   const issues: ResultIssue[] = [];
@@ -170,35 +191,50 @@ export async function loadReviewEvidence(
   // conflicting id's records are excluded from the evidence content (never
   // silently trusted) and listed under 「未採計的紀錄」 like any other
   // invalid record; the conflict never reaches `computeSupersededBy`.
-  const recordSet = validateRevisionRecordSet(
-    revisionsRead.records.map((record) => ({
-      path: record.path,
-      revisions: record.sheet.revisions,
-    })),
-  );
-  const conflictPaths = recordSet.ok
-    ? []
-    : [...new Set(recordSet.conflicts.flatMap((conflict) => conflict.paths))];
-  const conflictPathSet = new Set(conflictPaths);
-  const usableRevisionRecords = revisionsRead.records.filter(
-    (record) => !conflictPathSet.has(record.path),
-  );
-  const conflictIssues = recordSet.ok
-    ? []
-    : recordSetConflictIssues(recordSet.conflicts);
+  //
+  // `validateRevisionRecordSet` reports only the *first* problem it finds
+  // (same-content conflicts, or else a `supersedes` graph problem) and
+  // stops — it never re-checks `supersedes` once a content conflict is
+  // excluded. So this re-validates the shrinking survivor set in rounds:
+  // each round excludes every path its conflicts name, which is always at
+  // least one file, so the loop always terminates (bounded by the record
+  // count, itself bounded by the 200-file cap above) once a round reports
+  // `ok`.
+  const conflictPathSet = new Set<string>();
+  const allConflicts: RecordSetConflict[] = [];
+  let usableRevisionRecords = revisionsRead.records;
+  for (;;) {
+    const recordSet = validateRevisionRecordSet(
+      usableRevisionRecords.map((record) => ({
+        path: record.path,
+        revisions: record.sheet.revisions,
+      })),
+    );
+    if (recordSet.ok) break;
+    allConflicts.push(...recordSet.conflicts);
+    const roundPaths = new Set(
+      recordSet.conflicts.flatMap((conflict) => conflict.paths),
+    );
+    for (const path of roundPaths) conflictPathSet.add(path);
+    usableRevisionRecords = usableRevisionRecords.filter(
+      (record) => !roundPaths.has(record.path),
+    );
+  }
+  const conflictPaths = [...conflictPathSet];
+  const conflictIssues = recordSetConflictIssues(allConflicts);
 
+  // Displayed 「未採計的紀錄」 order: byte order by path, independent of
+  // which check excluded a record (invalid shape vs. a cross-record
+  // conflict) or which of the two readers found it — the envelope's own
+  // `issues[]`/`data.diagnostics[]` order is untouched by this sort.
   const invalidRecordPaths = [
     ...revisionsRead.invalid.map((entry) => entry.path),
     ...responsesRead.invalid.map((entry) => entry.path),
     ...conflictPaths,
-  ];
+  ].sort(compareUtf8);
   const invalidIssues = [
-    ...revisionsRead.invalid.map((entry) =>
-      buildIssue("REVIEW_RECORD_INVALID", "record is invalid", entry.path),
-    ),
-    ...responsesRead.invalid.map((entry) =>
-      buildIssue("REVIEW_RECORD_INVALID", "record is invalid", entry.path),
-    ),
+    ...revisionsRead.invalid.map((entry) => invalidRecordIssue(entry.path)),
+    ...responsesRead.invalid.map((entry) => invalidRecordIssue(entry.path)),
     ...conflictIssues,
   ];
 

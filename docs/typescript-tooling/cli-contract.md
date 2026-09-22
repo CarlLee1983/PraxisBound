@@ -49,20 +49,20 @@ verify             = execute make verify
 
 ## Command mapping and options
 
-| New command                                  | Legacy capability                     | Contract                                                                                         |
-| -------------------------------------------- | ------------------------------------- | ------------------------------------------------------------------------------------------------ |
-| `praxisbound init [repo]`                    | `scripts/bootstrap`                   | Apply fresh adoption by default; supports `--dry-run`, mutually exclusive `--force`/`--upgrade`. |
-| `praxisbound doctor [repo]`                  | `scripts/doctor`                      | Static, read-only by default; retains `--run-verify` during compatibility period.                |
-| `praxisbound verify [repo]`                  | Doctor execution mode / `make verify` | Explicitly runs target-owned `make verify` once from physical root.                              |
-| `praxisbound story check [story ...]`        | `scripts/story-check`                 | Discovers Stories when omitted; supports `--ready`.                                              |
-| `praxisbound verification check [story ...]` | `scripts/verification-check`          | Resolves plans by default; supports `--result`.                                                  |
-| `praxisbound handoff check [file]`           | `scripts/handoff-check`               | Defaults to `specs/handoff.md`.                                                                  |
-| `praxisbound release check [repo]`           | `scripts/release-check` Node wrapper  | Local, read-only release inspection; target defaults to `.`; never performs remote checks.       |
-| `praxisbound review index <manifest>`        | none (new capability)                 | Reads one Batch Manifest and its declared sources; read-only; writes nothing.                    |
-| `praxisbound review render <manifest> --output <file>` | none (new capability) | Writes an additive, self-contained offline HTML Review Projection; never changes selected sources. |
-| `praxisbound review import <manifest> <sheet>` | none (new capability) | Reads a Markdown Revision Sheet and records new requests, create-new, under the batch's `records/`; never changes a source. |
-| `praxisbound review respond <manifest> <responses.json>` | none (new capability) | The only way to record a Revision Response file, create-new, after the contract §7 fingerprint and coverage checks. |
-| `praxisbound codex activate <repo>`          | `scripts/codex-activate`              | Preview by default; supports `--apply`; stays a late migration wave.                             |
+| New command                                              | Legacy capability                     | Contract                                                                                                                    |
+| -------------------------------------------------------- | ------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| `praxisbound init [repo]`                                | `scripts/bootstrap`                   | Apply fresh adoption by default; supports `--dry-run`, mutually exclusive `--force`/`--upgrade`.                            |
+| `praxisbound doctor [repo]`                              | `scripts/doctor`                      | Static, read-only by default; retains `--run-verify` during compatibility period.                                           |
+| `praxisbound verify [repo]`                              | Doctor execution mode / `make verify` | Explicitly runs target-owned `make verify` once from physical root.                                                         |
+| `praxisbound story check [story ...]`                    | `scripts/story-check`                 | Discovers Stories when omitted; supports `--ready`.                                                                         |
+| `praxisbound verification check [story ...]`             | `scripts/verification-check`          | Resolves plans by default; supports `--result`.                                                                             |
+| `praxisbound handoff check [file]`                       | `scripts/handoff-check`               | Defaults to `specs/handoff.md`.                                                                                             |
+| `praxisbound release check [repo]`                       | `scripts/release-check` Node wrapper  | Local, read-only release inspection; target defaults to `.`; never performs remote checks.                                  |
+| `praxisbound review index <manifest>`                    | none (new capability)                 | Reads one Batch Manifest and its declared sources; read-only; writes nothing.                                               |
+| `praxisbound review render <manifest> --output <file>`   | none (new capability)                 | Writes an additive, self-contained offline HTML Review Projection; never changes selected sources.                          |
+| `praxisbound review import <manifest> <sheet>`           | none (new capability)                 | Reads a Markdown Revision Sheet and records new requests, create-new, under the batch's `records/`; never changes a source. |
+| `praxisbound review respond <manifest> <responses.json>` | none (new capability)                 | The only way to record a Revision Response file, create-new, after the contract §7 fingerprint and coverage checks.         |
+| `praxisbound codex activate <repo>`                      | `scripts/codex-activate`              | Preview by default; supports `--apply`; stays a late migration wave.                                                        |
 
 Global options may appear after the selected command path and before or among
 that command's options. They may appear once; `--` ends option parsing.
@@ -163,12 +163,12 @@ Requirement Fingerprint, stable locators, and the Spec requirement -> Story
 (`specs/features/batch-review/contract.md` §2-§5, §12, §13; `ADR-014`); no
 `REVIEW_*` outcome is in scope, only the existing envelope outcomes:
 
-| Outcome               | Status  | Exit | Meaning                                                                          |
-| ---------------------- | ------- | ---- | --------------------------------------------------------------------------------- |
-| `success`              | `pass`  | `0`  | The manifest is valid. Missing sources, unmapped Spec entries, and Stories without acceptance criteria are reported as `issues`/`data.diagnostics`, not failures. |
-| `usage-error`          | `error` | `2`  | Invalid or missing argv.                                                          |
-| `configuration-error`  | `error` | `2`  | The manifest is unreadable, not JSON, fails the schema, names an unsupported `schemaVersion`, its `batchId` does not match its directory, a declared path is unsafe, or an input exceeds contract §13's limits. |
-| `ERROR`                | `error` | `3`  | An unexpected internal failure.                                                   |
+| Outcome               | Status  | Exit | Meaning                                                                                                                                                                                                         |
+| --------------------- | ------- | ---- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `success`             | `pass`  | `0`  | The manifest is valid. Missing sources, unmapped Spec entries, and Stories without acceptance criteria are reported as `issues`/`data.diagnostics`, not failures.                                               |
+| `usage-error`         | `error` | `2`  | Invalid or missing argv.                                                                                                                                                                                        |
+| `configuration-error` | `error` | `2`  | The manifest is unreadable, not JSON, fails the schema, names an unsupported `schemaVersion`, its `batchId` does not match its directory, a declared path is unsafe, or an input exceeds contract §13's limits. |
+| `ERROR`               | `error` | `3`  | An unexpected internal failure.                                                                                                                                                                                 |
 
 Story TST-022 adds the contract §5 Spec section vocabulary to `data`: each
 `data.specs[]` entry gains optional `goal`/`nonGoals` locators (the Spec's own
@@ -258,19 +258,44 @@ is read and validated the same way `review import`/`review respond` validate
 existing records (name pattern, schema, §13 limits); an invalid one is
 `REVIEW_RECORD_INVALID` naming its repo-relative path — reported as a
 diagnostic, not a command failure — and is listed by path in the page's
-「未採計的紀錄」 list without its content. When the valid records' combined
-requests and responses exceed 10000, that is also `REVIEW_INPUT_TOO_LARGE`
-and no record content is rendered at all (not even the invalid-file list);
-the page instead states the bound was exceeded together with the observed
-count. Either bound is a diagnostic on an otherwise `success` render — the
-Batch Manifest and source definitions still render normally — and both
-`issues[]` and `data.diagnostics[]` gain one entry per invalid record plus,
-when a bound is exceeded, one `REVIEW_INPUT_TOO_LARGE` entry, in the same
-relative order in both arrays. A symlinked `records/` directory (or parent
-segment) is `REVIEW_PATH_UNSAFE`, the same protection `review import`/`review
-respond` already apply, and the evidence area is omitted. This is Additive:
-`review render`'s outcome/status/exit mapping is unchanged; `data`'s minimal
-shape is unchanged.
+「未採計的紀錄」 list without its content. The valid `revisions-*.json` set is
+then cross-checked exactly as `review import`/`review respond` check it
+(contract §6 security M2: the same id must carry the same content everywhere,
+and the combined `supersedes` graph must have no self-reference, cycle, or
+doubled target); a violation excludes every file it names and the check
+re-runs on the remaining set, repeating until a round finds nothing further
+wrong, so a conflict that only becomes visible after an earlier one's files
+are excluded is never missed. When the valid records' combined requests and
+responses exceed 10000, that is also `REVIEW_INPUT_TOO_LARGE` and no record
+content is rendered at all (not even the invalid-file list); the page instead
+states the bound was exceeded together with the observed count. Either bound
+is a diagnostic on an otherwise `success` render — the Batch Manifest and
+source definitions still render normally — and both `issues[]` and
+`data.diagnostics[]` gain one entry per invalid record plus, when a bound is
+exceeded, one `REVIEW_INPUT_TOO_LARGE` entry, in the same relative order in
+both arrays. A record file name is an untrusted filesystem string and can
+carry a raw control character no envelope `path` field may ever hold; when
+that happens the affected issue omits `path` and instead folds a visibly
+escaped rendering of the name into `message`, so the envelope itself always
+stays schema-valid. A symlinked `records/` directory (or parent segment) is
+`REVIEW_PATH_UNSAFE`, the same protection `review import`/`review respond`
+already apply, naming the records directory's own path, and the evidence area
+is omitted; a `records/` listing failure that is not "the directory does not
+exist" (e.g. permission denied, or `records/` replaced by a plain file) is
+likewise `REVIEW_RECORD_INVALID` naming the records directory, with the
+evidence area again omitted. This is Additive: `review render`'s
+outcome/status/exit mapping is unchanged; `data`'s minimal shape is
+unchanged.
+
+Human-mode output (no `--json`) for both `review index` and `review render`
+prints every envelope issue — on a successful result as well as a failed
+one — as an `ISSUE <code>: <message>` line (with `<path>` appended in
+parentheses when the issue carries one), the same way for an ordinary index
+diagnostic (a missing source, an unmapped requirement) as for an evidence-area
+one (`REVIEW_RECORD_INVALID`, `REVIEW_INPUT_TOO_LARGE`, `REVIEW_PATH_UNSAFE`);
+every issue's `message` and `path` are escaped for the terminal exactly as
+elsewhere in human output (visible hex escapes for control characters, bidi
+overrides, zero-width characters, and the byte-order mark).
 
 ## `praxisbound review import` contract
 
@@ -314,13 +339,13 @@ none, nothing is written and the result is still `success` with issue
 the current Requirement Fingerprint is still written and reported with
 `REVIEW_REVISION_STALE_TARGET`.
 
-| Outcome               | Status  | Exit | Meaning                                                                          |
-| ---------------------- | ------- | ---- | --------------------------------------------------------------------------------- |
-| `success`              | `pass`  | `0`  | The sheet was read (even when every request in it was already imported); `data.sheet` and `data.revisions` report the per-request and per-target outcome. |
-| `failure`              | `fail`  | `1`  | The sheet or an existing record was rejected, or the write itself failed; nothing new is written. |
-| `usage-error`          | `error` | `2`  | Invalid or missing argv.                                                          |
-| `configuration-error`  | `error` | `2`  | The manifest is invalid or its path is unsafe, or the batch `records/` path (or a parent segment) is a symlink. |
-| `ERROR`                | `error` | `3`  | An unexpected internal failure.                                                   |
+| Outcome               | Status  | Exit | Meaning                                                                                                                                                   |
+| --------------------- | ------- | ---- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `success`             | `pass`  | `0`  | The sheet was read (even when every request in it was already imported); `data.sheet` and `data.revisions` report the per-request and per-target outcome. |
+| `failure`             | `fail`  | `1`  | The sheet or an existing record was rejected, or the write itself failed; nothing new is written.                                                         |
+| `usage-error`         | `error` | `2`  | Invalid or missing argv.                                                                                                                                  |
+| `configuration-error` | `error` | `2`  | The manifest is invalid or its path is unsafe, or the batch `records/` path (or a parent segment) is a symlink.                                           |
+| `ERROR`               | `error` | `3`  | An unexpected internal failure.                                                                                                                           |
 
 `data` extends the `review index` minimal shape (`batchId`, `fingerprint`,
 `sources`, `diagnostics`) with `sheet` (`{ sha256, record }`, `record` is the
@@ -365,7 +390,7 @@ TST-024, Additive) is the only way to write a Revision Response record
 6. The per-response field rules (already enforced by step 1's schema check),
    the two-fingerprint rule (`fromFingerprint` and `toFingerprint` must
    differ when any response is `incorporated`), and — matching `review
-   import`'s own §5 judgement — every `incorporated` response's `locators`
+import`'s own §5 judgement — every `incorporated` response's `locators`
    must each `match` the current sources (`REVIEW_RESPONSE_INVALID`
    otherwise, one issue per offending revision id).
 
@@ -373,13 +398,13 @@ When every check passes, the response file's bytes are written verbatim,
 create-new, to `records/responses-<to12>-<n>.json`, `<n>` starting at 1 and
 incrementing past an existing name.
 
-| Outcome               | Status  | Exit | Meaning                                                                          |
-| ---------------------- | ------- | ---- | --------------------------------------------------------------------------------- |
-| `success`              | `pass`  | `0`  | The response record was written; `data.record` names the repo-relative path.      |
-| `failure`              | `fail`  | `1`  | A check failed or the write itself failed; nothing new is written.                |
-| `usage-error`          | `error` | `2`  | Invalid or missing argv.                                                          |
-| `configuration-error`  | `error` | `2`  | The manifest is invalid or its path is unsafe, or the batch `records/` path (or a parent segment) is a symlink. |
-| `ERROR`                | `error` | `3`  | An unexpected internal failure.                                                   |
+| Outcome               | Status  | Exit | Meaning                                                                                                         |
+| --------------------- | ------- | ---- | --------------------------------------------------------------------------------------------------------------- |
+| `success`             | `pass`  | `0`  | The response record was written; `data.record` names the repo-relative path.                                    |
+| `failure`             | `fail`  | `1`  | A check failed or the write itself failed; nothing new is written.                                              |
+| `usage-error`         | `error` | `2`  | Invalid or missing argv.                                                                                        |
+| `configuration-error` | `error` | `2`  | The manifest is invalid or its path is unsafe, or the batch `records/` path (or a parent segment) is a symlink. |
+| `ERROR`               | `error` | `3`  | An unexpected internal failure.                                                                                 |
 
 `data` extends the `review index` minimal shape with `record` (the
 repo-relative path written). Issue codes this command can emit, beyond those

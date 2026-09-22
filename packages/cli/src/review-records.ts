@@ -21,6 +21,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { dirname, resolve } from "node:path";
 
 import {
+  compareUtf8,
   rawJsonMaxDepth,
   validateStoredResponsesRecord,
   validateStoredRevisionRecord,
@@ -177,7 +178,7 @@ export async function readRevisionRecords(
   const invalid: InvalidRecord[] = [];
   const bySha256 = new Map<string, RevisionSheetData>();
   const records: ValidRevisionRecord[] = [];
-  for (const name of entries.sort()) {
+  for (const name of entries.sort(compareUtf8)) {
     const relativePath = `${recordsDirectory(manifestPath)}/${name}`;
     const match = REVISION_RECORD_STRICT.exec(name);
     if (match === null) {
@@ -247,7 +248,7 @@ export async function readResponseRecords(
 
   const invalid: InvalidRecord[] = [];
   const records: ValidResponseRecord[] = [];
-  for (const name of entries.sort()) {
+  for (const name of entries.sort(compareUtf8)) {
     const relativePath = `${recordsDirectory(manifestPath)}/${name}`;
     const match = RESPONSE_RECORD_STRICT.exec(name);
     if (match === null) {

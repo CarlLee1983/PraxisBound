@@ -42,6 +42,24 @@ export function isHiddenOrReorderingCodePoint(codePoint: number): boolean {
   );
 }
 
+/**
+ * Renders untrusted text for a one-line, non-HTML context (a CLI terminal
+ * message or a `ResultIssue.message`): every code point
+ * `isHiddenOrReorderingCodePoint` names becomes a visible hex escape.
+ * Unlike `render-evidence.ts`'s `escapeEvidenceField`/`escapeEvidenceProse`,
+ * this never HTML-escapes — it is for contexts that are not markup.
+ */
+export function escapeHiddenCharacters(value: string): string {
+  let out = "";
+  for (const character of value) {
+    const codePoint = character.codePointAt(0) ?? 0;
+    out += isHiddenOrReorderingCodePoint(codePoint)
+      ? `\\x${codePoint.toString(16).padStart(codePoint > 0xff ? 4 : 2, "0")}`
+      : character;
+  }
+  return out;
+}
+
 /** Recognizes a repo-relative POSIX path with none of the syntactic hazards contract section 3 names. */
 export function isSyntacticallySafeRepoPath(path: string): boolean {
   if (path.length === 0 || path.length > 1024) return false;

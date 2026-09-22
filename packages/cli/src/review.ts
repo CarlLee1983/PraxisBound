@@ -21,8 +21,8 @@ import {
 import {
   IMPLEMENTED_PROTOCOL_VERSION,
   RESULT_SCHEMA_VERSION,
+  escapeHiddenCharacters,
   indexReviewBatch,
-  isHiddenOrReorderingCodePoint,
   planReviewBatch,
   renderReviewProjection,
   type ReviewIndex,
@@ -972,21 +972,12 @@ export async function runReviewRender(
 
 /**
  * Untrusted text (a revision id, an issue message assembled from input) is
- * never rendered to a human terminal without passing through
- * `isHiddenOrReorderingCodePoint` first — the one definition Core shares
- * with the Review Projection's evidence area, so both escape exactly the
- * same characters.
+ * never rendered to a human terminal without this escape — Core's
+ * `escapeHiddenCharacters`, the one definition also used by the Review
+ * Projection's evidence area for its own (HTML-free) messages, so every
+ * place escapes exactly the same characters.
  */
-export function escapeHumanControlCharacters(value: string): string {
-  let out = "";
-  for (const character of value) {
-    const codePoint = character.codePointAt(0) ?? 0;
-    out += isHiddenOrReorderingCodePoint(codePoint)
-      ? `\\x${codePoint.toString(16).padStart(codePoint > 0xff ? 4 : 2, "0")}`
-      : character;
-  }
-  return out;
-}
+export const escapeHumanControlCharacters = escapeHiddenCharacters;
 
 /** Renders the human output for `review index`. */
 export function renderReviewIndexHuman(

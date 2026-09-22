@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import test from "node:test";
 import { TextEncoder } from "node:util";
 
@@ -408,9 +409,14 @@ test("TST025-AC-007 + Security Fixture Matrix: HTML/script payloads, authority-c
   assert.doesNotMatch(html, /href="javascript:/i);
 });
 
-test("TST025-AC-007 + Security Fixture Matrix: bidi/zero-width/BOM code points in rationale and in a record path are visibly hex-escaped, never left to hide or reorder text", () => {
+test("TST025-AC-007 + Security Fixture Matrix: bidi/zero-width/BOM code points in a revision's rationale, a response's rationale and question, and an invalid record's path are all visibly hex-escaped, never left to hide or reorder text", () => {
   const hidden = "‮reversed⁦isolate​zwsp﻿bom";
   const rev = revision({ rationale: `before${hidden}after` });
+  const resp = response(rev.id, {
+    outcome: "needs-decision",
+    rationale: `resp-before${hidden}<img src=x onerror=alert(1)>resp-after`,
+    question: `q-before${hidden}<img src=x onerror=alert(1)>q-after`,
+  });
   const html = render({
     revisionRecords: [
       revisionRecord(
@@ -418,26 +424,53 @@ test("TST025-AC-007 + Security Fixture Matrix: bidi/zero-width/BOM code points i
         [rev],
       ),
     ],
-    responseRecords: [],
+    responseRecords: [
+      responseRecord(
+        `specs/batches/TST-9501-fixture/records/responses-555555555555-1.json`,
+        [resp],
+      ),
+    ],
     invalidRecordPaths: [],
   });
   assert.ok(
     !html.includes(hidden),
-    "the raw bidi/zero-width/BOM sequence must never reach the page verbatim",
+    "the raw bidi/zero-width/BOM sequence must never reach the page verbatim, from any field",
   );
-  assert.match(html, /\\x202e/);
-  assert.match(html, /\\x2066/);
-  assert.match(html, /\\x200b/);
-  assert.match(html, /\\xfeff/);
+  assert.doesNotMatch(
+    html,
+    /<img src=x onerror=alert\(1\)>/,
+    "a response's rationale/question never becomes an executable element either",
+  );
+  assert.match(html, /&lt;img src=x onerror=alert\(1\)&gt;/g);
+  // Every occurrence (revision rationale, response rationale, response
+  // question) is escaped the same way — not just the first one found.
+  for (const escape of [/\\x202e/g, /\\x2066/g, /\\x200b/g, /\\xfeff/g]) {
+    const matches = html.match(escape) ?? [];
+    assert.ok(
+      matches.length >= 3,
+      `expected ${escape} to appear at least 3 times (revision rationale, response rationale, response question), found ${matches.length}`,
+    );
+  }
 
-  const maliciousPath = `specs/batches/TST-9501-fixture/records/revisions-${"‮"}bad.json`;
+  // A record file name can never actually carry these code points (the
+  // strict `revisions-<12 hex>.json`/`responses-<12 hex>-<n>.json` pattern
+  // forbids it), so this coverage is only reachable through the invalid-
+  // record path list, which the CLI (`review-evidence.ts`) populates from
+  // real file names that failed that same pattern.
+  const maliciousPath = `specs/batches/TST-9501-fixture/records/revisions-${hidden}bad.json`;
   const invalidHtml = render({
     revisionRecords: [],
     responseRecords: [],
     invalidRecordPaths: [maliciousPath],
   });
-  assert.doesNotMatch(invalidHtml, new RegExp(maliciousPath));
+  assert.ok(
+    !invalidHtml.includes(hidden),
+    "the raw hidden sequence in an invalid record's path must never reach the page verbatim",
+  );
   assert.match(invalidHtml, /\\x202e/);
+  assert.match(invalidHtml, /\\x2066/);
+  assert.match(invalidHtml, /\\x200b/);
+  assert.match(invalidHtml, /\\xfeff/);
 });
 
 test("TST025-AC-008: an invalid record's path is listed without its content, and an over-limit collection renders no record content at all", () => {
@@ -477,6 +510,16 @@ test("TST025-AC-008: an invalid record's path is listed without its content, and
   assert.doesNotMatch(entryCountOverLimit, /class="evidence-entry"/);
 });
 
+// Pins the exact bytes of this fixture's §18-only page (`evidence`
+// omitted), computed once and hardcoded, so a future regression that
+// changes the no-evidence path (e.g. leaking a stray CSS rule or marker)
+// fails here even if it changes `withoutEvidence` and
+// `withoutEvidenceExplicit` identically — comparing the two to each other
+// alone would still pass in that case, since neither ever supplies
+// `evidence` in the first place.
+const NO_EVIDENCE_SHA256 =
+  "933d7ec26993640e2088718d2f677cd1b492cc7837add0db99d1e9b131552749";
+
 test("TST025-AC-008/AC-010: no matching record file leaves the page byte-identical to §18's own output (no evidence CSS leaks in either), and each §5 judgement kind renders its own raw value", () => {
   const withoutEvidence = render(undefined);
   const withoutEvidenceExplicit = renderReviewProjection(
@@ -485,6 +528,11 @@ test("TST025-AC-008/AC-010: no matching record file leaves the page byte-identic
     MANIFEST_PATH,
   );
   assert.equal(withoutEvidence, withoutEvidenceExplicit);
+  assert.equal(
+    createHash("sha256").update(withoutEvidence, "utf8").digest("hex"),
+    NO_EVIDENCE_SHA256,
+    "the no-evidence page must stay byte-identical to the pinned §18-only page",
+  );
   assert.doesNotMatch(
     withoutEvidence,
     /evidence/,

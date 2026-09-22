@@ -202,7 +202,12 @@ export type {
   RevisionEvidenceRecord,
 } from "./review/render-evidence.js";
 
-export { isHiddenOrReorderingCodePoint } from "./review/path.js";
+export {
+  compareUtf8,
+  escapeHiddenCharacters,
+  isHiddenOrReorderingCodePoint,
+  isSyntacticallySafeRepoPath,
+} from "./review/path.js";
 
 export {
   rawJsonMaxDepth,

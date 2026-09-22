@@ -15,7 +15,11 @@ import { validateResultEnvelope } from "@praxisbound/core";
 
 import { runReviewImport } from "../dist/review-import.js";
 import { runReviewRespond } from "../dist/review-respond.js";
-import { runReviewIndex, runReviewRender } from "../dist/review.js";
+import {
+  renderReviewRenderHuman,
+  runReviewIndex,
+  runReviewRender,
+} from "../dist/review.js";
 
 import {
   cleanupWorkspace,
@@ -186,6 +190,58 @@ test("Security Fixture Matrix row 「records directory」: an invalid records/re
     const html = await readFile(join(root, "review.html"), "utf8");
     assert.match(html, /未採計的紀錄/);
     assert.match(html, /records\/responses-000000000000\.json/);
+  } finally {
+    await cleanupWorkspace(root);
+  }
+});
+
+test("TST025-AC-008 human-mode: an invalid record whose file name contains a bidi override and a literal newline is printed as an ISSUE line with both visibly escaped", async () => {
+  const batchId = "TST-9614-fixture";
+  const { root, manifestPath } = await fixtureRepo(batchId);
+  try {
+    const dir = recordsDir(root, batchId);
+    await mkdir(dir, { recursive: true });
+    const dangerousName = "revisions-‮bad\nname.json";
+    await writeFile(join(dir, dangerousName), "not read");
+
+    // No `--json`. A raw control character in the file name can never
+    // satisfy the envelope's own `path`-field schema (`result.ts`'s
+    // `isPath`), so `loadReviewEvidence` omits `path` for this one issue
+    // and folds a visibly escaped rendering into `message` instead — the
+    // envelope stays schema-valid, which `run`'s own
+    // `validateResultEnvelope` check still confirms.
+    const execution = await run(root, [
+      manifestPath,
+      "--output",
+      "review.html",
+    ]);
+    assert.equal(execution.result.outcome, "success");
+    const reported = execution.result.issues.find(
+      (i) => i.code === "REVIEW_RECORD_INVALID",
+    );
+    assert.ok(reported, JSON.stringify(execution.result.issues));
+    assert.equal(
+      reported.path,
+      undefined,
+      "an unsafe file name is never placed in the machine-readable path field",
+    );
+    assert.equal(
+      reported.message,
+      `record is invalid: specs/batches/${batchId}/records/revisions-\\x202ebad\\x0aname.json`,
+    );
+
+    const rendered = renderReviewRenderHuman(execution);
+    assert.match(
+      rendered.stdout,
+      new RegExp(
+        `ISSUE REVIEW_RECORD_INVALID: record is invalid: specs/batches/${batchId}/records/revisions-\\\\x202ebad\\\\x0aname\\.json`,
+      ),
+    );
+    assert.ok(
+      !rendered.stdout.includes(dangerousName),
+      "the raw bidi override and newline must never reach stdout verbatim",
+    );
+    assert.ok(!rendered.stdout.includes("‮"));
   } finally {
     await cleanupWorkspace(root);
   }
@@ -457,6 +513,107 @@ test("TST025-AC-008 (security M2): two requests superseding the same id are a re
   }
 });
 
+test("TST025-AC-008 (security M2, round-trip re-validation): a content conflict and an unrelated supersedes conflict, spread across four files, are both caught — not just the first one `validateRevisionRecordSet` happens to report", async () => {
+  const batchId = "TST-9615-fixture";
+  const { root, manifestPath } = await fixtureRepo(batchId);
+  try {
+    const baseRevision = (id, overrides = {}) => ({
+      id,
+      fingerprint: "0".repeat(64),
+      targets: [
+        {
+          path: "specs/features/fixture/spec.md",
+          anchor: "R-001",
+          blockSha256: "a".repeat(64),
+        },
+      ],
+      quote: "quote",
+      kind: "supplement",
+      blocking: true,
+      proposal: "proposal",
+      rationale: "rationale",
+      createdAt: "2026-09-17T08:21:04Z",
+      ...overrides,
+    });
+
+    // A, B: same id X, different content — a content conflict
+    // `validateRevisionRecordSet` reports on its very first pass.
+    const x = nextRevisionId();
+    await writeValidRevisionRecord(root, batchId, 0, {
+      revisions: [baseRevision(x, { quote: "quote-A" })],
+    });
+    await writeValidRevisionRecord(root, batchId, 0, {
+      revisions: [baseRevision(x, { quote: "quote-B-different" })],
+    });
+
+    // C: id Y plus a first supersedes of Y. D: a second, competing
+    // supersedes of the same Y. This conflict is only visible once A/B
+    // are excluded and the remaining set is re-validated — the very
+    // re-validation loop this test exists to prove runs at all.
+    const y = nextRevisionId();
+    const s1 = nextRevisionId();
+    const s2 = nextRevisionId();
+    await writeValidRevisionRecord(root, batchId, 0, {
+      revisions: [baseRevision(y), baseRevision(s1, { supersedes: y })],
+    });
+    await writeValidRevisionRecord(root, batchId, 0, {
+      revisions: [baseRevision(s2, { supersedes: y })],
+    });
+
+    const execution = await run(root, [
+      manifestPath,
+      "--output",
+      "review.html",
+      "--json",
+    ]);
+    assert.equal(execution.result.outcome, "success");
+
+    const invalid = execution.result.issues.filter(
+      (i) => i.code === "REVIEW_RECORD_INVALID",
+    );
+    assert.equal(
+      invalid.length,
+      3,
+      `expected the content conflict (2 files) and the supersedes conflict (1 file) both reported, got ${JSON.stringify(execution.result.issues)}`,
+    );
+    assert.ok(
+      invalid.some((i) => i.subject === `revision:${x}`),
+      "the content conflict on X must still be reported",
+    );
+    assert.ok(
+      invalid.some(
+        (i) => i.subject === `revision:${s1}` || i.subject === `revision:${s2}`,
+      ),
+      "the supersedes conflict on Y, only visible in the second validation round, must also be reported — this is exactly what the round-trip loop fixes",
+    );
+
+    const html = await readFile(join(root, "review.html"), "utf8");
+    assert.doesNotMatch(html, /quote-A|quote-B-different/);
+    // Whichever of C/D `validateRevisionRecordSet` names, that file's
+    // *whole* content (not just the offending id) is excluded — the
+    // other file survives and renders normally. Exactly one of the two
+    // survives; the excluded pair's ids never appear as their own
+    // rendered entries, so no 「已被…取代」 label is ever derived from
+    // an excluded record.
+    const survivedD = html.includes(s2) && !html.includes(s1);
+    const survivedC = html.includes(s1) && !html.includes(s2);
+    assert.notEqual(
+      survivedC,
+      survivedD,
+      "exactly one of the two supersedes-conflicting files survives, never both and never neither",
+    );
+    // Whichever superseder's own file was excluded, its `supersedes` claim
+    // must never look honored: Y is never labelled as superseded by it.
+    // (The surviving file's superseder, if it is the one left standing, is
+    // legitimate and *is* expected to carry that label — that is normal
+    // §6 behavior, not a defect.)
+    const excludedSupersederId = survivedC ? s2 : s1;
+    assert.doesNotMatch(html, new RegExp(`已被 ${excludedSupersederId} 取代`));
+  } finally {
+    await cleanupWorkspace(root);
+  }
+});
+
 test("TST025-AC-005: revisions render before responses, in file-name order, through a real import + respond flow", async () => {
   const batchId = "TST-9609-fixture";
   const { root, manifestPath } = await fixtureRepo(batchId);
@@ -613,6 +770,61 @@ test("TST025-AC-008: a symlinked records/ directory blocks REVIEW_PATH_UNSAFE, n
 
     const html = await readFile(join(root, "review.html"), "utf8");
     assert.doesNotMatch(html, /修訂紀錄證據/);
+  } finally {
+    await cleanupWorkspace(root);
+  }
+});
+
+test('TST025-AC-008: records/ replaced by a plain file (a listing failure other than "does not exist") blocks REVIEW_RECORD_INVALID naming the records directory, omits the evidence area, and writes nothing, while render still succeeds', async () => {
+  const batchId = "TST-9613-fixture";
+  const { root, manifestPath } = await fixtureRepo(batchId);
+  try {
+    // `records/` as a plain file makes `readdir` fail with ENOTDIR — a
+    // listing failure distinct from "does not exist" (ENOENT), and
+    // reproducible without root or platform-specific permission games.
+    await writeFile(recordsDir(root, batchId), "not a directory");
+
+    const before = await listSourcePaths(root);
+
+    const execution = await run(root, [
+      manifestPath,
+      "--output",
+      "review.html",
+      "--json",
+    ]);
+
+    assert.equal(execution.result.outcome, "success");
+    assert.ok(
+      execution.result.issues.some(
+        (i) =>
+          i.code === "REVIEW_RECORD_INVALID" &&
+          i.path === `specs/batches/${batchId}/records`,
+      ),
+      JSON.stringify(execution.result.issues),
+    );
+    assert.ok(
+      execution.result.data.diagnostics.some(
+        (d) => d.code === "REVIEW_RECORD_INVALID" && d.severity === "blocking",
+      ),
+    );
+
+    const html = await readFile(join(root, "review.html"), "utf8");
+    assert.doesNotMatch(html, /修訂紀錄證據/);
+
+    const after = (await listSourcePaths(root)).filter(
+      (path) => path !== "review.html",
+    );
+    assert.deepEqual(
+      after,
+      before,
+      "no source, manifest, or records/ file is written (review.html, the render's own output, aside)",
+    );
+    const recordsBytes = await readFile(recordsDir(root, batchId), "utf8");
+    assert.equal(
+      recordsBytes,
+      "not a directory",
+      "the records/ path itself is left exactly as it was",
+    );
   } finally {
     await cleanupWorkspace(root);
   }
