@@ -387,6 +387,8 @@ Work Item ID 由 ForgePilot 指派、無冪等鍵、依賴只能在建立時宣�
 - 批次 ≤ 200 張 Story、≤ 200 份 ADR 與 ≤ 200 份 Spec；單一來源 Markdown ≤ 4 MiB。
 - manifest `preface`：UTF-8 ≤ 4 KiB（§3）。
 - Preflight Report 的診斷總數 ≤ 10000；超過判 `ERROR`（exit 3）而非截斷，因為批次上限內不應發生。
+- （修訂，R-005）Review Projection 的修訂紀錄證據（§20）：`records/` 內檔名以 `revisions-` 或 `responses-` 開頭、以 `.json` 結尾的檔案（含不合法者）合計 ≤ 200 份；
+  這些檔案的大小合計 ≤ 16 MiB；所有有效紀錄的意見與回應合計 ≤ 10000 則。超過任一項時整個證據區不呈現任何紀錄內容，不截斷、不部分呈現（§20）。
 
 ForgePilot 輸出是觀察而非輸入：每個 stdout／stderr 保存前 1 MiB，超過時該步 `truncated: true` 並記錄原始 byte 長度。
 上限放寬屬 Additive；收緊屬 Breaking。
@@ -547,6 +549,57 @@ Revision Request 欄位（§6 之外的產生規則）：
   所以從暫存載入時常駐提示「已從瀏覽器暫存載入 N 則意見」，每則載入的意見標示「來自暫存」；草稿經讀者修改或匯出、或任一意見出現在讀者還原的修訂單中後不再標示。
   以已匯出狀態載入且未再還原的意見在本次開啟期間持續標示，因為它不會再被匯出或就地修改。
   有未匯出的 Revision Request 時顯示數量，離開頁面前提示。匯出、還原或暫存失敗時，既有草稿不被清空，也不被標示為已保存。
+
+## 20. Review Projection 的修訂紀錄證據（修訂，R-005）
+
+`review render` 在 §18 的頁面中加入「修訂紀錄證據」區，讓讀者對照已匯入的 Revision Request 與 Agent 的
+Revision Response。整區是歷史 Evidence（ADR-014）：不是人類核准，也不代表當前工作、Gate、進度、完成或生命週期狀態，
+區首固定以文字註明這一點。Renderer 不計算「已解決」、不計算核准或授權，也不判斷回應是否合理。
+
+選取：
+
+- 讀取批次 `records/` 下全部 `revisions-*.json` 與 `responses-*.json`，依 §2 與 §13 驗證；
+  有效者全部納入，沒有「最新一份」或「只看當前指紋」的篩選。
+- 不合法的檔案依 §2 不被採計，產生阻擋診斷 `REVIEW_RECORD_INVALID`（`path` 為該紀錄的倉庫相對路徑），
+  並在證據區的「未採計的紀錄」清單列出路徑；其內容不呈現。
+- `records/` 不存在，或其中沒有上述檔名的檔案時，頁面不含證據區，§18 輸出不變。
+- `index` 不讀取 `records/`；本節只影響 `render`。
+- `records/` 或其上層任一段為 symlink 等不安全路徑時（§2），不讀取任何紀錄，產生阻擋診斷 `REVIEW_PATH_UNSAFE`，證據區不呈現；`render` 仍回 `success`。
+
+上限（§13）：
+
+- 先依檔名計數，再以檔案系統回報的大小（不跟隨 symlink）加總；超過 200 份或合計超過 16 MiB 時不讀取任何紀錄內容。讀取後有效紀錄的意見與回應合計超過 10000 則時，同樣不呈現任何紀錄內容。
+- 兩者皆產生阻擋診斷 `REVIEW_INPUT_TOO_LARGE`，證據區只顯示「修訂紀錄超過投影上限，未呈現任何紀錄」與實際數量。
+  `render` 仍依 §12 回 `success`；定義內容照常呈現。不截斷、不挑選部分紀錄，因此不存在「默默少一則」的呈現。
+
+順序：
+
+- 先列全部修訂單紀錄，再列全部回應紀錄；各自依檔名的位元組順序（即 `revisions-<sheet12>`、`responses-<to12>-<n>` 的字典序）。
+- 紀錄內的意見與回應依檔案中的陣列順序。
+- 順序與時間無關，不以 `createdAt` 重排。
+
+每份修訂單紀錄顯示：紀錄路徑、內容 sha256、修訂單 `fingerprint`，以及其中每則意見的 `id`、`kind`、`blocking`、
+`quote`、`proposal`、`rationale`、`createdAt`、`supersedes`。另附兩個標示：
+
+- 取代：依 §6 的全部已匯入修訂單計算；被取代的意見標「已被 `<REV-id>` 取代（歷史）」，沒有被取代的不另標示為「有效」以外的任何狀態。
+- 指紋：意見 `fingerprint` 等於當前指紋時標「提出時指紋與當前相同」，否則標「提出時指紋與當前不同（歷史）」。
+
+每份回應紀錄顯示：紀錄路徑、`fromFingerprint`、`toFingerprint`、`revisionSheets`，`toFingerprint` 等於當前指紋時標
+「回應綁定當前指紋」，否則標「回應綁定舊指紋（歷史）」；以及每則回應的 `revisionId`、`route`、`outcome`、`rationale`、
+`question`、`blockingSuggestion` 與 `locators`。回應的 `revisionId` 連到同頁該則意見的位置（存在時）。
+
+來源證據：
+
+- 意見的每個 `targets` 與回應的每個 `locators`，顯示 locator 本身與 render 當下依 §5 判定的結果：
+  `match`、`hash-mismatch`、`anchor-missing` 或 `anchor-duplicate`（與 §6 `import` 的逐目標判定相同）。
+- 判定為 `match` 時提供頁內連結到該來源區塊（§18 每個來源區塊只渲染一次）；其他結果不連結、不指向同名或相似段落。
+- 不顯示差異（diff）：`quote` 只是閱讀用文字、不是可重現的基準（§19），頁面不以「差異」「diff」或變更標記描述任何來源比較。
+
+呈現與列印：
+
+- 全部紀錄內容（含路徑、ID、診斷）一律以文字節點呈現，控制字元以可見形式跳脫；唯一例外是 `quote`、`proposal`、`rationale`、`question` 中的 LF，以文字換行呈現（`white-space: pre-wrap`，不產生 markup）。不成為 markup、屬性、URL、命令或網路請求；§19 的 CSP 不變。
+- 證據區在需求卡片與「未對應需求的 Story」之後、附錄之前；預設收合，列印時展開並印出。
+- 證據區不接受批註；審閱層（§19）的可批註目標不含證據區元素。
 
 ## 與 AC 的對照
 

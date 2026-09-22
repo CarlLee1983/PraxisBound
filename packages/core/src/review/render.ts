@@ -19,6 +19,10 @@ import { createHash } from "node:crypto";
 import { ANNOTATION_SCRIPT } from "./annotation-script.js";
 import { renderMarkdownHtml, scanMarkdownDocument } from "./markdown-html.js";
 import {
+  renderEvidenceSection,
+  type ReviewProjectionEvidence,
+} from "./render-evidence.js";
+import {
   buildLocatorLookup,
   elementId,
   locatorHref,
@@ -447,6 +451,7 @@ export function renderReviewProjection(
   index: ReviewIndex,
   documents: readonly ReviewProjectionDocument[],
   manifestPath: string,
+  evidence?: ReviewProjectionEvidence,
 ): string {
   const documentsByPath = new Map(
     documents.map((document) => [document.path, document]),
@@ -565,6 +570,13 @@ export function renderReviewProjection(
       ? ""
       : `<section class="preface"><h2>審閱導言</h2><p class="label">由批次作者撰寫（Review Preface）</p>${renderPreface(index.preface)}</section>`;
 
+  const evidenceSection = renderEvidenceSection(
+    evidence,
+    index,
+    manifestPath,
+    lookup,
+  );
+
   const appendixHtml = renderAppendix(
     index,
     documentsByPath,
@@ -590,7 +602,7 @@ export function renderReviewProjection(
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-${scriptHash}'; img-src 'none'; media-src 'none'; object-src 'none'; frame-src 'none'; connect-src 'none'; base-uri 'none'; form-action 'none'; style-src 'unsafe-inline'">
 <title>${escapeHtml(title)} — Review Projection</title>
 <style>
-${PAGE_CSS}
+${PAGE_CSS}${evidenceSection.css}
 </style>
 </head>
 <body data-pb-batch-id="${escapeHtml(index.batchId)}" data-pb-manifest-path="${escapeHtml(manifestPath)}" data-pb-fingerprint="${escapeHtml(index.fingerprint)}">
@@ -614,7 +626,7 @@ ${prefaceHtml}
 <section><h2>診斷摘要</h2>${summaryHtml}</section>
 ${missingSourcesHtml}
 <section class="cards"><h2>需求卡片</h2>${cards}</section>
-<section class="orphan-stories"><h2>未對應需求的 Story</h2>${orphanStories || `<p class="muted">沒有未對應需求的 Story。</p>`}</section>
+<section class="orphan-stories"><h2>未對應需求的 Story</h2>${orphanStories || `<p class="muted">沒有未對應需求的 Story。</p>`}</section>${evidenceSection.html}
 ${appendixHtml}
 </main>
 <script>${ANNOTATION_SCRIPT}</script>

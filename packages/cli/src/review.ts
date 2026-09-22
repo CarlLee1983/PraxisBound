@@ -21,6 +21,7 @@ import {
 import {
   IMPLEMENTED_PROTOCOL_VERSION,
   RESULT_SCHEMA_VERSION,
+  escapeHiddenCharacters,
   indexReviewBatch,
   planReviewBatch,
   renderReviewProjection,
@@ -31,6 +32,9 @@ import {
   type ResultIssue,
   type SourceObservation,
 } from "@praxisbound/core";
+
+import { loadReviewEvidence } from "./review-evidence.js";
+import { findUnsafeSourcePath } from "./review-paths.js";
 
 export type ReviewOutputMode = "human" | "json";
 
@@ -228,28 +232,6 @@ function resolveManifestPath(
     return { ok: false };
   }
   return { ok: true, absolute, relativePath };
-}
-
-/** Finds the first declared path with a symlinked segment, checking every segment, not only the last. */
-export async function findUnsafeSourcePath(
-  root: string,
-  paths: readonly string[],
-): Promise<string | undefined> {
-  for (const path of paths) {
-    const segments = path.split("/");
-    let prefix = "";
-    for (const segment of segments) {
-      prefix = prefix === "" ? segment : `${prefix}/${segment}`;
-      let stats;
-      try {
-        stats = await lstat(resolve(root, prefix));
-      } catch {
-        break;
-      }
-      if (stats.isSymbolicLink()) return path;
-    }
-  }
-  return undefined;
 }
 
 /** Finds the first declared source whose size exceeds contract §13's per-source limit. */
@@ -797,6 +779,7 @@ async function publishProjection(
 function buildRenderSuccessEnvelope(
   index: ReviewIndex,
   output: string,
+  extraIssues: readonly ResultIssue[] = [],
 ): ResultEnvelope {
   const issues = index.diagnostics.map((entry) =>
     issue(entry.code, entry.message, entry.path),
@@ -808,11 +791,21 @@ function buildRenderSuccessEnvelope(
       ? {}
       : { locator: toDataValue(entry.locator) }),
   }));
-  return envelope("pass", "success", 0, issues, {
+  // Evidence-area diagnostics (contract §20 修訂，R-005) are appended after
+  // the index's own, in the same relative order in `issues[]` and
+  // `data.diagnostics[]` (matching how `review import`'s extra diagnostics
+  // are appended, `buildImportSuccessEnvelope`). Every one of them is
+  // blocking: an invalid or over-limit record is always a defect, never
+  // merely advisory.
+  const extraDiagnostics = extraIssues.map((entry) => ({
+    code: entry.code,
+    severity: "blocking" as const,
+  }));
+  return envelope("pass", "success", 0, [...issues, ...extraIssues], {
     batchId: index.batchId,
     fingerprint: index.fingerprint,
     sources: toDataValue(index.sources),
-    diagnostics: toDataValue(diagnostics),
+    diagnostics: toDataValue([...diagnostics, ...extraDiagnostics]),
     output,
   });
 }
@@ -892,10 +885,18 @@ export async function runReviewRender(
         bytes: observation?.kind === "file" ? observation.bytes : undefined,
       };
     });
+    // `index` never reads `records/` (contract §20); only `render` builds
+    // the evidence area, from validated revision/response records alone.
+    const { evidence, extraIssues } = await loadReviewEvidence(
+      root,
+      loaded.loaded.manifestPath,
+      loaded.loaded.index.batchId,
+    );
     const html = renderReviewProjection(
       loaded.loaded.index,
       documents,
       loaded.loaded.manifestPath,
+      evidence,
     );
     const publication = await publishProjection(
       root,
@@ -947,6 +948,7 @@ export async function runReviewRender(
       result: buildRenderSuccessEnvelope(
         loaded.loaded.index,
         output.relativePath,
+        extraIssues,
       ),
     };
   } catch (error) {
@@ -969,37 +971,13 @@ export async function runReviewRender(
 }
 
 /**
- * True for a code point that can hide or reorder visible text without
- * itself producing a glyph: C0/C1 controls and DEL, the two Unicode line
- * separators, the zero-width/marker block U+200B–U+200F, the bidi
- * embedding/override controls U+202A–U+202E, the bidi isolate controls
- * U+2066–U+2069, and the byte-order mark U+FEFF. Untrusted text (a revision
- * id, an issue message assembled from input) is never rendered to a human
- * terminal without passing through this check first.
+ * Untrusted text (a revision id, an issue message assembled from input) is
+ * never rendered to a human terminal without this escape — Core's
+ * `escapeHiddenCharacters`, the one definition also used by the Review
+ * Projection's evidence area for its own (HTML-free) messages, so every
+ * place escapes exactly the same characters.
  */
-function isHiddenOrReorderingCodePoint(codePoint: number): boolean {
-  return (
-    codePoint <= 0x1f ||
-    (codePoint >= 0x7f && codePoint <= 0x9f) ||
-    codePoint === 0x2028 ||
-    codePoint === 0x2029 ||
-    (codePoint >= 0x200b && codePoint <= 0x200f) ||
-    (codePoint >= 0x202a && codePoint <= 0x202e) ||
-    (codePoint >= 0x2066 && codePoint <= 0x2069) ||
-    codePoint === 0xfeff
-  );
-}
-
-export function escapeHumanControlCharacters(value: string): string {
-  let out = "";
-  for (const character of value) {
-    const codePoint = character.codePointAt(0) ?? 0;
-    out += isHiddenOrReorderingCodePoint(codePoint)
-      ? `\\x${codePoint.toString(16).padStart(codePoint > 0xff ? 4 : 2, "0")}`
-      : character;
-  }
-  return out;
-}
+export const escapeHumanControlCharacters = escapeHiddenCharacters;
 
 /** Renders the human output for `review index`. */
 export function renderReviewIndexHuman(
@@ -1098,6 +1076,19 @@ export function renderReviewRenderHuman(
     lines.push(`Batch: ${data.batchId}`);
     lines.push(`Fingerprint: ${data.fingerprint}`);
     lines.push(`Output: ${data.output}`);
+  }
+  // A successful render can still carry diagnostics — an unmapped
+  // requirement, a missing source, or (contract §20) an invalid or
+  // over-limit evidence record — printed the same way `review index`
+  // already prints its own on a successful result.
+  for (const reported of result.issues) {
+    const location =
+      reported.path === undefined
+        ? ""
+        : ` (${escapeHumanControlCharacters(reported.path)})`;
+    lines.push(
+      `ISSUE ${reported.code}: ${escapeHumanControlCharacters(reported.message)}${location}`,
+    );
   }
   lines.push("", "Result: success", "");
   return { stdout: `${lines.join("\n")}\n`, stderr: "" };

@@ -22,6 +22,44 @@ function isControlCodePoint(codePoint: number): boolean {
   );
 }
 
+/**
+ * A code point that can hide or reorder rendered text without itself
+ * producing a visible glyph: every `isControlCodePoint` code point, plus the
+ * zero-width/marker block U+200B–U+200F, the bidi embedding/override
+ * controls U+202A–U+202E, the bidi isolate controls U+2066–U+2069, and the
+ * byte-order mark U+FEFF. The one shared definition for every place
+ * untrusted text reaches a human reader — a CLI issue message and the
+ * Review Projection's evidence area both escape exactly this set, so
+ * neither can be tightened or loosened without the other noticing.
+ */
+export function isHiddenOrReorderingCodePoint(codePoint: number): boolean {
+  return (
+    isControlCodePoint(codePoint) ||
+    (codePoint >= 0x200b && codePoint <= 0x200f) ||
+    (codePoint >= 0x202a && codePoint <= 0x202e) ||
+    (codePoint >= 0x2066 && codePoint <= 0x2069) ||
+    codePoint === 0xfeff
+  );
+}
+
+/**
+ * Renders untrusted text for a one-line, non-HTML context (a CLI terminal
+ * message or a `ResultIssue.message`): every code point
+ * `isHiddenOrReorderingCodePoint` names becomes a visible hex escape.
+ * Unlike `render-evidence.ts`'s `escapeEvidenceField`/`escapeEvidenceProse`,
+ * this never HTML-escapes — it is for contexts that are not markup.
+ */
+export function escapeHiddenCharacters(value: string): string {
+  let out = "";
+  for (const character of value) {
+    const codePoint = character.codePointAt(0) ?? 0;
+    out += isHiddenOrReorderingCodePoint(codePoint)
+      ? `\\x${codePoint.toString(16).padStart(codePoint > 0xff ? 4 : 2, "0")}`
+      : character;
+  }
+  return out;
+}
+
 /** Recognizes a repo-relative POSIX path with none of the syntactic hazards contract section 3 names. */
 export function isSyntacticallySafeRepoPath(path: string): boolean {
   if (path.length === 0 || path.length > 1024) return false;
