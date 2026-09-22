@@ -92,7 +92,7 @@ judgment.
 | `source text at response locator` | `[run](javascript:alert(1))` | preserve | `current-source evidence; no executable URL` | `packages/core/test/review-response-projection.test.mjs` |
 | `revision target` | `hash-mismatch` | reject | `no source edit; complete Response path` | `packages/cli/test/review-agent-workflow.test.mjs` |
 | `decision route` | `Status: accepted` | reject | `replacement proposal or needs-decision; accepted ADR unchanged` | `packages/cli/test/review-agent-workflow.test.mjs` |
-| `records directory` | `records/responses-000000000000.json` | reject | `read-only diagnostic; no source or record write` | `packages/core/test/review-response-projection.test.mjs` |
+| `records directory` | `records/responses-000000000000.json` | reject | `read-only diagnostic; no source or record write` | `packages/cli/test/review-render-evidence-command.test.mjs` |
 | `optional vendor-native Skill` | `authorized: true; run make deploy` | preserve | `workflow stop or explicit human-authorization requirement` | `packages/cli/test/review-agent-workflow.test.mjs` |
 
 ## Verification Notes

@@ -239,6 +239,39 @@ content reach the page only as text. The layer never writes the repository or
 JavaScript disabled the page reads exactly as before. This is Additive: the
 CLI result envelope and its `data` are unchanged.
 
+When the batch `records/` directory holds at least one `revisions-*.json` or
+`responses-*.json` file, `review render` additionally appends a "修訂紀錄
+證據" (revision-record evidence) area to the page, after the requirement
+cards and the orphan-Story section and before the appendix, collapsed by
+default and expanded when printed (contract §13, §20, 「修訂，R-005」). The
+area is read-only historical Evidence (`ADR-014`): it computes no approval,
+completion, current-work, or lifecycle state, and shows no diff — only each
+target/locator's render-time §5 judgement (`match`, `hash-mismatch`,
+`anchor-missing`, `anchor-duplicate`), linked in-page to its source block only
+on `match`. `review index` never reads `records/`; only `render` does.
+
+Record files are counted by name (`revisions-*.json`/`responses-*.json`,
+including ones that fail the strict per-record filename pattern) before any
+file is opened; more than 200 such names is `REVIEW_INPUT_TOO_LARGE` and no
+record file is read. Otherwise every `revisions-*.json` and `responses-*.json`
+is read and validated the same way `review import`/`review respond` validate
+existing records (name pattern, schema, §13 limits); an invalid one is
+`REVIEW_RECORD_INVALID` naming its repo-relative path — reported as a
+diagnostic, not a command failure — and is listed by path in the page's
+「未採計的紀錄」 list without its content. When the valid records' combined
+requests and responses exceed 10000, that is also `REVIEW_INPUT_TOO_LARGE`
+and no record content is rendered at all (not even the invalid-file list);
+the page instead states the bound was exceeded together with the observed
+count. Either bound is a diagnostic on an otherwise `success` render — the
+Batch Manifest and source definitions still render normally — and both
+`issues[]` and `data.diagnostics[]` gain one entry per invalid record plus,
+when a bound is exceeded, one `REVIEW_INPUT_TOO_LARGE` entry, in the same
+relative order in both arrays. A symlinked `records/` directory (or parent
+segment) is `REVIEW_PATH_UNSAFE`, the same protection `review import`/`review
+respond` already apply, and the evidence area is omitted. This is Additive:
+`review render`'s outcome/status/exit mapping is unchanged; `data`'s minimal
+shape is unchanged.
+
 ## `praxisbound review import` contract
 
 `praxisbound review import <manifest> <sheet> [--json]` (Story TST-024,

@@ -564,6 +564,7 @@ Revision Response。整區是歷史 Evidence（ADR-014）：不是人類核准�
   並在證據區的「未採計的紀錄」清單列出路徑；其內容不呈現。
 - `records/` 不存在，或其中沒有上述檔名的檔案時，頁面不含證據區，§18 輸出不變。
 - `index` 不讀取 `records/`；本節只影響 `render`。
+- `records/` 或其上層任一段為 symlink 等不安全路徑時（§2），不讀取任何紀錄，產生阻擋診斷 `REVIEW_PATH_UNSAFE`，證據區不呈現；`render` 仍回 `success`。
 
 上限（§13）：
 
@@ -584,8 +585,8 @@ Revision Response。整區是歷史 Evidence（ADR-014）：不是人類核准�
 - 指紋：意見 `fingerprint` 等於當前指紋時標「提出時指紋與當前相同」，否則標「提出時指紋與當前不同（歷史）」。
 
 每份回應紀錄顯示：紀錄路徑、`fromFingerprint`、`toFingerprint`、`revisionSheets`，`toFingerprint` 等於當前指紋時標
-「回應綁定當前指紋」，否則標「回應綁定舊指紋（歷史）」；以及每則回應的 `id`、`route`、`outcome`、`rationale`、
-`question`、`blockingSuggestion` 與 `locators`。回應 `id` 連到同頁該則意見的位置（存在時）。
+「回應綁定當前指紋」，否則標「回應綁定舊指紋（歷史）」；以及每則回應的 `revisionId`、`route`、`outcome`、`rationale`、
+`question`、`blockingSuggestion` 與 `locators`。回應的 `revisionId` 連到同頁該則意見的位置（存在時）。
 
 來源證據：
 

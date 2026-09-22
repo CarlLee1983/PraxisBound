@@ -153,6 +153,8 @@ packed_packages_have_the_bounded_public_contract() {
     './dist/review/markdown.js' \
     './dist/review/path.d.ts' \
     './dist/review/path.js' \
+    './dist/review/render-evidence.d.ts' \
+    './dist/review/render-evidence.js' \
     './dist/review/render-locators.d.ts' \
     './dist/review/render-locators.js' \
     './dist/review/render-source.d.ts' \
@@ -245,10 +247,14 @@ packed_packages_have_the_bounded_public_contract() {
     './dist/release-git.js' \
     './dist/release.d.ts' \
     './dist/release.js' \
+    './dist/review-evidence.d.ts' \
+    './dist/review-evidence.js' \
     './dist/review-import.d.ts' \
     './dist/review-import.js' \
     './dist/review-input.d.ts' \
     './dist/review-input.js' \
+    './dist/review-paths.d.ts' \
+    './dist/review-paths.js' \
     './dist/review-records.d.ts' \
     './dist/review-records.js' \
     './dist/review-respond.d.ts' \

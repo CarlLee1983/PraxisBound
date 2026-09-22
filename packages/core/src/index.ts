@@ -195,6 +195,15 @@ export type {
 } from "./review/types.js";
 export type { ReviewProjectionDocument } from "./review/render.js";
 
+export type {
+  ResponseEvidenceRecord,
+  ReviewEvidenceOverLimit,
+  ReviewProjectionEvidence,
+  RevisionEvidenceRecord,
+} from "./review/render-evidence.js";
+
+export { isHiddenOrReorderingCodePoint } from "./review/path.js";
+
 export {
   rawJsonMaxDepth,
   jsonParseFailureMessage,

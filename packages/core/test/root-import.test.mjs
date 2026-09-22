@@ -40,6 +40,7 @@ test("AC-005/TST012-AC-004/TST014-AC-003: the Core package root exposes only the
     "getInitObservationScope",
     "getToolingCapabilities",
     "indexReviewBatch",
+    "isHiddenOrReorderingCodePoint",
     "jsonParseFailureMessage",
     "legacyActivationDestinations",
     "legacyActivationSkillDirectory",

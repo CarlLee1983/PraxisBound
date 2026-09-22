@@ -28,7 +28,7 @@ import {
   type RevisionSheetData,
 } from "@praxisbound/core";
 
-import { findUnsafeSourcePath } from "./review.js";
+import { findUnsafeSourcePath } from "./review-paths.js";
 
 export const RECORD_MAX_BYTES = 1024 * 1024;
 const MAX_NESTING_DEPTH = 32;
@@ -159,13 +159,19 @@ export async function readRevisionRecords(
   root: string,
   manifestPath: string,
   batchId: string,
+  /** Pre-fetched `records/` directory entries (from `listRecordsDirectory`), so a caller that already listed the directory never lists it twice. Falls back to its own `readdir` when omitted, treating any failure as "no records" (unchanged behavior for `review import`/`review respond`). */
+  names?: readonly string[],
 ): Promise<RevisionRecordsRead> {
-  const directory = resolve(root, recordsDirectory(manifestPath));
   let entries: string[];
-  try {
-    entries = (await readdir(directory)).filter(isLooseRevisionName);
-  } catch {
-    return { invalid: [], bySha256: new Map(), records: [] };
+  if (names !== undefined) {
+    entries = names.filter(isLooseRevisionName);
+  } else {
+    const directory = resolve(root, recordsDirectory(manifestPath));
+    try {
+      entries = (await readdir(directory)).filter(isLooseRevisionName);
+    } catch {
+      return { invalid: [], bySha256: new Map(), records: [] };
+    }
   }
 
   const invalid: InvalidRecord[] = [];
@@ -208,9 +214,15 @@ export async function readRevisionRecords(
   return { invalid, bySha256, records };
 }
 
+export interface ValidResponseRecord {
+  readonly path: string;
+  readonly record: RevisionResponsesData;
+}
+
 export interface ResponseRecordsRead {
   readonly invalid: readonly InvalidRecord[];
-  readonly records: readonly RevisionResponsesData[];
+  /** Every valid record, with its repo-relative path (needed by the projection's evidence area, contract §20 修訂，R-005). */
+  readonly records: readonly ValidResponseRecord[];
 }
 
 /** Reads and validates every `records/responses-*.json` under `records/` (contract §7 修訂，R-005). */
@@ -218,17 +230,23 @@ export async function readResponseRecords(
   root: string,
   manifestPath: string,
   batchId: string,
+  /** Same pre-fetched-listing contract as `readRevisionRecords`. */
+  names?: readonly string[],
 ): Promise<ResponseRecordsRead> {
-  const directory = resolve(root, recordsDirectory(manifestPath));
   let entries: string[];
-  try {
-    entries = (await readdir(directory)).filter(isLooseResponseName);
-  } catch {
-    return { invalid: [], records: [] };
+  if (names !== undefined) {
+    entries = names.filter(isLooseResponseName);
+  } else {
+    const directory = resolve(root, recordsDirectory(manifestPath));
+    try {
+      entries = (await readdir(directory)).filter(isLooseResponseName);
+    } catch {
+      return { invalid: [], records: [] };
+    }
   }
 
   const invalid: InvalidRecord[] = [];
-  const records: RevisionResponsesData[] = [];
+  const records: ValidResponseRecord[] = [];
   for (const name of entries.sort()) {
     const relativePath = `${recordsDirectory(manifestPath)}/${name}`;
     const match = RESPONSE_RECORD_STRICT.exec(name);
@@ -254,9 +272,59 @@ export async function readResponseRecords(
       invalid.push({ path: relativePath });
       continue;
     }
-    records.push(validated.record);
+    records.push({ path: relativePath, record: validated.record });
   }
   return { invalid, records };
+}
+
+export interface RecordFileNameCounts {
+  /** Files matching the loose `revisions-*.json` name (including invalid ones), counted by name only. */
+  readonly revisionsNames: number;
+  /** Files matching the loose `responses-*.json` name (including invalid ones), counted by name only. */
+  readonly responsesNames: number;
+}
+
+/**
+ * Counts already-listed `records/` entries by name only, before any file is
+ * opened (contract §13/§20 修訂，R-005: the 200-file bound is checked by
+ * name first so an over-large collection never causes any record content to
+ * be read). Pure: takes the listing `listRecordsDirectory` already read,
+ * rather than reading the directory itself.
+ */
+export function countLooseRecordFileNames(
+  names: readonly string[],
+): RecordFileNameCounts {
+  return {
+    revisionsNames: names.filter(isLooseRevisionName).length,
+    responsesNames: names.filter(isLooseResponseName).length,
+  };
+}
+
+export type RecordsDirectoryListing =
+  | { readonly ok: true; readonly names: readonly string[] }
+  | { readonly ok: false; readonly reason: "not-found" }
+  | { readonly ok: false; readonly reason: "error" };
+
+/**
+ * Lists `records/` once, distinguishing "the directory does not exist" (the
+ * ordinary, silent case every reader already treats as "no records") from
+ * any other failure to read it (permission denied, not a directory, …),
+ * which the caller must diagnose rather than silently treat as empty. The
+ * one listing this returns is meant to be reused by both a file-name count
+ * and `readRevisionRecords`/`readResponseRecords`, so `records/` is read
+ * from disk at most once per command run.
+ */
+export async function listRecordsDirectory(
+  root: string,
+  manifestPath: string,
+): Promise<RecordsDirectoryListing> {
+  const directory = resolve(root, recordsDirectory(manifestPath));
+  try {
+    return { ok: true, names: await readdir(directory) };
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    return { ok: false, reason: code === "ENOENT" ? "not-found" : "error" };
+  }
 }
 
 /** The filesystem primitives a create-new write uses; injectable so a test can force the "temp created, then the write itself fails" branch (security M7). */
