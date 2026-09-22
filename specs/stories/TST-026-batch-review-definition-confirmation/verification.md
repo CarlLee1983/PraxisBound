@@ -8,7 +8,7 @@
 * integration: pass — `review-confirm-command.test.mjs and review-render-confirmation-command.test.mjs drive review confirm through an injected terminal and review render against temporary repositories, asserting envelopes, records/ contents, and page markers`
 * contract: pass — `contract §8 carries the 修訂，R-006 applicability block the tests assert; cli-contract.md documents review confirm, its ordered checks, outcomes, and issue codes, and render's advisory staleness diagnostics`
 * e2e: pass — `a manual scratch script, not committed, drove the built binary under a Python pseudo-terminal: review confirm deferred one non-blocking request with a typed reason, showed its U+202E and ESC characters as visible escapes, and wrote records/confirmation-<fp12>.json; render then stated that a confirmation is bound to the current fingerprint; after an uncommitted acceptance.md edit, render reported REVIEW_SOURCE_CHANGED for that path only and placed 需複審 beside that path in its requirement card and appendix; piped stdin was refused with REVIEW_CONFIRM_REQUIRES_TTY and no record`
-* architecture: blocked — `Human Review of the implementation has not happened`
+* architecture: pass — `Human Review: carl accepted TST-026 in a Claude Code session on 2026-09-22, reviewing feat/tst-026-definition-confirmation at d258ada after one code and security review round, and after accepting the contract §8 R-006 decisions`
 
 ## Evidence
 
