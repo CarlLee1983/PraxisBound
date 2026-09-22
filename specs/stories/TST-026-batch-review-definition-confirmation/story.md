@@ -61,7 +61,7 @@ diagnostics. `schemas/confirmation.schema.json` and
 ## Capacity
 
 * Bounded resource: `confirmation records read from records/ and the sources, deferrals, and revision sheets one confirmation lists`
-* Limit: `contract §13 limits each confirmation file to 1 MiB, depth 32, and 64 KiB per string; the schema limits sources to 5000, deferred to 1000, and revisionSheets to 1000; the aggregate number of confirmation files read per command is decision (c) below`
+* Limit: `contract §13 limits each confirmation file to 1 MiB, depth 32, and 64 KiB per string; the schema limits sources to 5000, deferred to 1000, and revisionSheets to 1000; contract §8 (修訂，R-006) limits confirmation files read per command to 200 by name and 16 MiB by size, both checked before any content is read`
 * Saturation behavior: `an over-limit or malformed confirmation file is REVIEW_RECORD_INVALID, never counted as applicable, and never used as the comparison baseline`
 * Failure projection: `confirm writes nothing on any failure; read-only commands report stable diagnostics and write nothing`
 * Evidence AC: `AC-003`
@@ -140,15 +140,18 @@ diagnostics. `schemas/confirmation.schema.json` and
 * R8: All displayed source text, paths, and request text in the confirm
   prompt are shown with control characters visibly escaped (contract §8
   step 4), using the shared hidden and reordering code-point set.
-* R9: Before implementation, human review must decide: (a) the test seam for
-  the TTY-only prompt, whether an injected terminal adapter in automated tests
-  plus one real pseudo-terminal run recorded as evidence is sufficient;
-  (b) which commands report applicability and staleness diagnostics, and
-  whether `review index` does; (c) whether confirmation records appear in the
-  contract §20 evidence area and count toward its 200-file and 16 MiB bounds,
-  and what aggregate bound applies to confirmation files otherwise; (d) how
-  "latest valid confirmation" breaks a `confirmedAt` tie and where the
-  「需複審」 marker sits on the page.
+* R9: Human Review on 2026-09-22 accepted these decisions, recorded in
+  contract §8 (修訂，R-006): (a) automated tests drive `review confirm`
+  through an injected terminal adapter, and one real interactive terminal run
+  is recorded as evidence (AC-010); (b) only `render` reports applicability
+  and staleness, as advisory diagnostics, and `review index` output is
+  unchanged; (c) confirmation records stay out of the §20 evidence area and
+  have their own bound of 200 files and 16 MiB checked before any content is
+  read; (d) the latest valid confirmation is the one with the latest
+  canonical `confirmedAt`, ties broken by the later file name in byte order,
+  and 「需複審」 appears beside the source path label of each block of an
+  added or changed source, with removed sources and a manifest change listed
+  only in the header summary.
 
 ## Expected Errors
 
@@ -179,8 +182,8 @@ diagnostics. `schemas/confirmation.schema.json` and
 * TST-025 supplies the effective-request and response reading used to find
   unresolved requests, and the projection this Story marks.
 * `ADR-014` and contract §8 are accepted.
-* Decisions (a)–(d) in R9 require Human Review before execution; this draft
-  cannot be treated as approved execution authority.
+* Decisions (a)–(d) in R9 were accepted by Human Review from carl in a
+  Claude Code session on 2026-09-22.
 
 ## Constraints
 

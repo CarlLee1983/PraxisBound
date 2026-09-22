@@ -257,6 +257,21 @@ Schema：[`schemas/confirmation.schema.json`](schemas/confirmation.schema.json)�
 
 `confirm` 之後才匯入的意見不改變確認紀錄；其中的阻擋意見會使預檢判 `REVIEW_BLOCKED`。
 
+（修訂，R-006）適用判定的讀取與呈現：
+
+- 讀取：檔名以 `confirmation-` 開頭、以 `.json` 結尾的檔案（含不合法者）合計 ≤ 200 份、依檔案系統回報的大小（不跟隨 symlink）
+  合計 ≤ 16 MiB，兩者都在讀取任何內容前檢查；超過時產生阻擋診斷 `REVIEW_INPUT_TOO_LARGE`，不做適用判定、不比對、不標示。
+  這組上限與 §20 的修訂紀錄上限分開計算；確認紀錄不出現在 §20 的證據區。
+- 不合法的確認紀錄依 §2 產生 `REVIEW_RECORD_INVALID`，既不算適用，也不作為比對基準。
+- 「最晚」：有效確認中 `confirmedAt`（標準 UTC 形式，§6）最晚者；同一時刻時取檔名位元組序較後者。只用於呈現差異。
+- 回報的命令：`render`。`index` 不讀 `records/`，輸出不變；`preflight`／`packet` 另依 §9、§10。
+  `render` 的 `REVIEW_SOURCE_ADDED`／`REVIEW_SOURCE_REMOVED`／`REVIEW_SOURCE_CHANGED`／`REVIEW_MANIFEST_CHANGED` 為 advisory，
+  只在存在有效確認且沒有一份適用時產生；完全沒有確認紀錄時不產生，也不標示任何文件。
+- 頁面：標題區以文字註明確認狀況，三種之一——「有一份確認紀錄綁定目前指紋」、「沒有確認紀錄綁定目前指紋；下列來源自
+  `<confirmedAt>` 的確認後有變動」並列出變動清單、或不顯示（沒有確認紀錄）。每種說法都附註確認是人類聲明，
+  不是授權、核准執行或完成狀態。新增或內容變動的來源，在其每個來源區塊的路徑標示旁加文字「需複審」；
+  移除的來源與 manifest 變動只列在標題區清單。未變動的來源不標示。
+
 ## 9. Semantic Report 與 `review preflight`
 
 Schemas：[`schemas/semantic-report.schema.json`](schemas/semantic-report.schema.json)、

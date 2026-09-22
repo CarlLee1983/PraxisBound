@@ -86,8 +86,8 @@ is separately recorded evidence.
 
 ## Verification Notes
 
-Before execution, Human Review must settle Story R9 decisions (a)–(d) and
-record them as contract amendments. Then run
+Story R9 decisions (a)–(d) were accepted on 2026-09-22 and are recorded in
+contract §8 (修訂，R-006). Before execution, run
 `./scripts/verification-check specs/stories/TST-026-batch-review-definition-confirmation`
 and `./scripts/story-check --ready specs/stories/TST-026-batch-review-definition-confirmation`.
 Implement in vertical slices: the Core applicability and comparison function,
