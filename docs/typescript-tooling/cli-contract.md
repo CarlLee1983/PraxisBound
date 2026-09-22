@@ -253,8 +253,15 @@ on `match`. `review index` never reads `records/`; only `render` does.
 Record files are counted by name (`revisions-*.json`/`responses-*.json`,
 including ones that fail the strict per-record filename pattern) before any
 file is opened; more than 200 such names is `REVIEW_INPUT_TOO_LARGE` and no
-record file is read. Otherwise every `revisions-*.json` and `responses-*.json`
-is read and validated the same way `review import`/`review respond` validate
+record file is read. The same set of names is then `lstat`ed (never following
+a symlinked entry — its own reported size, not a symlink target's, is what
+counts) and their filesystem-reported sizes summed, still before any file is
+opened; a total over 16&nbsp;MiB is likewise `REVIEW_INPUT_TOO_LARGE` and no
+record file is read (a name whose `lstat` itself fails contributes nothing to
+the sum and is left for the ordinary per-file read to find and report invalid,
+same as any other unreadable record). Otherwise every `revisions-*.json` and
+`responses-*.json` is read and validated the same way `review import`/`review
+respond` validate
 existing records (name pattern, schema, §13 limits); an invalid one is
 `REVIEW_RECORD_INVALID` naming its repo-relative path — reported as a
 diagnostic, not a command failure — and is listed by path in the page's
@@ -268,11 +275,12 @@ wrong, so a conflict that only becomes visible after an earlier one's files
 are excluded is never missed. When the valid records' combined requests and
 responses exceed 10000, that is also `REVIEW_INPUT_TOO_LARGE` and no record
 content is rendered at all (not even the invalid-file list); the page instead
-states the bound was exceeded together with the observed count. Either bound
-is a diagnostic on an otherwise `success` render — the Batch Manifest and
-source definitions still render normally — and both `issues[]` and
-`data.diagnostics[]` gain one entry per invalid record plus, when a bound is
-exceeded, one `REVIEW_INPUT_TOO_LARGE` entry, in the same relative order in
+states the bound was exceeded together with the observed count (file count,
+total bytes, or entry count, matching whichever bound was exceeded). Any of
+the three bounds is a diagnostic on an otherwise `success` render — the Batch
+Manifest and source definitions still render normally — and both `issues[]`
+and `data.diagnostics[]` gain one entry per invalid record plus, when a bound
+is exceeded, one `REVIEW_INPUT_TOO_LARGE` entry, in the same relative order in
 both arrays. A record file name is an untrusted filesystem string and can
 carry a raw control character no envelope `path` field may ever hold; when
 that happens the affected issue omits `path` and instead folds a visibly

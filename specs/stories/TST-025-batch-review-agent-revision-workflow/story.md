@@ -62,7 +62,7 @@ provided, is optional under ADR-012 and cannot become an Adoption prerequisite.
 ## Capacity
 
 * Bounded resource: `all records read for a selected batch and all request, response, locator, and source text displayed in one Review Projection`
-* Limit: `contract §13 limits every Revision Sheet and Response file to 1 MiB, depth 32, 1000 entries, and 64 KiB per string; contract §13 and §20 (R-005) limit one projection to 200 revisions-/responses- record files, counted by name before any content is read, and 10000 requests plus responses across valid records`
+* Limit: `contract §13 limits every Revision Sheet and Response file to 1 MiB, depth 32, 1000 entries, and 64 KiB per string; contract §13 and §20 (R-005) limit one projection to 200 revisions-/responses- record files, counted by name before any content is read, 16 MiB of those files by size before any content is read, and 10000 requests plus responses across valid records`
 * Saturation behavior: `a record over the existing per-file limit remains invalid, is listed by path, and is not projected; an over-aggregate collection projects no record content at all, reports blocking REVIEW_INPUT_TOO_LARGE with the observed counts, and still renders the definitions, so no request or response is silently omitted`
 * Failure projection: `read-only render reports stable diagnostics and writes no records or sources; the workflow stops for human direction before a source edit when its complete input set cannot be read`
 * Evidence AC: `AC-008`
@@ -173,8 +173,8 @@ provided, is optional under ADR-012 and cannot become an Adoption prerequisite.
   a network request. The existing self-contained CSP and print constraints
   remain in force.
 * R10: The projection follows contract §20 (R-005), accepted by Human Review
-  on 2026-09-22: (a) at most 200 revisions-/responses- record files and 10000
-  requests plus responses, beyond which no record content is projected and the
+  on 2026-09-22: (a) at most 200 revisions-/responses- record files, 16 MiB of
+  those files, and 10000 requests plus responses, beyond which no record content is projected and the
   whole evidence area is replaced by a blocking `REVIEW_INPUT_TOO_LARGE`
   notice; (b) every valid record is selected, revision records before response
   records, each in file-name byte order and then in-file array order, with no
@@ -214,7 +214,10 @@ provided, is optional under ADR-012 and cannot become an Adoption prerequisite.
 * The TST-025 projection contract amendment (contract §13 and §20, R-005)
   was accepted by Human Review from carl in a Claude Code session on
   2026-09-22, choosing the aggregate bound, selection and order, and
-  judgement-only source evidence recorded in R10.
+  judgement-only source evidence recorded in R10. A second Human Review the
+  same day accepted the §20 rules for an unsafe `records/` path
+  (`REVIEW_PATH_UNSAFE`, render still succeeds) and prose line feeds rendered
+  with `white-space: pre-wrap`, and added the 16 MiB aggregate size bound.
 
 ## Constraints
 

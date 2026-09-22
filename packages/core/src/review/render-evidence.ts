@@ -46,6 +46,8 @@ export interface ResponseEvidenceRecord {
 export interface ReviewEvidenceOverLimit {
   /** Set when the 200-record-file bound (§13) was exceeded, counted by name before any content was read. */
   readonly recordFileCount?: number;
+  /** Set when the 16 MiB total-size bound (§13) was exceeded, summed from filesystem-reported sizes before any content was read. */
+  readonly totalBytes?: number;
   /** Set when the 10000-entry bound (§13) was exceeded, counted after all valid records were read. */
   readonly entryCount?: number;
 }
@@ -381,6 +383,8 @@ function renderOverLimitNotice(overLimit: ReviewEvidenceOverLimit): string {
   const counts: string[] = [];
   if (overLimit.recordFileCount !== undefined)
     counts.push(`紀錄檔案 ${overLimit.recordFileCount} 份`);
+  if (overLimit.totalBytes !== undefined)
+    counts.push(`紀錄檔案合計 ${overLimit.totalBytes} bytes`);
   if (overLimit.entryCount !== undefined)
     counts.push(`意見與回應合計 ${overLimit.entryCount} 則`);
   return `<p class="evidence-over-limit missing">修訂紀錄超過投影上限，未呈現任何紀錄（${counts.join("、")}）。</p>`;

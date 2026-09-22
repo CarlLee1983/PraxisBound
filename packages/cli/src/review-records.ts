@@ -301,6 +301,21 @@ export function countLooseRecordFileNames(
   };
 }
 
+/**
+ * The already-listed `records/` entries that count toward the §13/§20 修訂，
+ * R-005 bounds at all — every loose `revisions-*.json`/`responses-*.json`
+ * name, including ones that fail the strict per-record pattern (the same
+ * set `countLooseRecordFileNames` counts). Used to `lstat` and sum sizes
+ * before any file is opened, without a second `readdir`.
+ */
+export function filterLooseRecordFileNames(
+  names: readonly string[],
+): readonly string[] {
+  return names.filter(
+    (name) => isLooseRevisionName(name) || isLooseResponseName(name),
+  );
+}
+
 export type RecordsDirectoryListing =
   | { readonly ok: true; readonly names: readonly string[] }
   | { readonly ok: false; readonly reason: "not-found" }

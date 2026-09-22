@@ -1,8 +1,9 @@
 /**
  * `praxisbound review render`'s "修訂紀錄證據" area (contract §13/§20 修訂，
- * R-005): the count-first 200-file bound, the post-read 10000-entry bound,
- * an invalid record's diagnostic, cross-record conflict exclusion (security
- * M2), a symlinked `records/`, and the no-records-dir no-op case.
+ * R-005): the count-first 200-file bound, the pre-read 16 MiB total-size
+ * bound, the post-read 10000-entry bound, an invalid record's diagnostic,
+ * cross-record conflict exclusion (security M2), a symlinked `records/`,
+ * and the no-records-dir no-op case.
  */
 
 import assert from "node:assert/strict";
@@ -13,6 +14,10 @@ import test from "node:test";
 
 import { validateResultEnvelope } from "@praxisbound/core";
 
+import {
+  MAX_EVIDENCE_TOTAL_BYTES,
+  sumLooseRecordFileBytes,
+} from "../dist/review-evidence.js";
 import { runReviewImport } from "../dist/review-import.js";
 import { runReviewRespond } from "../dist/review-respond.js";
 import {
@@ -310,6 +315,124 @@ test("TST025-AC-008 boundary: exactly 200 record files render normally (the boun
     const html = await readFile(join(root, "review.html"), "utf8");
     assert.doesNotMatch(html, /修訂紀錄超過投影上限/);
     assert.match(html, /class="evidence-entry"/);
+  } finally {
+    await cleanupWorkspace(root);
+  }
+});
+
+test("TST025-AC-008: a total size over 16 MiB (lstat-summed, before any content is read) blocks REVIEW_INPUT_TOO_LARGE, never reports REVIEW_RECORD_INVALID (proving content is never opened), and renders no record content", async () => {
+  const batchId = "TST-9616-fixture";
+  const { root, manifestPath } = await fixtureRepo(batchId);
+  try {
+    const dir = recordsDir(root, batchId);
+    await mkdir(dir, { recursive: true });
+    // 17 files of (1 MiB + 1 byte) each = 17,825,809 bytes, comfortably
+    // over the 16 MiB (16,777,216-byte) bound; well under the 200-file
+    // bound so it is the size bound, not the count one, being exercised.
+    // The content is not valid JSON — if it were ever opened and parsed,
+    // it would surface as `REVIEW_RECORD_INVALID`, which the test asserts
+    // never happens.
+    const oversizedGarbage = "x".repeat(1024 * 1024 + 1);
+    for (let i = 0; i < 17; i += 1) {
+      await writeFile(
+        join(dir, `revisions-loose-${String(i).padStart(4, "0")}.json`),
+        oversizedGarbage,
+      );
+    }
+
+    const execution = await run(root, [
+      manifestPath,
+      "--output",
+      "review.html",
+      "--json",
+    ]);
+
+    assert.equal(execution.result.outcome, "success");
+    assert.ok(
+      execution.result.issues.some((i) => i.code === "REVIEW_INPUT_TOO_LARGE"),
+      JSON.stringify(execution.result.issues),
+    );
+    assert.ok(
+      !execution.result.issues.some((i) => i.code === "REVIEW_RECORD_INVALID"),
+      "no file's content was ever opened, so none can be reported invalid",
+    );
+
+    const html = await readFile(join(root, "review.html"), "utf8");
+    assert.match(html, /修訂紀錄超過投影上限，未呈現任何紀錄/);
+    assert.match(html, /17825809/);
+    assert.doesNotMatch(html, /class="evidence-entry"/);
+  } finally {
+    await cleanupWorkspace(root);
+  }
+});
+
+test("TST025-AC-008 boundary (pure sum function): the total-size sum is exact at the 16 MiB boundary and reflects lstat sizes, not content — building a full 16 MiB of schema-valid records for an end-to-end render test would be impractical, so this exercises the summing primitive `loadReviewEvidence` itself calls", async () => {
+  const batchId = "TST-9617-fixture";
+  const { root, manifestPath } = await fixtureRepo(batchId);
+  try {
+    const dir = recordsDir(root, batchId);
+    await mkdir(dir, { recursive: true });
+    const oneMib = 1024 * 1024;
+    const names = [];
+    for (let i = 0; i < 16; i += 1) {
+      const name = `revisions-loose-${String(i).padStart(4, "0")}.json`;
+      await writeFile(join(dir, name), "x".repeat(oneMib));
+      names.push(name);
+    }
+
+    const total = await sumLooseRecordFileBytes(root, manifestPath, names);
+    assert.equal(total, 16 * oneMib);
+    assert.equal(total, MAX_EVIDENCE_TOTAL_BYTES);
+    assert.ok(
+      !(total > MAX_EVIDENCE_TOTAL_BYTES),
+      "exactly 16 MiB must not itself exceed the bound (only a total strictly greater does)",
+    );
+  } finally {
+    await cleanupWorkspace(root);
+  }
+});
+
+test("TST025-AC-008 boundary (end-to-end, non-schema-valid content): a total of exactly 16 MiB across loosely-named files is read (not blocked by the size bound) — every file is still individually invalid for an unrelated reason (a loose, non-strict file name), which is exactly how the pure-sum-function boundary test above is corroborated without needing 16 MiB of schema-valid records", async () => {
+  const batchId = "TST-9618-fixture";
+  const { root, manifestPath } = await fixtureRepo(batchId);
+  try {
+    const dir = recordsDir(root, batchId);
+    await mkdir(dir, { recursive: true });
+    const oneMib = 1024 * 1024;
+    for (let i = 0; i < 16; i += 1) {
+      await writeFile(
+        join(dir, `revisions-loose-${String(i).padStart(4, "0")}.json`),
+        "x".repeat(oneMib),
+      );
+    }
+
+    const execution = await run(root, [
+      manifestPath,
+      "--output",
+      "review.html",
+      "--json",
+    ]);
+
+    assert.equal(execution.result.outcome, "success");
+    assert.ok(
+      !execution.result.issues.some(
+        (i) =>
+          i.code === "REVIEW_INPUT_TOO_LARGE" && /bytes/.test(i.message ?? ""),
+      ),
+      "a total of exactly 16 MiB must not trip the size bound",
+    );
+    // Every file is opened and found invalid for its own (unrelated)
+    // reason — name pattern and content, not size — proving the read
+    // actually proceeded past the size check rather than the size check
+    // having (incorrectly) let nothing through.
+    const invalidCount = execution.result.issues.filter(
+      (i) => i.code === "REVIEW_RECORD_INVALID",
+    ).length;
+    assert.equal(invalidCount, 16);
+
+    const html = await readFile(join(root, "review.html"), "utf8");
+    assert.doesNotMatch(html, /修訂紀錄超過投影上限/);
+    assert.match(html, /未採計的紀錄/);
   } finally {
     await cleanupWorkspace(root);
   }

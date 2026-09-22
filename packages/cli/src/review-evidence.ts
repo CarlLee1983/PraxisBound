@@ -1,13 +1,16 @@
 /**
  * `review render`'s "修訂紀錄證據" (revision-record evidence) area loader
  * (contract §13, §20 修訂，R-005): reads and validates `records/`, applies
- * the count-first 200-file bound and the post-read 10000-entry bound, and
- * excludes any revision id whose content disagrees across records (§6
- * security M2), before handing the survivors to Core's
- * `renderEvidenceSection`. Kept separate from `review.ts` so that file does
- * not keep growing, and to avoid an import cycle: this module depends on
- * `review-records.ts`, never the reverse.
+ * the count-first 200-file bound, the pre-read 16&nbsp;MiB total-size bound,
+ * and the post-read 10000-entry bound, and excludes any revision id whose
+ * content disagrees across records (§6 security M2), before handing the
+ * survivors to Core's `renderEvidenceSection`. Kept separate from
+ * `review.ts` so that file does not keep growing, and to avoid an import
+ * cycle: this module depends on `review-records.ts`, never the reverse.
  */
+
+import { lstat } from "node:fs/promises";
+import { resolve } from "node:path";
 
 import type {
   RecordSetConflict,
@@ -25,6 +28,7 @@ import {
 
 import {
   countLooseRecordFileNames,
+  filterLooseRecordFileNames,
   isRecordsPathUnsafe,
   listRecordsDirectory,
   readResponseRecords,
@@ -32,8 +36,38 @@ import {
   recordsDirectory,
 } from "./review-records.js";
 
-const MAX_EVIDENCE_RECORD_FILES = 200;
-const MAX_EVIDENCE_ENTRIES = 10000;
+export const MAX_EVIDENCE_RECORD_FILES = 200;
+export const MAX_EVIDENCE_TOTAL_BYTES = 16 * 1024 * 1024;
+export const MAX_EVIDENCE_ENTRIES = 10000;
+
+/**
+ * Sums every loose `revisions-*.json`/`responses-*.json` file's filesystem-
+ * reported size (contract §13/§20 修訂，R-005), `lstat`ing each so a
+ * symlinked entry is never followed (its own size, not its target's, is
+ * what gets summed — same non-follow discipline as every other `records/`
+ * safety check). A name whose `lstat` itself fails (e.g. removed in a race
+ * since the listing) contributes nothing to the sum; that file is left for
+ * the ordinary per-file read below to find and report invalid, same as any
+ * other unreadable record.
+ */
+export async function sumLooseRecordFileBytes(
+  root: string,
+  manifestPath: string,
+  looseNames: readonly string[],
+): Promise<number> {
+  const directory = recordsDirectory(manifestPath);
+  let total = 0;
+  for (const name of looseNames) {
+    let stats;
+    try {
+      stats = await lstat(resolve(root, directory, name));
+    } catch {
+      continue;
+    }
+    total += stats.size;
+  }
+  return total;
+}
 
 /** A minimal `ResultIssue` builder, kept local (rather than imported from `review.ts`) so this module never has to import back from its own caller. */
 function buildIssue(code: string, message: string, path?: string): ResultIssue {
@@ -170,6 +204,26 @@ export async function loadReviewEvidence(
         ),
       ],
       { recordFileCount: totalNames },
+    );
+  }
+
+  // Total size, `lstat`ed (never following a symlinked entry) from the same
+  // listing, still before any file is opened (contract §13/§20 修訂，R-005).
+  const looseNames = filterLooseRecordFileNames(listing.names);
+  const totalBytes = await sumLooseRecordFileBytes(
+    root,
+    manifestPath,
+    looseNames,
+  );
+  if (totalBytes > MAX_EVIDENCE_TOTAL_BYTES) {
+    return overLimitLoad(
+      [
+        buildIssue(
+          "REVIEW_INPUT_TOO_LARGE",
+          `records/ revisions-/responses- files total ${totalBytes} bytes across ${totalNames} files, exceeding the projection limit (${MAX_EVIDENCE_TOTAL_BYTES} bytes)`,
+        ),
+      ],
+      { totalBytes },
     );
   }
 
