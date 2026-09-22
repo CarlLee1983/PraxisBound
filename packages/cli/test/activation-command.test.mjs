@@ -475,7 +475,7 @@ test("TST014 input contract: activation routes each global option once before th
 
   const version = runCli(["--apply", "--version"]);
   assert.equal(version.status, 0, version.stderr);
-  assert.equal(version.stdout, "0.2.0\n");
+  assert.equal(version.stdout, "0.3.0\n");
   assert.equal(version.stderr, "");
 
   for (const args of [

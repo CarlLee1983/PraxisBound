@@ -11,7 +11,7 @@ import { validateResultEnvelope } from "@praxisbound/core";
 const bin = fileURLToPath(
   new globalThis.URL("../dist/bin.js", import.meta.url),
 );
-const help = `PraxisBound CLI v0.2.0
+const help = `PraxisBound CLI v0.3.0
 
 Usage:
   praxisbound [command]
@@ -142,7 +142,7 @@ for (const args of [["version"], ["--version"]]) {
     const result = runCli(args);
 
     assert.equal(result.status, 0);
-    assert.equal(result.stdout, "0.2.0\n");
+    assert.equal(result.stdout, "0.3.0\n");
     assert.equal(result.stderr, "");
   });
 }

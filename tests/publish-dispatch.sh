@@ -92,7 +92,7 @@ EOF
 chmod +x "$test_dir/bin/gh" "$test_dir/bin/npm"
 
 # A fresh fake world: main at the candidate, verify green, nothing running,
-# both packages at 0.2.0 in source, only 0.1.0 on the registry.
+# both packages at 0.3.0 in source, only 0.2.0 on the registry.
 reset_world() {
   FAKE_DIR="$test_dir/$1"
   rm -rf "$FAKE_DIR"
@@ -101,13 +101,13 @@ reset_world() {
   printf 'completed success\n' >"$FAKE_DIR/verify"
   printf '0\n' >"$FAKE_DIR/active"
   printf '4100\n' >"$FAKE_DIR/latest-run"
-  printf '0.2.0\n' >"$FAKE_DIR/version-core"
-  printf '0.2.0\n' >"$FAKE_DIR/version-cli"
+  printf '0.3.0\n' >"$FAKE_DIR/version-core"
+  printf '0.3.0\n' >"$FAKE_DIR/version-cli"
   printf '0\n' >"$FAKE_DIR/watch"
   printf 'completed success\n' >"$FAKE_DIR/view"
   printf '0\n' >"$FAKE_DIR/appears-after"
   : >"$FAKE_DIR/print-url"
-  printf '@praxisbound/core@0.1.0\n@praxisbound/cli@0.1.0\n' >"$FAKE_DIR/published"
+  printf '@praxisbound/core@0.2.0\n@praxisbound/cli@0.2.0\n' >"$FAKE_DIR/published"
   printf '1\n' >"$FAKE_DIR/environment-protection-count"
   export FAKE_DIR
 }
@@ -165,7 +165,7 @@ concurrent_publication_is_refused() {
 
 published_version_is_refused() {
   reset_world published
-  printf '@praxisbound/core@0.2.0\n' >>"$FAKE_DIR/published"
+  printf '@praxisbound/core@0.3.0\n' >>"$FAKE_DIR/published"
   dispatch '' core
   expect_refusal 1 'already published'
 }
@@ -173,7 +173,7 @@ published_version_is_refused() {
 cli_before_core_is_refused() {
   reset_world order
   dispatch '' cli
-  expect_refusal 1 '@praxisbound/core@0.2.0 is not published'
+  expect_refusal 1 '@praxisbound/core@0.3.0 is not published'
 }
 
 # PB005-AC-007 (Security Fixture Matrix: publish.environment-approval, helper
@@ -202,8 +202,8 @@ wrong_confirmation_is_refused() {
 
 confirmed_core_dispatch_is_exact() {
   reset_world core
-  printf '@praxisbound/core@0.2.0\n' >"$FAKE_DIR/publishes"
-  dispatch 'publish @praxisbound/core@0.2.0' core
+  printf '@praxisbound/core@0.3.0\n' >"$FAKE_DIR/publishes"
+  dispatch 'publish @praxisbound/core@0.3.0' core
   [ "$status" -eq 0 ] || fail "exited $status: $(cat "$FAKE_DIR/stderr")"
   [ "$(cat "$FAKE_DIR/dispatched")" = \
     "workflow run publish.yml --repo $repository --ref main -f candidate_sha=$main_sha -f package=core" ] ||
@@ -220,8 +220,8 @@ confirmed_core_dispatch_is_exact() {
 # watching, so the operator does not mistake the pause for a hang.
 confirmed_dispatch_prints_the_environment_approval_notice() {
   reset_world approval
-  printf '@praxisbound/core@0.2.0\n' >"$FAKE_DIR/publishes"
-  dispatch 'publish @praxisbound/core@0.2.0' core
+  printf '@praxisbound/core@0.3.0\n' >"$FAKE_DIR/publishes"
+  dispatch 'publish @praxisbound/core@0.3.0' core
   [ "$status" -eq 0 ] || fail "exited $status: $(cat "$FAKE_DIR/stderr")"
   grep -Fq 'awaits approval of environment npm-publication' "$FAKE_DIR/stdout" ||
     fail "stdout does not mention the npm-publication approval: $(cat "$FAKE_DIR/stdout")"
@@ -231,9 +231,9 @@ confirmed_dispatch_prints_the_environment_approval_notice() {
 
 confirmed_cli_dispatch_points_at_promotion() {
   reset_world cli
-  printf '@praxisbound/core@0.2.0\n' >>"$FAKE_DIR/published"
-  printf '@praxisbound/cli@0.2.0\n' >"$FAKE_DIR/publishes"
-  dispatch 'publish @praxisbound/cli@0.2.0' cli "$main_sha"
+  printf '@praxisbound/core@0.3.0\n' >>"$FAKE_DIR/published"
+  printf '@praxisbound/cli@0.3.0\n' >"$FAKE_DIR/publishes"
+  dispatch 'publish @praxisbound/cli@0.3.0' cli "$main_sha"
   [ "$status" -eq 0 ] || fail "exited $status: $(cat "$FAKE_DIR/stderr")"
   grep -Fq 'package=cli' "$FAKE_DIR/dispatched" || fail 'CLI was not dispatched'
   grep -Fq 'npm dist-tag add' "$FAKE_DIR/stdout" ||
@@ -247,7 +247,7 @@ failed_workflow_is_reported() {
   reset_world failed
   printf '1\n' >"$FAKE_DIR/watch"
   printf 'completed failure\n' >"$FAKE_DIR/view"
-  dispatch 'publish @praxisbound/core@0.2.0' core
+  dispatch 'publish @praxisbound/core@0.3.0' core
   [ "$status" -eq 1 ] || fail "exited $status, expected 1"
   grep -Fq 'publish.yml run 4242 did not succeed (completed failure)' "$FAKE_DIR/stderr" ||
     fail "stderr does not name the failed run: $(cat "$FAKE_DIR/stderr")"
@@ -257,7 +257,7 @@ lost_watch_is_not_reported_as_failure() {
   reset_world lost
   printf '1\n' >"$FAKE_DIR/watch"
   printf 'in_progress \n' >"$FAKE_DIR/view"
-  dispatch 'publish @praxisbound/core@0.2.0' core
+  dispatch 'publish @praxisbound/core@0.3.0' core
   [ "$status" -eq 1 ] || fail "exited $status, expected 1"
   grep -Fq 'lost track of publish.yml run 4242' "$FAKE_DIR/stderr" ||
     fail "a broken watch was not distinguished from a failed run: $(cat "$FAKE_DIR/stderr")"
@@ -265,17 +265,17 @@ lost_watch_is_not_reported_as_failure() {
 
 unpropagated_registry_is_reported() {
   reset_world propagation
-  dispatch 'publish @praxisbound/core@0.2.0' core
+  dispatch 'publish @praxisbound/core@0.3.0' core
   [ "$status" -eq 1 ] || fail "exited $status, expected 1"
-  grep -Fq 'registry does not show @praxisbound/core@0.2.0' "$FAKE_DIR/stderr" ||
+  grep -Fq 'registry does not show @praxisbound/core@0.3.0' "$FAKE_DIR/stderr" ||
     fail "stderr does not report the missing registry version: $(cat "$FAKE_DIR/stderr")"
 }
 
 registry_outage_is_not_unpublished() {
   reset_world outage
   : >"$FAKE_DIR/registry-down"
-  dispatch 'publish @praxisbound/core@0.2.0' core
-  expect_refusal 1 'cannot read @praxisbound/core@0.2.0 from the registry'
+  dispatch 'publish @praxisbound/core@0.3.0' core
+  expect_refusal 1 'cannot read @praxisbound/core@0.3.0 from the registry'
   if grep -Fq 'already published' "$FAKE_DIR/stderr"; then
     fail 'a registry outage was reported as an existing version'
   fi
@@ -285,9 +285,9 @@ main_moving_during_confirmation_is_refused() {
   reset_world moving
   printf '%s\n' "$other_sha" >"$FAKE_DIR/main-later"
   printf '2\n' >"$FAKE_DIR/main-moves-after"
-  dispatch 'publish @praxisbound/core@0.2.0' core
+  dispatch 'publish @praxisbound/core@0.3.0' core
   expect_refusal 1 "main is at $other_sha"
-  grep -Fq 'Type "publish @praxisbound/core@0.2.0" to dispatch' "$FAKE_DIR/stdout" ||
+  grep -Fq 'Type "publish @praxisbound/core@0.3.0" to dispatch' "$FAKE_DIR/stdout" ||
     fail 'main moved before confirmation, so the post-confirmation re-check was not exercised'
 }
 
@@ -295,8 +295,8 @@ run_found_by_polling_without_url() {
   reset_world polling
   rm "$FAKE_DIR/print-url"
   printf '2\n' >"$FAKE_DIR/appears-after"
-  printf '@praxisbound/core@0.2.0\n' >"$FAKE_DIR/publishes"
-  dispatch 'publish @praxisbound/core@0.2.0' core
+  printf '@praxisbound/core@0.3.0\n' >"$FAKE_DIR/publishes"
+  dispatch 'publish @praxisbound/core@0.3.0' core
   [ "$status" -eq 0 ] || fail "exited $status: $(cat "$FAKE_DIR/stderr")"
   [ "$(cat "$FAKE_DIR/polls")" -eq 3 ] ||
     fail "the run was not found on the poll it appeared: $(cat "$FAKE_DIR/polls")"
@@ -306,7 +306,7 @@ run_that_never_appears_is_reported() {
   reset_world vanished
   rm "$FAKE_DIR/print-url"
   printf '99\n' >"$FAKE_DIR/appears-after"
-  dispatch 'publish @praxisbound/core@0.2.0' core
+  dispatch 'publish @praxisbound/core@0.3.0' core
   [ "$status" -eq 1 ] || fail "exited $status, expected 1"
   grep -Fq 'did not appear' "$FAKE_DIR/stderr" ||
     fail "stderr does not report the missing run: $(cat "$FAKE_DIR/stderr")"

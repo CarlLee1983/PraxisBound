@@ -4,8 +4,8 @@ An external process consumer should use the CLI boundary first. Pin the
 tooling package version during acquisition, install it into the consumer, and
 invoke the installed `praxisbound` binary with `--json`. Package acquisition may
 use a registry; CLI runtime is local and does not fetch a Protocol snapshot.
-The source on the default branch builds `@praxisbound/cli@0.2.0`, whose only
-runtime dependency is exact `@praxisbound/core@0.2.0`. Before pinning, run
+The source on the default branch builds `@praxisbound/cli@0.3.0`, whose only
+runtime dependency is exact `@praxisbound/core@0.3.0`. Before pinning, run
 `npm view @praxisbound/cli dist-tags` and pin the exact version `latest`
 resolves to; source and registry can differ between a merge and its
 publication. Tooling version and the bundled Protocol version (`0.10.0`) are
