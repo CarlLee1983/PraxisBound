@@ -21,7 +21,20 @@
 * `AC-007`: pass — `review-confirm-command.test.mjs: non-TTY (injected, and a real spawn of the built binary with piped stdin), missing source, wrong prefix, abort, an existing same-fp12 record whose full fingerprint differs (REVIEW_RECORD_COLLISION), symlinked records/, and an injected write failure each give the contract outcome and leave no new file; an existing record with the same full fingerprint is REVIEW_CONFIRMATION_EXISTS success per contract §8 step 6`
 * `AC-008`: pass — `malformed, misnamed, and fp12-mismatched confirmation files are REVIEW_RECORD_INVALID, never applicable, and never the baseline; control, bidi, and zero-width characters in request text are escaped in the prompt transcript`
 * `AC-009`: pass — `make verify exited 0; VERSION, protocol/, and templates/ are unchanged against origin/main; TST-022 through TST-025 tests pass, with one pinned page hash updated because every page now shows source-path labels in requirement cards`
-* `AC-010`: blocked — `no real review confirm run by a human on an interactive terminal has been recorded; the pseudo-terminal e2e run above is scripted and does not satisfy it`
+* `AC-010`: pass — `recorded under Terminal Confirmation Rehearsal below: carl ran review confirm on an interactive terminal and it wrote records/confirmation-934ce93bf960.json`
+
+## Terminal Confirmation Rehearsal
+
+Historical Evidence of one human-run confirmation on 2026-09-22. It shows
+that the interactive path works end to end on a real terminal. It is not
+identity proof, authorization, or acceptance of the batch's content.
+
+* `Tool: packages/cli/dist/bin.js built from feat/tst-026-definition-confirmation at d258ada`
+* `Batch: BR-TST-025-rehearsal in a scratch clone at commit 2117a18 plus an uncommitted RF-001 acceptance.md edit and one imported non-blocking request REV-01K5TST026E2E0000000000001; an earlier scripted pseudo-terminal confirmation confirmation-9be3d79df5c6.json bound the pre-edit fingerprint`
+* `Command: carl ran node packages/cli/dist/bin.js review confirm specs/batches/BR-TST-025-rehearsal/batch.json in a separate interactive terminal window`
+* `Result: records/confirmation-934ce93bf960.json created at confirmedAt 2026-09-22T15:39:19.258Z for fingerprint 934ce93bf960…, deferring REV-01K5TST026E2E0000000000001 with the typed reason "not thing"; the earlier record was left in place with its original timestamp`
+* `Projection observation: review render afterwards stated that a confirmation is bound to the current fingerprint and showed no 需複審 marker`
+* `Not captured: the terminal transcript was not pasted back, so prompt wording and escapes on the human's screen are not recorded here; the facts above come from the record file and a re-render`
 
 ## Authority Used
 
