@@ -15,6 +15,7 @@ praxisbound review index <manifest>
 praxisbound review render <manifest> --output <file>
 praxisbound review import <manifest> <sheet>
 praxisbound review respond <manifest> <responses.json>
+praxisbound review confirm <manifest>
 
 praxisbound codex activate <repository>
 ```
@@ -62,6 +63,7 @@ verify             = execute make verify
 | `praxisbound review render <manifest> --output <file>`   | none (new capability)                 | Writes an additive, self-contained offline HTML Review Projection; never changes selected sources.                          |
 | `praxisbound review import <manifest> <sheet>`           | none (new capability)                 | Reads a Markdown Revision Sheet and records new requests, create-new, under the batch's `records/`; never changes a source. |
 | `praxisbound review respond <manifest> <responses.json>` | none (new capability)                 | The only way to record a Revision Response file, create-new, after the contract §7 fingerprint and coverage checks.         |
+| `praxisbound review confirm <manifest>`                  | none (new capability)                 | The only way to record a Definition Confirmation, create-new, through an interactive terminal act (contract §8).            |
 | `praxisbound codex activate <repo>`                      | `scripts/codex-activate`              | Preview by default; supports `--apply`; stays a late migration wave.                                                        |
 
 Global options may appear after the selected command path and before or among
@@ -295,6 +297,55 @@ evidence area again omitted. This is Additive: `review render`'s
 outcome/status/exit mapping is unchanged; `data`'s minimal shape is
 unchanged.
 
+`review render` also reports Definition Confirmation applicability and
+staleness (contract §8, 「修訂，R-006」), always advisory and only on `render`
+— `review index` never reads `records/`. One shared `records/` safety check
+and one shared directory listing serve both this loader and the evidence
+area's (review round 1): a symlinked or unlistable `records/` produces
+exactly one `REVIEW_PATH_UNSAFE`/`REVIEW_RECORD_INVALID` issue, not one per
+reader. `records/confirmation-*.json` is then counted by name, then
+`lstat`-summed by size (never following a symlinked entry), both before any
+content is read, using its own separate 200-file/16 MiB bound
+(`REVIEW_INPUT_TOO_LARGE`), distinct from the evidence area's
+`revisions-`/`responses-` bound; an invalid confirmation record —
+including one whose `fingerprint` does not match the contract §4 digest
+recomputed from its own `manifestSha256` and `sources` — is
+`REVIEW_RECORD_INVALID` naming its path, always blocking, and is neither
+applicable nor a comparison baseline; a lone invalid record never displaces
+an otherwise-valid one as the baseline. Applicability holds when a valid
+confirmation's `fingerprint` equals the current Requirement Fingerprint. When
+none applies and at least one valid confirmation exists, the current sources
+are compared against the valid confirmation with the latest canonical
+`confirmedAt` (ties broken by the later file name in UTF-8 byte order), and
+one advisory issue is emitted per added (`REVIEW_SOURCE_ADDED`), removed
+(`REVIEW_SOURCE_REMOVED`), or changed (`REVIEW_SOURCE_CHANGED`) source, plus
+`REVIEW_MANIFEST_CHANGED` when the manifest itself changed — never emitted
+when zero valid confirmations exist at all. The page's title area states one
+of three things in Traditional Chinese prose: a confirmation is bound to the
+current fingerprint; no confirmation is bound and the changed/added/removed
+sources (and manifest change) are listed, each next to the prior
+confirmation's `confirmedAt` — a source currently missing (`sha256: null`)
+reads 「缺失」 there rather than 「內容變動」, though the envelope still
+reports it under the same `REVIEW_SOURCE_CHANGED` issue code; or nothing at
+all when no valid confirmation record exists. Every added or changed source
+gets a 「需複審」 text badge beside its source-path label everywhere that
+label is rendered — the batch Goal/Non-goals doc-group, every requirement
+card's own source blocks (需求驗收/需求細節 next to the Spec entry's path,
+each Story's 執行驗收/Story 重點 next to its own `acceptance.md`/`story.md`
+path), the 未對應需求的 Story section, and the appendix's ADR/leftover-section
+summaries and source list (review round 1: every card source block now
+carries a visible `.doc-path` label per contract §18, where previously only
+the appendix and Goal/Non-goals sections did — an Additive content change to
+every rendered page, not only ones with a confirmation). A removed source or
+a manifest change is named only in the title-area list, never as a badge
+(nothing in the current page corresponds to a removed source). A
+confirmation is a human claim, not identity verification, Execution
+Authorization, or completion (`ADR-014`); the header text states this
+explicitly. This is Additive: `review render`'s
+outcome/status/exit mapping and `data`'s minimal shape are unchanged (the new
+diagnostics use the same `issues[]`/`data.diagnostics[]` shape every other
+advisory/blocking diagnostic already uses).
+
 Human-mode output (no `--json`) for both `review index` and `review render`
 prints every envelope issue — on a successful result as well as a failed
 one — as an `ISSUE <code>: <message>` line (with `<path>` appended in
@@ -425,6 +476,99 @@ issue that names a specific revision carries it in the envelope issue's
 response record never approves anything and never changes a source,
 confirmation, packet, or other record (`ADR-014`); request and response
 text is stored as data only, whatever it says.
+
+## `praxisbound review confirm` contract
+
+`praxisbound review confirm <manifest> [--json]` (Story TST-026, Additive) is
+the only way to write a Definition Confirmation record (contract §8, the
+「修訂，R-006」 amendments). No `--yes` flag, environment variable, piped
+input, or file input can produce one: both stdin and stdout must be an
+interactive terminal, checked before any manifest or filesystem access
+(`REVIEW_CONFIRM_REQUIRES_TTY`, `usage-error`, exit 2). Automated tests drive
+every prompt through an injected terminal adapter (Story R9(a)); the real
+interactive path uses `node:readline`. Prompts and messages go to stderr
+only; stdout still carries exactly one JSON envelope in `--json` mode.
+
+It checks, in order:
+
+1. The Requirement Fingerprint is recomputed from the current working tree.
+   A missing declared source is `REVIEW_SOURCE_MISSING` (`failure`, exit 1) —
+   a fingerprint over a missing source can never back a confirmation (§4).
+2. Every existing `records/revisions-*.json` and `records/responses-*.json`
+   is read and validated exactly as `review respond` validates them
+   (name pattern, schema, §13 limits, and the cross-record §6 security M2
+   check); any invalid one is `REVIEW_RECORD_INVALID`, `failure`, listing
+   its path, and nothing is written. Unlike `review render`, `confirm` never
+   scans the wider `records/confirmation-*.json` collection at this point —
+   contract §8 lists no refusal driven by another confirmation file, so an
+   unrelated invalid or numerous confirmation collection never blocks
+   `confirm` (review round 1); the 200-file/16 MiB confirmation-file bound
+   belongs to `review render`'s advisory staleness diagnostics only.
+3. Every effective request (§6, across all imported sheets) that is not
+   resolved by an `incorporated` response bound to the current fingerprint
+   (§7) and is `blocking` refuses the whole command:
+   `REVIEW_UNRESOLVED_BLOCKING`, `failure`, one issue per request id
+   (`subject: revision:<id>`), nothing written.
+4. The remaining unresolved non-blocking requests are displayed one at a
+   time (id, target locator(s), quote, proposal, rationale — every field
+   visibly escaping control/bidi/zero-width characters and the byte-order
+   mark, the same primitive the Review Projection's evidence area uses),
+   after a reminder to compare the shown fingerprint against the HTML page
+   header and, when a previous valid confirmation exists but does not apply,
+   the same changed/added/removed source list `review render` would show.
+   Each must be answered `defer` plus a typed reason; an oversized reason
+   (over the §13 64 KiB string bound) or one containing a hidden or
+   reordering character (control, bidi, zero-width, or the byte-order mark)
+   is rejected and re-asked rather than silently accepted. Any other `defer`
+   answer, or EOF at any prompt, aborts: `REVIEW_CONFIRM_ABORTED`, `failure`,
+   nothing written.
+5. The human types the fingerprint's first 8 characters; a mismatch or EOF
+   aborts the same way (`REVIEW_CONFIRM_ABORTED`).
+6. The record — `claim` (`explicit-terminal-confirmation`), `batchId`,
+   `fingerprint`, `manifestSha256`, the full `sources`, `confirmedAt` (UTC),
+   `deferred`, and `revisionSheets` (every valid imported revisions record's
+   own sha256, sorted by UTF-8 byte order) — is built and re-validated
+   (schema, §13 limits, and the recomputed §4 fingerprint) before any write
+   is attempted; a validation failure is `REVIEW_CONFIRM_ABORTED`, and a
+   serialized size over the §13 1 MiB record bound is `REVIEW_INPUT_TOO_LARGE`
+   (both `failure`, nothing written — this should be unreachable in normal
+   operation, since the interactive prompt already rejects the one field a
+   human controls before this point, but is never trusted blindly).
+7. One exclusive create-new write is attempted to
+   `records/confirmation-<fp12>.json` (`fp12` = the current fingerprint's
+   first 12 hex characters). A genuine write failure (including an injected
+   one) leaves no file at all: `REVIEW_RECORD_WRITE_FAILED`, `failure`. Only
+   when the write collides with a file that already exists at that exact
+   name is that one target — and only that one target, never the wider
+   collection — read back: the same `fingerprint` in its content is
+   `success` with `REVIEW_CONFIRMATION_EXISTS` (nothing written; any
+   deferral reasons just typed are discarded, never merged into the stored
+   record); a different `fingerprint`, or content that fails validation
+   outright, is `REVIEW_RECORD_COLLISION` (`failure`, nothing written).
+
+| Outcome               | Status  | Exit | Meaning                                                                                                         |
+| --------------------- | ------- | ---- | ----------------------------------------------------------------------------------------------------------------- |
+| `success`             | `pass`  | `0`  | A confirmation was written, or one already existed for this fingerprint with the same content.                 |
+| `failure`              | `fail`  | `1`  | A check failed, the human aborted, or the write itself failed; nothing new is written.                          |
+| `usage-error`         | `error` | `2`  | Invalid or missing argv, or stdin/stdout is not an interactive terminal (`REVIEW_CONFIRM_REQUIRES_TTY`).        |
+| `configuration-error` | `error` | `2`  | The manifest is invalid or its path is unsafe, or the batch `records/` path (or a parent segment) is a symlink. |
+| `ERROR`               | `error` | `3`  | An unexpected internal failure.                                                                                 |
+
+`data` extends the `review index` minimal shape with `record` (the
+repo-relative path of the confirmation used or written) and `deferred` (the
+`{ revisionId, reason }` list recorded, or read back from an existing
+`REVIEW_CONFIRMATION_EXISTS` record). Issue codes this command can emit,
+beyond those `review index` already can: `REVIEW_SOURCE_MISSING`,
+`REVIEW_UNRESOLVED_BLOCKING`, `REVIEW_CONFIRM_ABORTED`,
+`REVIEW_CONFIRM_REQUIRES_TTY`, `REVIEW_CONFIRMATION_EXISTS`,
+`REVIEW_RECORD_COLLISION`, `REVIEW_RECORD_INVALID`, `REVIEW_INPUT_TOO_LARGE`,
+`REVIEW_RECORD_WRITE_FAILED`, and `REVIEW_PATH_UNSAFE`. A confirmation
+record carries no identity, signature, or lifecycle field, grants no modify,
+commit, push, deploy, or execution authority, and writes no Story, handoff,
+Gate, review, DONE, or Work Item state (`ADR-014`, Story R7); a forged
+`authorized: true`, `approved`, or `confirmed` string anywhere in a source or
+existing record never creates or implies a confirmation, and never appears
+in this command's own output as a claim of authorization or completion.
 
 ## Static and execution trust boundary
 

@@ -31,6 +31,11 @@ import {
   runReviewImport,
 } from "./review-import.js";
 import {
+  renderReviewConfirmHuman,
+  reviewConfirmHelp,
+  runReviewConfirm,
+} from "./review-confirm.js";
+import {
   renderReviewRespondHuman,
   reviewRespondHelp,
   runReviewRespond,
@@ -74,6 +79,7 @@ Commands:
   review render      Write an offline batch review HTML projection
   review import      Record an exported Revision Sheet
   review respond     Record a Revision Response file
+  review confirm     Record an explicit terminal Definition Confirmation
   verification check Resolve plans and check recorded results
   help, --help       Show this help
   version, --version Print the CLI version
@@ -318,6 +324,23 @@ if (
     process.stdout.write(serializeResultEnvelope(execution.result));
   } else {
     const rendered = renderReviewRespondHuman(execution);
+    process.stdout.write(rendered.stdout);
+    process.stderr.write(rendered.stderr);
+  }
+  process.exitCode = execution.result.exit;
+} else if (
+  args.length === 3 &&
+  args[0] === "review" &&
+  args[1] === "confirm" &&
+  args[2] === "--help"
+) {
+  process.stdout.write(reviewConfirmHelp);
+} else if (args[0] === "review" && args[1] === "confirm") {
+  const execution = await runReviewConfirm(args.slice(2));
+  if (execution.mode === "json") {
+    process.stdout.write(serializeResultEnvelope(execution.result));
+  } else {
+    const rendered = renderReviewConfirmHuman(execution);
     process.stdout.write(rendered.stdout);
     process.stderr.write(rendered.stderr);
   }

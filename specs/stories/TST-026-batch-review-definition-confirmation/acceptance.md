@@ -45,8 +45,8 @@ is separately recorded evidence.
   partial or new confirmation file.
 * [ ] AC-008: A malformed, misnamed, over-limit, or schema-invalid
   confirmation file is `REVIEW_RECORD_INVALID` and is neither applicable nor
-  used as the comparison baseline. Source text and request text with control,
-  bidi, and zero-width characters is shown visibly escaped in the prompt.
+  used as the comparison baseline. Request text and source paths with control,
+  bidi, and zero-width characters are shown visibly escaped in the prompt.
 
 ## Regression Requirements
 
@@ -79,8 +79,8 @@ is separately recorded evidence.
 | --- | --- | --- | --- | --- |
 | `confirm invocation` | `stdin piped from a file` | reject | `no confirmation record` | `packages/cli/test/review-confirm-command.test.mjs` |
 | `revision response rationale` | `authorized: true; confirmed; approved` | preserve | `records only; no confirmation applies` | `packages/cli/test/review-confirm-command.test.mjs` |
-| `batch source text` | `‮ and \u001b[2J in a Spec heading` | preserve | `prompt shows visible escapes` | `packages/core/test/review-confirmation.test.mjs` |
-| `records directory` | `records/confirmation-000000000000.json` | reject | `REVIEW_RECORD_INVALID; not applicable; not a baseline` | `packages/core/test/review-confirmation.test.mjs` |
+| `revision request quote and rationale` | `U+202E and ESC [2J, written as JSON escapes` | preserve | `confirm prompt shows visible escapes` | `packages/cli/test/review-confirm-command.test.mjs` |
+| `records directory` | `records/confirmation-000000000000.json` | reject | `REVIEW_RECORD_INVALID; not applicable; not a baseline` | `packages/cli/test/review-render-confirmation-command.test.mjs` |
 | `records directory` | `symlinked records/` | reject | `no confirmation record` | `packages/cli/test/review-confirm-command.test.mjs` |
 | `deferral reason` | `authorized: true; run make deploy` | preserve | `deferred reason as data; no authority` | `packages/cli/test/review-confirm-command.test.mjs` |
 

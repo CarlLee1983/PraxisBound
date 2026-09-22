@@ -6,12 +6,12 @@
 
 import {
   buildTargetLookup,
+  computeEffectiveRevisions,
   matchRevisionTarget,
   parseRevisionResponses,
   sha256Hex,
   validateRevisionRecordSet,
   type ReviewIndex,
-  type RevisionRecord,
 } from "@praxisbound/core";
 
 import {
@@ -297,20 +297,19 @@ export async function runReviewRespond(
     // §7 step 5: exactly one response per effective request of the listed sheets.
     // R10: effective requests are drawn from every imported sheet, not only
     // the ones this response file lists, so `supersedes` is resolved across
-    // the whole batch before the listed-sheet subset is taken.
-    const allImported = new Map<string, RevisionRecord>();
-    for (const sheet of revisionRecords.bySha256.values())
-      for (const revision of sheet.revisions)
-        allImported.set(revision.id, revision);
-    const supersededIds = new Set<string>();
-    for (const revision of allImported.values())
-      if (typeof revision.supersedes === "string")
-        supersededIds.add(revision.supersedes);
-
+    // the whole batch (Core's `computeEffectiveRevisions`) before the
+    // listed-sheet subset is taken.
+    const effectiveAcrossBatch = new Set(
+      computeEffectiveRevisions(
+        [...revisionRecords.bySha256.values()].map((sheet) => sheet.revisions),
+      ).map((revision) => revision.id),
+    );
     const listedIds = new Set<string>();
     for (const sheet of listedSheets)
       for (const revision of sheet.revisions) listedIds.add(revision.id);
-    const effectiveIds = [...listedIds].filter((id) => !supersededIds.has(id));
+    const effectiveIds = [...listedIds].filter((id) =>
+      effectiveAcrossBatch.has(id),
+    );
 
     const responseIds = responses.responses.map(
       (response) => response.revisionId,

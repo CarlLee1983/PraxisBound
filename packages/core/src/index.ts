@@ -169,7 +169,7 @@ export type {
 export { indexReviewBatch } from "./review/index.js";
 export { planReviewBatch } from "./review/manifest.js";
 export { renderReviewProjection } from "./review/render.js";
-export { sha256Hex } from "./review/fingerprint.js";
+export { computeFingerprint, sha256Hex } from "./review/fingerprint.js";
 export type {
   AdrIndex,
   IndexReviewBatchResult,
@@ -201,6 +201,12 @@ export type {
   ReviewProjectionEvidence,
   RevisionEvidenceRecord,
 } from "./review/render-evidence.js";
+
+export {
+  needsReviewBadgeHtml,
+  renderConfirmationStatus,
+} from "./review/render-confirmation.js";
+export type { ConfirmationStatusRender } from "./review/render-confirmation.js";
 
 export {
   compareUtf8,
@@ -257,6 +263,31 @@ export {
   matchRevisionTarget,
 } from "./review/revision-targets.js";
 export type { TargetLookup, TargetMatch } from "./review/revision-targets.js";
+
+export { computeEffectiveRevisions } from "./review/revision-content.js";
+
+export { canonicalUtcTime } from "./review/revision-limits.js";
+
+export {
+  compareConfirmationApplicability,
+  computeUnresolvedRequests,
+  containsHiddenOrReorderingCharacters,
+  latestConfirmation,
+  MAX_DEFERRAL_REASON_BYTES,
+  validateStoredConfirmationRecord,
+} from "./review/confirmation.js";
+export type {
+  ConfirmationApplicability,
+  ConfirmationData,
+  ConfirmationSourceChange,
+  ConfirmationSourceChangeKind,
+  ConfirmationSourcesSnapshot,
+  ConfirmationSourceDigest,
+  ConfirmationValidationResult,
+  DeferredRevision,
+  StoredConfirmation,
+  UnresolvedRequests,
+} from "./review/confirmation.js";
 
 export {
   GOAL_PLAN_MANIFEST_SCHEMA_VERSION,

@@ -17,11 +17,17 @@
 import { createHash } from "node:crypto";
 
 import { ANNOTATION_SCRIPT } from "./annotation-script.js";
+import type { ConfirmationApplicability } from "./confirmation.js";
 import { renderMarkdownHtml, scanMarkdownDocument } from "./markdown-html.js";
 import {
   renderEvidenceSection,
   type ReviewProjectionEvidence,
 } from "./render-evidence.js";
+import {
+  CONFIRMATION_STATUS_CSS,
+  needsReviewBadgeHtml,
+  renderConfirmationStatus,
+} from "./render-confirmation.js";
 import {
   buildLocatorLookup,
   elementId,
@@ -217,12 +223,21 @@ function renderMatrixRow(
   );
 }
 
+/** A visible source-path label plus its 「需複審」 badge, for a card source block (contract §18: "每個來源區塊…標示其來源路徑"; review round 1 H1). */
+function docPathLabel(
+  path: string,
+  needsReviewPaths: ReadonlySet<string>,
+): string {
+  return ` <span class="doc-path">${escapeHtml(path)}</span>${needsReviewBadgeHtml(path, needsReviewPaths)}`;
+}
+
 function renderRequirementCard(
   ctx: MatrixRenderContext,
   matrixEntry: MatrixEntry,
   storyIds: readonly string[],
   targetId: string,
   homeOf: ReadonlyMap<string, string>,
+  needsReviewPaths: ReadonlySet<string>,
 ): string {
   const { storiesById, specContent, storyDocuments } = ctx;
   const { entry, specPath, anchor } = matrixEntry;
@@ -230,6 +245,7 @@ function renderRequirementCard(
   const entryContent = content?.entries.get(anchor);
   const missing = `<p class="muted">${MISSING_SECTION_TEXT}</p>`;
   const label = requirementLabelHtml(anchor, entry?.heading ?? anchor);
+  const specPathLabel = docPathLabel(specPath, needsReviewPaths);
 
   const executionAcceptance =
     storyIds.length === 0
@@ -242,7 +258,8 @@ function renderRequirementCard(
             if (home !== targetId)
               return `<p><a href="#${home}">${escapeHtml(storyId)} 執行驗收已在其他卡片顯示</a></p>`;
             const acceptance = storyDocuments.get(story.path)?.acceptance;
-            return `<section><h4>${escapeHtml(storyId)}</h4>${acceptance?.acceptanceGroupsHtml ?? missing}</section>`;
+            const acceptancePath = `${story.path}/acceptance.md`;
+            return `<section><h4>${escapeHtml(storyId)}${docPathLabel(acceptancePath, needsReviewPaths)}</h4>${acceptance?.acceptanceGroupsHtml ?? missing}</section>`;
           })
           .join("");
 
@@ -257,17 +274,18 @@ function renderRequirementCard(
             if (home !== targetId)
               return `<p><a href="#${home}">${escapeHtml(storyId)} 已在其他卡片顯示</a></p>`;
             const focus = storyDocuments.get(story.path)?.story;
-            return `<section><h4>${escapeHtml(storyId)}</h4>${focus?.focusHtml ?? missing}</section>`;
+            const storyPath = `${story.path}/story.md`;
+            return `<section><h4>${escapeHtml(storyId)}${docPathLabel(storyPath, needsReviewPaths)}</h4>${focus?.focusHtml ?? missing}</section>`;
           })
           .join("");
 
   return (
     `<details class="card"><summary>${label}</summary>` +
     `<div class="card-body">` +
-    `<section class="req-ac" id="${targetId}"><h3>需求驗收</h3>${entryContent?.acceptanceHtml ?? missing}</section>` +
+    `<section class="req-ac" id="${targetId}"><h3>需求驗收${specPathLabel}</h3>${entryContent?.acceptanceHtml ?? missing}</section>` +
     `<section class="exec-ac"><h3>執行驗收</h3>${executionAcceptance}</section>` +
     `<section class="story-focus"><h3>Story 重點</h3>${storyFocus}</section>` +
-    `<section class="detail"><h3>需求細節</h3>${entryContent?.detailHtml || `<p class="muted">${MISSING_SECTION_TEXT}</p>`}</section>` +
+    `<section class="detail"><h3>需求細節${specPathLabel}</h3>${entryContent?.detailHtml || `<p class="muted">${MISSING_SECTION_TEXT}</p>`}</section>` +
     `</div></details>`
   );
 }
@@ -277,6 +295,7 @@ function renderOrphanStories(
   index: ReviewIndex,
   storyDocuments: ReadonlyMap<string, StoryDocuments>,
   referenced: ReadonlySet<string>,
+  needsReviewPaths: ReadonlySet<string>,
 ): string {
   return index.stories
     .filter((story) => story.id === undefined || !referenced.has(story.id))
@@ -287,10 +306,12 @@ function renderOrphanStories(
           ? undefined
           : (storyTitleWithoutId(documents.title, story.id) ?? documents.title);
       const heading = escapeHtml(story.id ?? story.path);
+      const acceptancePath = `${story.path}/acceptance.md`;
+      const storyPath = `${story.path}/story.md`;
       return (
         `<section class="orphan-story"><h3>${heading}${displayTitle === undefined ? "" : ` ${escapeHtml(displayTitle)}`}</h3>` +
-        `<section><h4>執行驗收</h4>${documents?.acceptance?.acceptanceGroupsHtml ?? `<p class="muted">${MISSING_SECTION_TEXT}</p>`}</section>` +
-        `<section><h4>Story 重點</h4>${documents?.story?.focusHtml ?? `<p class="muted">${MISSING_SECTION_TEXT}</p>`}</section>` +
+        `<section><h4>執行驗收${docPathLabel(acceptancePath, needsReviewPaths)}</h4>${documents?.acceptance?.acceptanceGroupsHtml ?? `<p class="muted">${MISSING_SECTION_TEXT}</p>`}</section>` +
+        `<section><h4>Story 重點${docPathLabel(storyPath, needsReviewPaths)}</h4>${documents?.story?.focusHtml ?? `<p class="muted">${MISSING_SECTION_TEXT}</p>`}</section>` +
         `</section>`
       );
     })
@@ -302,6 +323,7 @@ function renderMatrixAndCards(
   matrixOrder: readonly MatrixEntry[],
   specContent: ReadonlyMap<string, SpecDocumentContent | undefined>,
   storyDocuments: ReadonlyMap<string, StoryDocuments>,
+  needsReviewPaths: ReadonlySet<string>,
 ): {
   readonly matrixRows: string;
   readonly cards: string;
@@ -338,14 +360,26 @@ function renderMatrixAndCards(
       renderMatrixRow(ctx, matrixEntry, storyIds, targetId, homeOf, trace),
     );
     cards.push(
-      renderRequirementCard(ctx, matrixEntry, storyIds, targetId, homeOf),
+      renderRequirementCard(
+        ctx,
+        matrixEntry,
+        storyIds,
+        targetId,
+        homeOf,
+        needsReviewPaths,
+      ),
     );
   }
 
   return {
     matrixRows: matrixRows.join(""),
     cards: cards.join(""),
-    orphanStories: renderOrphanStories(index, storyDocuments, referenced),
+    orphanStories: renderOrphanStories(
+      index,
+      storyDocuments,
+      referenced,
+      needsReviewPaths,
+    ),
   };
 }
 
@@ -384,11 +418,12 @@ function renderAppendix(
   storyAppendix: readonly AppendixSection[],
   advisoryDetailHtml: string,
   lookup: LocatorLookup,
+  needsReviewPaths: ReadonlySet<string>,
 ): string {
   const sourceList = index.sources
     .map(
       (source) =>
-        `<li><span class="doc-path">${escapeHtml(source.path)}</span> — SHA-256: <span class="digest">${escapeHtml(source.sha256 ?? "unavailable")}</span></li>`,
+        `<li><span class="doc-path">${escapeHtml(source.path)}</span>${needsReviewBadgeHtml(source.path, needsReviewPaths)} — SHA-256: <span class="digest">${escapeHtml(source.sha256 ?? "unavailable")}</span></li>`,
     )
     .join("");
 
@@ -399,7 +434,7 @@ function renderAppendix(
         document?.bytes === undefined
           ? missingSourceArticle(adr.path)
           : renderAdrAppendix(adr.path, document.bytes, lookup);
-      return `<details class="raw-doc"><summary>${escapeHtml(adr.path)}</summary>${body}</details>`;
+      return `<details class="raw-doc"><summary>${escapeHtml(adr.path)}${needsReviewBadgeHtml(adr.path, needsReviewPaths)}</summary>${body}</details>`;
     })
     .join("");
 
@@ -412,7 +447,7 @@ function renderAppendix(
   const remainingSections = [...remainingByPath.entries()]
     .map(
       ([path, blocks]) =>
-        `<details class="raw-doc"><summary>${escapeHtml(path)}（其餘章節）</summary>${blocks.join("\n")}</details>`,
+        `<details class="raw-doc"><summary>${escapeHtml(path)}（其餘章節）${needsReviewBadgeHtml(path, needsReviewPaths)}</summary>${blocks.join("\n")}</details>`,
     )
     .join("");
 
@@ -452,6 +487,8 @@ export function renderReviewProjection(
   documents: readonly ReviewProjectionDocument[],
   manifestPath: string,
   evidence?: ReviewProjectionEvidence,
+  /** Contract §8 修訂，R-006: `undefined` when `records/` holds no valid `confirmation-*.json` at all (or the file bound was exceeded), same as `render`'s own `index` never reading `records/` — the header renders nothing and no source gets a 「需複審」 badge. */
+  confirmationApplicability?: ConfirmationApplicability,
 ): string {
   const documentsByPath = new Map(
     documents.map((document) => [document.path, document]),
@@ -506,12 +543,17 @@ export function renderReviewProjection(
     });
   }
 
+  const confirmationStatus = renderConfirmationStatus(
+    confirmationApplicability,
+  );
+
   const matrixOrder = buildMatrixOrder(index);
   const { matrixRows, cards, orphanStories } = renderMatrixAndCards(
     index,
     matrixOrder,
     specContent,
     storyDocuments,
+    confirmationStatus.needsReviewPaths,
   );
 
   const goalSections = index.specs
@@ -519,7 +561,7 @@ export function renderReviewProjection(
       const content = specContent.get(spec.path);
       const html =
         content?.goalHtml ?? `<p class="muted">${MISSING_SECTION_TEXT}</p>`;
-      return `<div class="doc-group"><p class="doc-path">${escapeHtml(spec.path)}</p>${html}</div>`;
+      return `<div class="doc-group"><p class="doc-path">${escapeHtml(spec.path)}${needsReviewBadgeHtml(spec.path, confirmationStatus.needsReviewPaths)}</p>${html}</div>`;
     })
     .join("");
   const nonGoalsSections = index.specs
@@ -527,7 +569,7 @@ export function renderReviewProjection(
       const content = specContent.get(spec.path);
       const html =
         content?.nonGoalsHtml ?? `<p class="muted">${MISSING_SECTION_TEXT}</p>`;
-      return `<div class="doc-group"><p class="doc-path">${escapeHtml(spec.path)}</p>${html}</div>`;
+      return `<div class="doc-group"><p class="doc-path">${escapeHtml(spec.path)}${needsReviewBadgeHtml(spec.path, confirmationStatus.needsReviewPaths)}</p>${html}</div>`;
     })
     .join("");
 
@@ -584,6 +626,7 @@ export function renderReviewProjection(
     storyAppendix,
     advisoryDetailHtml,
     lookup,
+    confirmationStatus.needsReviewPaths,
   );
 
   const title = index.title ?? index.batchId;
@@ -602,7 +645,7 @@ export function renderReviewProjection(
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-${scriptHash}'; img-src 'none'; media-src 'none'; object-src 'none'; frame-src 'none'; connect-src 'none'; base-uri 'none'; form-action 'none'; style-src 'unsafe-inline'">
 <title>${escapeHtml(title)} — Review Projection</title>
 <style>
-${PAGE_CSS}${evidenceSection.css}
+${PAGE_CSS}${confirmationStatus.headerHtml === "" ? "" : CONFIRMATION_STATUS_CSS}${evidenceSection.css}
 </style>
 </head>
 <body data-pb-batch-id="${escapeHtml(index.batchId)}" data-pb-manifest-path="${escapeHtml(manifestPath)}" data-pb-fingerprint="${escapeHtml(index.fingerprint)}">
@@ -613,7 +656,7 @@ ${PAGE_CSS}${evidenceSection.css}
 <dl class="meta">
 <dt>批次 ID</dt><dd>${escapeHtml(index.batchId)}</dd>
 <dt>Requirement Fingerprint</dt><dd class="fingerprint">${escapeHtml(index.fingerprint)}</dd>
-</dl>
+</dl>${confirmationStatus.headerHtml}
 ${prefaceHtml}
 </header>
 <section class="matrix"><h2>需求總覽矩陣</h2><div class="table-scroll"><table>
