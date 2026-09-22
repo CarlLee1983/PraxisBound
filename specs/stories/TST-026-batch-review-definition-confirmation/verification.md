@@ -8,7 +8,7 @@
 * integration: pass — `review-confirm-command.test.mjs and review-render-confirmation-command.test.mjs drive review confirm through an injected terminal and review render against temporary repositories, asserting envelopes, records/ contents, and page markers`
 * contract: pass — `contract §8 carries the 修訂，R-006 applicability block the tests assert; cli-contract.md documents review confirm, its ordered checks, outcomes, and issue codes, and render's advisory staleness diagnostics`
 * e2e: pass — `a manual scratch script, not committed, drove the built binary under a Python pseudo-terminal: review confirm deferred one non-blocking request with a typed reason, showed its U+202E and ESC characters as visible escapes, and wrote records/confirmation-<fp12>.json; render then stated that a confirmation is bound to the current fingerprint; after an uncommitted acceptance.md edit, render reported REVIEW_SOURCE_CHANGED for that path only and placed 需複審 beside that path in its requirement card and appendix; piped stdin was refused with REVIEW_CONFIRM_REQUIRES_TTY and no record`
-* architecture: pass — `Human Review: carl accepted TST-026 in a Claude Code session on 2026-09-22, reviewing feat/tst-026-definition-confirmation at d258ada after one code and security review round, and after accepting the contract §8 R-006 decisions`
+* architecture: pass — `Human Review: carl accepted TST-026 in a Claude Code session on 2026-09-22, reviewing feat/tst-026-definition-confirmation at d258ada (rebased onto main after #108 as a989c2d) after one code and security review round, and after accepting the contract §8 R-006 decisions`
 
 ## Evidence
 
@@ -29,7 +29,7 @@ Historical Evidence of one human-run confirmation on 2026-09-22. It shows
 that the interactive path works end to end on a real terminal. It is not
 identity proof, authorization, or acceptance of the batch's content.
 
-* `Tool: packages/cli/dist/bin.js built from feat/tst-026-definition-confirmation at d258ada`
+* `Tool: packages/cli/dist/bin.js built from feat/tst-026-definition-confirmation at d258ada, rebased as a989c2d with an identical tree`
 * `Batch: BR-TST-025-rehearsal in a scratch clone at commit 2117a18 plus an uncommitted RF-001 acceptance.md edit and one imported non-blocking request REV-01K5TST026E2E0000000000001; an earlier scripted pseudo-terminal confirmation confirmation-9be3d79df5c6.json bound the pre-edit fingerprint`
 * `Command: carl ran node packages/cli/dist/bin.js review confirm specs/batches/BR-TST-025-rehearsal/batch.json in a separate interactive terminal window`
 * `Result: records/confirmation-934ce93bf960.json created at confirmedAt 2026-09-22T15:39:19.258Z for fingerprint 934ce93bf960…, deferring REV-01K5TST026E2E0000000000001 with the typed reason "not thing"; the earlier record was left in place with its original timestamp`
