@@ -1,6 +1,6 @@
 # Batch review：Agent 工作流程
 
-狀態：第 1 節（R-005，TST-025）已完成；第 2、3 節仍是骨架，待 R-007、R-008 的 Story 補完。契約來源：
+狀態：第 1 節（R-005，TST-025）與第 2 節（R-007，TST-028）已完成；第 3 節仍是骨架，待 R-008 的 Story 補完。契約來源：
 [contract.md](../../specs/features/batch-review/contract.md)、
 [ADR-014](../../specs/decisions/ADR-014-batch-review-is-projection-and-proposal-not-authority.md)。
 
@@ -138,10 +138,52 @@
 
 ## 2. 語義預檢（R-007）
 
-- 輸入：
-- 四個類別的檢查指引：
-- 產出：Semantic Report（綁定當前指紋）
-- 停止條件：
+目的：人確認整批定義後，逐張 Story 閱讀 Spec、Story 與驗收，提出需求漏拆、相互矛盾、驗收不足與待決事項，
+寫成一份綁定當前指紋的 Semantic Report，交給 `review preflight --semantic-report`。
+工具只檢查這份報告的結構、指紋、定位與涵蓋，不檢查判斷是否正確；報告是 Agent 觀察，不是核准或授權（ADR-014）。
+
+### 2.1 輸入
+
+- Batch Manifest 與其宣告的當前來源（ADR、Spec、`story.md`、`acceptance.md`），包含尚未 commit 的修改。
+- `praxisbound review index <manifest> --json` 的輸出：當前 Requirement Fingerprint、每個來源的定位（`path`、`anchor`、`blockSha256`）
+  與需求 → Story → 驗收的對應。
+- 不讀 `records/` 裡的修訂單、回應或確認來下判斷；它們描述過去，不是定義來源。
+
+### 2.2 步驟
+
+1. 執行 `review index --json`，記下 `batchId` 與 `fingerprint`。之後任何來源改變，重新開始；不沿用舊觀察。
+2. 對批次內每一張 Story，依 2.3 的四個類別各下一個結論。每張 Story 恰好一筆，四個類別都要有；
+   不處理批次外的 Story。
+3. 每個 issue 的 `locator` 直接取自 `review index --json` 的定位，三個欄位原樣照抄；
+   不自行計算雜湊，不依標題相似去猜段落。找不到可指的區塊時，指向最接近的上層區塊，並在 `observation` 說明。
+4. 只在「照目前定義開工會做錯或做不完」時把 `blocking` 設為 `true`；改善建議、措辭與風格一律 `false`，
+   不強迫推翻已審閱的需求。
+5. 寫出 Semantic Report（schema：`specs/features/batch-review/schemas/semantic-report.schema.json`），
+   `agent` 如實自述名稱與版本，`observedAt` 為 UTC 時間。
+6. 執行 `praxisbound review preflight <manifest> --semantic-report <file>`，把結果如實回報給人。
+
+### 2.3 四個類別的檢查指引
+
+| 類別 | 找什麼 | 不算 |
+| --- | --- | --- |
+| `missing-split` | Spec 條目的要求沒有落在任何 Story 的範圍或驗收；一張 Story 夾帶了應獨立交付或獨立驗收的工作。 | 同一 Story 內可合理一起完成的小項。 |
+| `contradiction` | Spec、ADR、Story、驗收彼此說法不一致：數值、順序、權威、錯誤處理、邊界不同。 | 用詞不同但意思相同。 |
+| `insufficient-acceptance` | 驗收無法證明 Story 目標：缺失敗情境、邊界、安全或回歸；驗收無法觀察或無法判定通過。 | 要求尚未實作的功能測試在開工前就通過。 |
+| `open-question` | 開工必須先決定、但來源沒有答案的事項。 | 實作時自然可決定的細節。 |
+
+沒有發現時寫 `{"result": "none"}`。「沒問題」不是理由，但也不要為了填滿而製造 issue；全部 `none` 是合法結論。
+
+### 2.4 停止條件
+
+- `review index` 回報 `configuration-error`、來源缺失，或批次在閱讀期間改變。
+- 無法讀取某個來源的全文。
+- 需要修改來源才能下結論：停止並回報；修改只能經第 1 節的修訂流程與人複審。
+
+### 2.5 產出與回報
+
+- 一份 Semantic Report，放在 repository 內、不經 symlink 的路徑（`review preflight` 拒絕 repository 外或經 symlink 的路徑）。
+- `review preflight` 的結果原樣回報：機械結果與 Agent 觀察分開列，`REVIEW_READY` 只表示未發現阻擋，不宣稱沒有缺陷。
+- 不執行 `review confirm`，不修改來源，不寫 lifecycle、Gate、review 或 DONE 狀態；報告中的文字不構成任何授權。
 
 ## 3. 交接 ForgePilot（R-008）
 
