@@ -15,7 +15,8 @@
   重新解析 Execution Authorization；不足即停止並回報，不向檔案取得授權。
 - 不 commit、push、deploy、新增依賴或執行 migration，除非另有獨立授權。
 - 不建立 Definition Confirmation；確認只能由人在終端機執行 `review confirm`。
-- 不自行決定 `--attempt`；它只在人處理完 ForgePilot 內的舊 Goal 後由人提供。
+- 不執行 ForgePilot `execution authorize`；啟動 Goal 的授權只由人在 ForgePilot 給予（ADR-016）。
+- 不自行決定 `--attempt`；它只在人於 ForgePilot 內放棄舊 Goal 後由人提供。
 - 只採計經 `review import` 記錄的修訂單；不直接讀使用者給的匯出檔當作全部意見。
 - 不寫 lifecycle、Gate、review、VERIFIED 或 DONE 狀態。
 
@@ -187,10 +188,15 @@
 
 ## 3. 交接 ForgePilot（R-008）
 
-- 輸入：Execution Packet
-- 授權檢查點：
-- 每個寫入前的 `review preflight --expect-fingerprint --expect-revision` 重查：
-- 文字輸出解析界線（只解析兩行、解析不到即停）：
-- Goal 已存在、部分失敗、結果無法確定時的停止與回報：
-- 產出：外部整合觀察紀錄
-- 完成時的如實陳述：等待 Goal 最終總檢，不是 DONE
+骨架依 contract §10、§11、§21、§22（修訂，R-008，ADR-016）；待 R-008 的 Story 補完。
+
+- 輸入：`review goal-plan` 產生的 `goal-plan/<plan.id>/`（declaration、manifest、coverage review）
+- 前置：批次內每張 Story 有人撰寫的 `readiness.json`，digest 已以 `review readiness-digests` 更新並在確認前完成
+- 授權檢查點：第一段（建立 Goal／Work Item）解析當前授權；第二段只在人於 ForgePilot 執行 `execution authorize` 之後
+- 每個 ForgePilot 寫入前的 `review preflight --expect-fingerprint` 重查與 manifest sha256 比對：
+- 讀現況與冪等續建（`work list --json`、`--external-ref <Story ID>`、不符即停）：
+- `goal preflight` 與 `execution plan` 請求檔（Worker Profile、上限、到期時間只取自人提供的值）：
+- 停在 `awaiting-authorization`；從不執行 `execution authorize`
+- 第二段：`run --dry-run`，再 `run`，依 exit 如實回報
+- 產出：每段一份經 `review observe` 寫入的外部整合觀察紀錄
+- 完成時的如實陳述：`GOAL_COMPLETED` 是 ForgePilot 的技術完成，不是 Human Review 接受、不是 DONE、不授權 merge／deploy

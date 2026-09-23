@@ -112,7 +112,8 @@ _Avoid_: approval, sign-off, review state
 **Execution Authorization**:
 Permission to cause effects such as source edits, work creation, or runs,
 resolved from a Story, the current human session, or a control plane at the
-time of the effect; never read from a file.
+time of the effect; never read from a file. Starting a Goal's run is authorized
+only by the human in the control plane, never by an Agent.
 _Avoid_: approved flag, authorized field
 
 **Semantic Report**:
@@ -134,8 +135,23 @@ The recorded Evidence of one Preflight, keeping mechanical diagnostics apart
 from the Agent's unverified observations; historical, never current state.
 _Avoid_: preflight log, status file, readiness state
 
-**Execution Packet**:
+**Goal Plan Manifest**:
 The start-of-work input handed to an external Agent or control plane for a
-confirmed, preflighted Review Batch; it records observed authorization and
-never proves work was done.
-_Avoid_: handoff, verification handoff, dispatch approval
+confirmed, preflighted Review Batch: the complete declared set of Stories and
+their prerequisite relations, bound to the exact sources reviewed; it grants no
+authority and never proves work was done.
+_Avoid_: execution packet, handoff, verification handoff, dispatch approval
+
+**Readiness Sidecar**:
+A per-Story declaration of what each acceptance criterion needs to execute —
+its owner and operations, the Story's inputs and outputs, and the identities and
+decision follow-ups it depends on — bound to the exact bytes of its Story and
+acceptance files. It is a definition source reviewed and confirmed with the
+Review Batch, never inferred from Story prose.
+_Avoid_: readiness contract (unqualified), Story metadata, derived readiness
+
+**Plan Coverage Review**:
+A projection of a Definition Confirmation onto one exact Goal Plan Manifest,
+stating that a human claimed the plan covers the intended definition;
+self-asserted, and not Execution Authorization.
+_Avoid_: approval, coverage sign-off, review state

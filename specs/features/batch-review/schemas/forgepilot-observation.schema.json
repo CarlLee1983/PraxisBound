@@ -1,15 +1,15 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "urn:praxisbound:batch-review:forgepilot-observation:1",
-  "title": "PraxisBound external integration observation v1 (ForgePilot)",
-  "description": "What one handoff attempt observed. ForgePilot remains authoritative for current state.",
+  "$id": "urn:praxisbound:batch-review:forgepilot-observation:2",
+  "title": "PraxisBound external integration observation v2 (ForgePilot)",
+  "description": "What one handoff session observed through ForgePilot's public CLI, written through `review observe`. ForgePilot remains authoritative for current state.",
   "type": "object",
   "additionalProperties": false,
   "required": [
     "schemaVersion",
     "batchId",
     "fingerprint",
-    "packet",
+    "goalPlan",
     "forgepilotVersion",
     "observedAt",
     "steps",
@@ -17,7 +17,7 @@
   ],
   "properties": {
     "schemaVersion": {
-      "const": "1.0.0"
+      "const": "2.0.0"
     },
     "batchId": {
       "$ref": "urn:praxisbound:batch-review:defs:1#/$defs/batchId"
@@ -25,13 +25,18 @@
     "fingerprint": {
       "$ref": "urn:praxisbound:batch-review:defs:1#/$defs/sha256"
     },
-    "packet": {
+    "goalPlan": {
+      "description": "The Goal Plan Manifest this session handed off.",
       "$ref": "urn:praxisbound:batch-review:defs:1#/$defs/recordRef"
+    },
+    "goalId": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
     },
     "forgepilotVersion": {
       "type": "string",
-      "minLength": 1,
-      "maxLength": 256
+      "pattern": "^[a-f0-9]{40}$",
+      "description": "The exact ForgePilot commit the executable was built from."
     },
     "observedAt": {
       "$ref": "urn:praxisbound:batch-review:defs:1#/$defs/utcTime"
@@ -51,8 +56,13 @@
         "properties": {
           "command": {
             "enum": [
+              "preflight",
+              "work-list",
               "goal-create",
               "work-add",
+              "goal-preflight",
+              "execution-plan",
+              "run-dry-run",
               "run"
             ]
           },
@@ -63,11 +73,16 @@
             "type": "string",
             "pattern": "^WI-[0-9]+$"
           },
+          "created": {
+            "type": "boolean",
+            "description": "`work add --json` `created`; false means ForgePilot returned an existing Work Item for the same external reference."
+          },
           "exit": {
             "type": [
               "integer",
               "null"
-            ]
+            ],
+            "description": "null only when the process could not be started or its exit was not observed."
           },
           "stdout": {
             "type": "string",
@@ -93,13 +108,19 @@
     },
     "stoppedBecause": {
       "enum": [
-        "completed-awaiting-goal-review",
-        "run-stopped",
-        "goal-exists",
-        "step-failed",
-        "result-unknown",
+        "awaiting-authorization",
+        "goal-completed",
+        "run-needs-human",
+        "run-limit-reached",
+        "run-interrupted",
+        "run-failed",
+        "authorization-missing",
         "preflight-not-ready",
-        "authorization-missing"
+        "goal-mismatch",
+        "work-mismatch",
+        "goal-preflight-failed",
+        "step-failed",
+        "result-unknown"
       ]
     }
   }

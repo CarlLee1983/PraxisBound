@@ -12,7 +12,7 @@ R-001 的 ADR／詳細契約需經人類審閱，後續工作再建立各自 Sto
 使用者一次審閱明確交付批次內的 Spec、Story、acceptance 與相關 ADR，
 在離線 HTML 提出修改，由既有 Agent 回到正確定義來源修訂。
 人類確認整批定義後，Agent 完成開工前檢查；取得明確交付執行授權才可
-經既有 ForgePilot 公開 CLI 交接，推進至技術驗證完成／等待 Goal 最終總檢。
+經既有 ForgePilot 公開 CLI 交接，推進至 ForgePilot 回報的技術完成或需要人的停止點。
 
 ```text
 ADR → Spec → Stories → 批次來源快照 → HTML 審閱
@@ -25,7 +25,7 @@ ADR → Spec → Stories → 批次來源快照 → HTML 審閱
                                       ↓ 無阻擋且有執行授權
                                   交接資料 → 外部 Agent／ForgePilot Runner
                                       ↓
-                                  等待 Goal 最終總檢
+                                  ForgePilot 結果（技術完成不是 DONE）
 ```
 
 預檢若需要改變已確認定義，回到修訂與複審。一般程式錯誤／測試失敗
@@ -393,7 +393,7 @@ Story ID 與 ForgePilot Work Item ID 必須分開，依實際建立結果建立�
 - AC-004：同一批次重試不重複建立 Goal／Work Items；部分成功、部分失敗須明確回報，無法安全續接時不得啟動 Runner。
 - AC-005：已一次授權且無阻擋後，可啟動既有 Runner 持續推進，不插入每張 Story 的新增人工確認。
 - AC-006：執行後狀態由 ForgePilot 讀取，不回寫第二份 current status；不自行核准 review、不寫 VERIFIED／DONE、不略過 Gate。
-- AC-007：不得假定 GOAL policy 已具備最終接受 command；本期依實測既有能力停在等待 Goal 總檢，不自動 merge／deploy。
+- AC-007：（修訂，2026-09-23，ADR-016）如實回報 ForgePilot 觀察到的結果（技術完成、需要人、觸及上限、中斷或錯誤）；ForgePilot 的 `GOAL_COMPLETED` 只是技術完成，不等於 Human Review 接受或 DONE，不自動 merge／deploy。原文「停在等待 Goal 總檢」所依據的狀態已不存在於 ForgePilot `32b7a68`。
 
 ### 不包含
 
@@ -424,7 +424,7 @@ Blocked by：R-008；並依賴 R-001～007 交付。
 ### 驗收條件
 
 - AC-001：成功演練整批閱讀 → 多處修訂 → 匯出／還原 → Agent 回修來源 → 新版差異 → 人類確認 → 預檢 → ForgePilot 交接。
-- AC-002：真實 ForgePilot 整合中，各項工作由既有 Runner 派發與驗證；正常路徑不逐項等待人工，最後如實呈現技術驗證完成／等待 Goal 總檢。
+- AC-002：真實 ForgePilot 整合中，各項工作由既有 Runner 派發與驗證；正常路徑不逐項等待人工，最後如實呈現 ForgePilot 回報的結果（修訂，2026-09-23：技術完成不等於最終接受）。
 - AC-003：修改已審來源、漏掉必要 Story、依賴循環、未執行必要檢查、過期回饋、未決阻擋與缺少授權都有拒絕／退回路徑。
 - AC-004：惡意 Markdown／回饋、路徑跳脫、外部 symlink、輸出失敗、儲存停用及重複交接不造成腳本執行、資料外洩、來源破壞或重複任務。
 - AC-005：代表性畫面與 A4 預覽實際檢視，必要內容未被裁掉；未被測試的瀏覽器能力不標成已支援。
@@ -440,7 +440,7 @@ Blocked by：R-008；並依賴 R-001～007 交付。
 以 2 份 Spec、至少 4 張有依賴的 Stories 演練完整流程：整批閱讀、修改、
 匯出還原、Agent 回修正確來源、新版差異與回應、人類確認、預檢與交接。
 來源變更使舊確認失效；阻擋時不派發；已有執行授權且檢查完整時，既有 Runner
-可推進到等待 Goal 最終總檢，正常路徑不逐張新增人工放行。
+可推進到 ForgePilot 回報技術完成或需要人的停止點，正常路徑不逐張新增人工放行。
 
 本期不做多人即時協作、帳號、電子簽章、HTML 直接回寫來源、雲端審稿、
 多主題系統、原生 PDF 匯出、需求推導引擎、模型平台、新 Runtime／Runner、
