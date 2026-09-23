@@ -348,7 +348,7 @@ Schemas：[`schemas/goal-plan/`](schemas/goal-plan/)（declaration、manifest、
 
 - `repoPath` ≤ 1024 UTF-8 bytes；`reviewer.name` ≤ 256 UTF-8 bytes 且 ≤ 256 個 Unicode 碼位。
 - `reviewedAt` 必須是實際存在的 UTC 日期時間（例如 2 月 30 日、`24:00` 不合法）；毫秒為任意三位數。
-- Manifest 全部 `dependsOn` 邊合計 ≤ 10000。
+- Declaration 與 Manifest 各自的全部 `dependsOn` 邊合計 ≤ 10000。
 - Declaration ≤ 1 MiB、JSON 巢狀 ≤ 32 層；Manifest 與 Coverage Review ≤ 8 MiB、≤ 128 層。
 
 `praxisbound review goal-plan <manifest> --semantic-report <file> [--attempt <n>]`：
