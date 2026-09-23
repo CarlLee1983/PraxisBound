@@ -44,6 +44,7 @@ import {
   partitionStoryDocument,
   renderAdrAppendix,
   renderReadinessSidecarHtml,
+  renderReadinessSidecarOversizedNoticeHtml,
   requirementLabelHtml,
   storyTitleWithoutId,
   type AcceptanceContent,
@@ -66,6 +67,14 @@ import type {
 export interface ReviewProjectionDocument {
   readonly path: string;
   readonly bytes: Uint8Array | undefined;
+  /**
+   * `true` when the source exists and its digest is already known (the
+   * fingerprint covers it) but its content was never read into memory
+   * because it exceeds contract §13/§21's Readiness Sidecar bound (Story
+   * TST-030 HIGH-1, code review round 2): `bytes` is always `undefined` in
+   * this case, and the projection shows only a size notice, never content.
+   */
+  readonly oversized?: boolean;
 }
 
 const MISSING_SOURCE_TEXT = "產生本次離線快照時，此來源無法讀取。";
@@ -459,8 +468,20 @@ function renderAppendix(
     )
     .join("");
 
+  // A present Readiness Sidecar (Story TST-030) is already shown verbatim,
+  // safely escaped, with its own Story card (`renderReadinessSidecarHtml`);
+  // excluding it here avoids printing its content a second time (code
+  // review round 2 HIGH-1) and, since that is the only place it is ever
+  // shown, means this loop's plain `escapeHtml` never needs to also guard
+  // against a hidden/bidi code point in Sidecar bytes (MEDIUM-1).
+  const readinessSourcePaths = new Set(
+    index.stories
+      .map((story) => story.readinessPath)
+      .filter((path): path is string => path !== undefined),
+  );
   const rawMarkdown = index.sources
     .map((source) => {
+      if (readinessSourcePaths.has(source.path)) return "";
       const document = documents.get(source.path);
       if (document?.bytes === undefined) return "";
       const text = new TextDecoder("utf-8").decode(document.bytes);
@@ -552,18 +573,28 @@ export function renderReviewProjection(
     const readinessPath = story.readinessPresent
       ? story.readinessPath
       : undefined;
-    const readinessBytes =
+    const readinessDocument =
       readinessPath === undefined
         ? undefined
-        : documentsByPath.get(readinessPath)?.bytes;
+        : documentsByPath.get(readinessPath);
     storyDocuments.set(story.path, {
       title: storyBytes === undefined ? undefined : firstH1Text(storyBytes),
       story: storyContent,
       acceptance: acceptanceContent,
+      // HIGH-1 (code review round 2): an over-limit Sidecar was never read
+      // into memory at all (`oversized`, streamed-digest only) — its
+      // content is never shown, only a size notice naming its path.
       readinessHtml:
-        readinessPath === undefined || readinessBytes === undefined
+        readinessPath === undefined
           ? undefined
-          : renderReadinessSidecarHtml(readinessPath, readinessBytes),
+          : readinessDocument?.oversized === true
+            ? renderReadinessSidecarOversizedNoticeHtml(readinessPath)
+            : readinessDocument?.bytes === undefined
+              ? undefined
+              : renderReadinessSidecarHtml(
+                  readinessPath,
+                  readinessDocument.bytes,
+                ),
     });
   }
 

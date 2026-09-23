@@ -191,18 +191,35 @@ absent one (`ENOENT`) contributes nothing and is never `REVIEW_SOURCE_MISSING`
 `readiness.json` is `REVIEW_PATH_UNSAFE`, checked the same way as any other
 declared path. Unlike every other declared source, a Readiness Sidecar is
 exempt from the generic 4 MiB per-source cap: `review index`/`review render`
-read and hash it at whatever size it is and stay `success` for an otherwise
-valid manifest (contract §12) — the tighter, contract-mandated 1 MiB Sidecar
-bound (§13/§21) is checked only where its content is evaluated (`review
-preflight`/`review readiness-digests`), never here. A Sidecar that exists but
-could not be read (permission denied or similar — distinct from genuinely
-absent) is not absent either: it still joins `data.sources` with `sha256:
-null` and a `REVIEW_SOURCE_MISSING` diagnostic, mirroring how any other
-missing/unreadable declared source is handled (contract §4), so it still
-blocks `confirm`/`goal-plan`. A batch whose Stories carry no Sidecar produces
-the exact same `data.sources`, fingerprint, and diagnostics as before Story
-TST-030 (no new fields on `data.stories[]` entries either — they are omitted
-entirely, not merely falsy, when there is no Sidecar).
+stay `success` for an otherwise valid manifest (contract §12) regardless of
+its size. Its size is checked via `fstat` on the already-safely-opened
+handle *before* any content is read (code review round 2 HIGH-1): at or
+under the contract-mandated 1 MiB Sidecar bound (§13/§21), it is read and
+hashed normally (`sha256Hex` of the bytes); over that bound, its bytes are
+never loaded into memory at all — only streamed through a hash — so a
+Sidecar of any size, however large, can never make `review index`/`review
+render` allocate memory proportional to it. That streamed digest still
+covers it in the fingerprint (observation kind `oversized`), and `review
+render` shows only a fixed size notice in its place, never any content.
+A Sidecar that exists but could not be read (permission denied or similar —
+distinct from genuinely absent) is not absent either: it still joins
+`data.sources` with `sha256: null` and a `REVIEW_SOURCE_MISSING` diagnostic
+worded to say it could not be read, mirroring how any other missing/
+unreadable declared source is handled (contract §4) but distinguishing the
+two conditions in the message, so it still blocks `confirm`/`goal-plan`. A
+batch whose Stories carry no Sidecar produces the exact same `data.sources`,
+fingerprint, and diagnostics as before Story TST-030 (no new fields on
+`data.stories[]` entries either — they are omitted entirely, not merely
+falsy, when there is no Sidecar).
+
+A Sidecar's raw JSON text is scanned for duplicate object keys and
+pathological nesting *before* it is ever handed to `JSON.parse` (code review
+round 2 HIGH-2, `packages/core/src/review/json-safety.ts`'s `scanJsonSafety`,
+ported from `goal-plan-artifacts.ts`): `JSON.parse` itself remains the
+parser, so an authored `"__proto__"` key becomes an ordinary own property —
+rejected as an unknown field by the schema check — never a route to
+repointing the parsed object's prototype, which a hand-written parser that
+assigns via `obj[key] = value` would allow.
 
 Issue codes this command can emit: `REVIEW_MANIFEST_INVALID`,
 `REVIEW_SCHEMA_UNSUPPORTED`, `REVIEW_PATH_UNSAFE`, `REVIEW_INPUT_TOO_LARGE`,
@@ -247,7 +264,14 @@ character reaching the page. `authorized: true`, an instruction, an ESC
 sequence, or a bidi character inside it is data — it renders as escaped text
 and never changes any outcome. `#document` (contract §5 rule 3), matched
 against the Sidecar's whole-file digest already in `data.sources`, lets a
-Revision Request target it without any extra Locator bookkeeping.
+Revision Request target it without any extra Locator bookkeeping. An
+`oversized` Sidecar (over the 1 MiB bound — see `review index` above) shows
+only a fixed notice naming its path, never any content, since its bytes were
+never read. This Story card is the *only* place a Sidecar's content is ever
+shown: the appendix's raw-source dump (「原始 Markdown（不列印）」) excludes
+every Readiness Sidecar path, both to avoid printing its content a second
+time and because that generic dump's plain HTML-escaping does not also guard
+against a hidden/bidi code point (code review round 2 HIGH-1/MEDIUM-1).
 
 The generated page follows contract §18's requirement-organized layout, in
 order: a title area (batch `title` or `batchId`, `batchId`, the full
@@ -814,21 +838,29 @@ indentation, one trailing newline, every other field's original key order
 unchanged (mutating only the parsed object's two digest fields and
 re-serializing it, never reconstructing the document) — as a temporary file
 in the same directory, preserving the original file's mode (never leaving it
-at the temporary file's own restrictive mode). Every Sidecar needing a
-rewrite is staged before any rename is attempted; a single staging failure
-deletes every temporary file already created and writes nothing at all.
-Immediately before renaming, each staged Sidecar's on-disk bytes are
-re-checked against what was validated; if any changed since it was read, the
-whole run aborts with nothing written (`REVIEW_RECORD_WRITE_FAILED`). Only
-then are the staged files renamed into place, one at a time; if a rename
-fails partway through, `data.updated` reports exactly the files already
-renamed (a real, persisted change — never rounded down to "nothing written")
-and the command still fails, `REVIEW_RECORD_WRITE_FAILED`. A Sidecar whose
-digests already match is left unwritten. It never creates a `readiness.json`
-and never touches any other field. After every rename succeeds, `review
-readiness-digests` re-reads the batch once more, so `data.fingerprint` and
-`data.sources` in its response reflect the post-rewrite state, never the one
-read at the start of the run.
+at the temporary file's own restrictive mode). Before any temporary file is
+staged, every planned rewrite's path is re-checked for a symlinked segment
+(code review round 2 LOW): only once every one of them passes does staging
+begin. Every Sidecar needing a rewrite is then staged before any rename is
+attempted; a single staging failure deletes every temporary file already
+created and writes nothing at all. Immediately before renaming, each staged
+Sidecar's on-disk bytes are re-checked against what was validated; if any
+changed since it was read, the whole run aborts with nothing written
+(`REVIEW_RECORD_WRITE_FAILED`). Only then are the staged files renamed into
+place, one at a time; if a rename fails partway through, `data.updated`
+reports exactly the files already renamed (a real, persisted change — never
+rounded down to "nothing written") and the command still fails,
+`REVIEW_RECORD_WRITE_FAILED`. A Sidecar whose digests already match is left
+unwritten. It never creates a `readiness.json` and never touches any other
+field. After every rename succeeds, `review readiness-digests` re-reads the
+batch once more, so `data.fingerprint` and `data.sources` in its response
+reflect the post-rewrite state, never the one read at the start of the run;
+if that re-read itself fails (`ERROR`, exit 3), `data.updated` still lists
+every file that really was renamed (code review round 2 LOW) — it is never
+dropped just because the follow-up read failed. An over-limit Sidecar (§13's
+1 MiB bound) is never parsed at all — its size alone, known from `review
+index`'s own `fstat` check, is enough to fail the whole run with
+`REVIEW_INPUT_TOO_LARGE`, nothing written.
 
 It edits a definition source, so it needs the same Execution Authorization as
 any other source edit, and should run before `review confirm`: running it

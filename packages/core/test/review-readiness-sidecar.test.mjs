@@ -512,7 +512,30 @@ test("MEDIUM: a duplicate JSON key anywhere in the document is rejected as inval
   );
   assert.equal(parsed.ok, false);
   assert.equal(parsed.tooLarge, false);
-  assert.match(parsed.message, /duplicate/i);
+  // HIGH-1 (round 2): the generic scanner's own message may quote the
+  // duplicated key's name, so parseReadinessSidecar re-words every non-depth
+  // safety failure to this fixed, content-free string rather than surfacing
+  // it verbatim.
+  assert.equal(parsed.message, "readiness.json is not valid JSON");
+});
+
+test("HIGH-2: a __proto__ key (top-level and inside a criterion) is rejected as an unknown field, never repointing the object's prototype", () => {
+  const text = JSON.stringify(validSidecar()).replace(
+    '"owner":"runner_worker"',
+    '"__proto__":{"owner":"integration_final"},"owner":"runner_worker"',
+  );
+  const withTopLevelProto = `{"__proto__":{"polluted":true},${text.slice(1)}`;
+  const parsed = parseReadinessSidecar(
+    new TextEncoder().encode(withTopLevelProto),
+    STORY_DIRECTORY,
+  );
+  assert.equal(parsed.ok, false);
+  assert.equal(parsed.tooLarge, false);
+  assert.match(parsed.message, /unknown field/);
+  // The pollution must never have happened at all: a plain object literal
+  // and `Object.prototype` itself must never see `polluted`.
+  assert.equal({}.polluted, undefined);
+  assert.equal(Object.prototype.polluted, undefined);
 });
 
 test("HIGH-1: a wrong story_ref never echoes the Sidecar's own (attacker-controlled) story_ref value", () => {

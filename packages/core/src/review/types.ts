@@ -92,7 +92,16 @@ export type SourceObservation =
    * joins `sources` with `sha256: null` and that same diagnostic, and
    * preflight reports `REVIEW_READINESS_INVALID` for it.
    */
-  | { readonly kind: "unreadable" };
+  | { readonly kind: "unreadable" }
+  /**
+   * The path exists and its whole-file digest is already known (streamed
+   * without ever loading its bytes into memory), but it exceeds contract
+   * §13/§21's 1 MiB Readiness Sidecar bound (Story TST-030 HIGH-1, code
+   * review round 2): unlike `unreadable`, this still carries a real
+   * `sha256`, so it joins `sources` and the fingerprint exactly like `file`
+   * — only its content is never read, parsed, or rendered.
+   */
+  | { readonly kind: "oversized"; readonly sha256: string };
 
 export type ReviewObservations = ReadonlyMap<string, SourceObservation>;
 

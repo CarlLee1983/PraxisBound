@@ -15,6 +15,10 @@
 
 import { sha256Hex } from "./fingerprint.js";
 import {
+  JSON_SAFETY_DEPTH_EXCEEDED_MESSAGE,
+  scanJsonSafety,
+} from "./json-safety.js";
+import {
   MAX_LIST_ITEMS,
   MAX_NESTING_DEPTH,
   MAX_RECORD_BYTES,
@@ -22,7 +26,6 @@ import {
   codePointLength,
   isRecord,
   problem,
-  rawJsonMaxDepth,
   unknownKey,
   type FieldProblem,
 } from "./revision-limits.js";
@@ -137,13 +140,16 @@ export type ReadinessSidecarParseResult =
       readonly ok: true;
       readonly data: ReadinessSidecarData;
       /**
-       * The exact `JSON.parse` result, before any normalization: mutating
-       * only this value's `story_md_digest`/`acceptance_md_digest` fields
-       * and re-serializing it (`JSON.stringify(raw, null, 2)`) is how
-       * `review readiness-digests` rewrites a Sidecar while preserving every
-       * other field's original key order (contract §21 R4) — object key
-       * insertion order is exactly source order for `JSON.parse`, so this is
-       * the one value that carries it.
+       * The exact `JSON.parse` result (after `scanJsonSafety` has already
+       * ruled out a duplicate key), before any normalization: mutating only
+       * this value's `story_md_digest`/`acceptance_md_digest` fields and
+       * re-serializing it (`JSON.stringify(raw, null, 2)`) is how `review
+       * readiness-digests` rewrites a Sidecar while preserving every other
+       * field's original key order (contract §21 R4) — object key insertion
+       * order is exactly source order for `JSON.parse`, so this is the one
+       * value that carries it. `JSON.parse` defines each property directly
+       * rather than through `[[Set]]`, so an authored `"__proto__"` key here
+       * is an ordinary own property, never the object's prototype.
        */
       readonly raw: Record<string, unknown>;
     }
@@ -406,223 +412,6 @@ function validateSidecarShape(data: unknown): FieldProblem | undefined {
   return undefined;
 }
 
-interface JsonParseSuccess {
-  readonly ok: true;
-  readonly value: unknown;
-}
-interface JsonParseFailure {
-  readonly ok: false;
-  readonly message: string;
-}
-type JsonParseOutcome = JsonParseSuccess | JsonParseFailure;
-
-class JsonSyntaxError extends Error {}
-class JsonDuplicateKeyError extends Error {}
-
-/**
- * A minimal recursive-descent JSON parser that rejects a duplicate key in
- * any object, at any depth: `JSON.parse` silently keeps only the last of two
- * duplicate keys, which would let a Sidecar's `"owner": "human", "owner":
- * "integration_final"` (ForgePilot's `contractDefects` rejects this) pass
- * unnoticed. Used only for `readiness.json`, whose grammar and size (§13)
- * are already bounded, so a hand-written parser is cheap to reason about
- * rather than a needless dependency (Story TST-030 Constraints). Every
- * thrown message is a fixed, static string — never a substring of the input
- * — so a parse failure can never echo Sidecar content (HIGH-1).
- */
-function parseJsonRejectingDuplicateKeys(text: string): JsonParseOutcome {
-  const n = text.length;
-  let i = 0;
-
-  function isWs(ch: string): boolean {
-    return ch === " " || ch === "\t" || ch === "\n" || ch === "\r";
-  }
-  function skipWs(): void {
-    while (i < n && isWs(text[i] as string)) i += 1;
-  }
-  function expectLiteral(literal: string, value: unknown): unknown {
-    if (text.slice(i, i + literal.length) !== literal)
-      throw new JsonSyntaxError("invalid literal");
-    i += literal.length;
-    return value;
-  }
-  function parseString(): string {
-    i += 1; // opening quote
-    let out = "";
-    let start = i;
-    while (i < n) {
-      const ch = text[i] as string;
-      if (ch === '"') {
-        out += text.slice(start, i);
-        i += 1;
-        return out;
-      }
-      if (ch === "\\") {
-        out += text.slice(start, i);
-        i += 1;
-        const esc = text[i];
-        if (esc === undefined) throw new JsonSyntaxError("unterminated string");
-        switch (esc) {
-          case '"':
-            out += '"';
-            break;
-          case "\\":
-            out += "\\";
-            break;
-          case "/":
-            out += "/";
-            break;
-          case "b":
-            out += "\b";
-            break;
-          case "f":
-            out += "\f";
-            break;
-          case "n":
-            out += "\n";
-            break;
-          case "r":
-            out += "\r";
-            break;
-          case "t":
-            out += "\t";
-            break;
-          case "u": {
-            const hex = text.slice(i + 1, i + 5);
-            if (!/^[0-9a-fA-F]{4}$/.test(hex))
-              throw new JsonSyntaxError("invalid unicode escape");
-            out += String.fromCharCode(parseInt(hex, 16));
-            i += 4;
-            break;
-          }
-          default:
-            throw new JsonSyntaxError("invalid escape sequence");
-        }
-        i += 1;
-        start = i;
-        continue;
-      }
-      if (ch.charCodeAt(0) < 0x20)
-        throw new JsonSyntaxError("control character in string");
-      i += 1;
-    }
-    throw new JsonSyntaxError("unterminated string");
-  }
-  function parseNumber(): number {
-    const start = i;
-    if (text[i] === "-") i += 1;
-    if (text[i] === "0") i += 1;
-    else if (text[i] !== undefined && text[i]! >= "1" && text[i]! <= "9") {
-      while (i < n && (text[i] as string) >= "0" && (text[i] as string) <= "9")
-        i += 1;
-    } else {
-      throw new JsonSyntaxError("invalid number");
-    }
-    if (text[i] === ".") {
-      i += 1;
-      if (!(text[i] !== undefined && text[i]! >= "0" && text[i]! <= "9"))
-        throw new JsonSyntaxError("invalid number");
-      while (i < n && (text[i] as string) >= "0" && (text[i] as string) <= "9")
-        i += 1;
-    }
-    if (text[i] === "e" || text[i] === "E") {
-      i += 1;
-      if (text[i] === "+" || text[i] === "-") i += 1;
-      if (!(text[i] !== undefined && text[i]! >= "0" && text[i]! <= "9"))
-        throw new JsonSyntaxError("invalid number");
-      while (i < n && (text[i] as string) >= "0" && (text[i] as string) <= "9")
-        i += 1;
-    }
-    return Number(text.slice(start, i));
-  }
-  function parseArray(): unknown[] {
-    i += 1; // [
-    const arr: unknown[] = [];
-    skipWs();
-    if (text[i] === "]") {
-      i += 1;
-      return arr;
-    }
-    for (;;) {
-      arr.push(parseValue());
-      skipWs();
-      const ch = text[i];
-      if (ch === ",") {
-        i += 1;
-        skipWs();
-        continue;
-      }
-      if (ch === "]") {
-        i += 1;
-        return arr;
-      }
-      throw new JsonSyntaxError("expected , or ]");
-    }
-  }
-  function parseObject(): Record<string, unknown> {
-    i += 1; // {
-    const obj: Record<string, unknown> = {};
-    const seen = new Set<string>();
-    skipWs();
-    if (text[i] === "}") {
-      i += 1;
-      return obj;
-    }
-    for (;;) {
-      skipWs();
-      if (text[i] !== '"') throw new JsonSyntaxError("expected object key");
-      const key = parseString();
-      if (seen.has(key))
-        throw new JsonDuplicateKeyError("duplicate object key");
-      seen.add(key);
-      skipWs();
-      if (text[i] !== ":") throw new JsonSyntaxError("expected :");
-      i += 1;
-      skipWs();
-      obj[key] = parseValue();
-      skipWs();
-      const ch = text[i];
-      if (ch === ",") {
-        i += 1;
-        continue;
-      }
-      if (ch === "}") {
-        i += 1;
-        return obj;
-      }
-      throw new JsonSyntaxError("expected , or }");
-    }
-  }
-  function parseValue(): unknown {
-    skipWs();
-    const ch = text[i];
-    if (ch === "{") return parseObject();
-    if (ch === "[") return parseArray();
-    if (ch === '"') return parseString();
-    if (ch === "t") return expectLiteral("true", true);
-    if (ch === "f") return expectLiteral("false", false);
-    if (ch === "n") return expectLiteral("null", null);
-    if (ch === "-" || (ch !== undefined && ch >= "0" && ch <= "9"))
-      return parseNumber();
-    throw new JsonSyntaxError("unexpected token");
-  }
-
-  try {
-    skipWs();
-    const value = parseValue();
-    skipWs();
-    if (i !== n) throw new JsonSyntaxError("trailing content after JSON value");
-    return { ok: true, value };
-  } catch (error) {
-    if (error instanceof JsonDuplicateKeyError)
-      return {
-        ok: false,
-        message: "readiness.json contains a duplicate object key",
-      };
-    return { ok: false, message: "readiness.json is not valid JSON" };
-  }
-}
-
 function toReadinessData(data: {
   readonly story_ref: string;
   readonly story_md_digest: string;
@@ -732,17 +521,39 @@ export function parseReadinessSidecar(
     };
   }
 
-  if (rawJsonMaxDepth(text) > MAX_NESTING_DEPTH)
+  // HIGH-2 (code review round 2): scanned for duplicate object keys and
+  // pathological nesting *before* `JSON.parse` ever sees the text — never
+  // by a hand-written parser that assigns into a plain object (`obj[key] =
+  // value`), which would let a `"__proto__"` key reach the
+  // `Object.prototype.__proto__` accessor. `JSON.parse` itself defines each
+  // property directly, so a `"__proto__"` key becomes an ordinary own data
+  // property once this scan has ruled out a duplicate hiding it.
+  const safetyFailure = scanJsonSafety(text, MAX_NESTING_DEPTH);
+  if (safetyFailure !== undefined) {
+    // The scan's own message may quote a duplicated key's name; never
+    // surfaced verbatim (HIGH-1). Only "exceeds the supported depth" is a
+    // fixed, content-free string, and the one case §13 treats as a size
+    // limit rather than an ordinary invalidity.
+    const tooLarge = safetyFailure === JSON_SAFETY_DEPTH_EXCEEDED_MESSAGE;
     return {
       ok: false,
-      tooLarge: true,
-      message: `readiness.json nesting depth exceeds ${MAX_NESTING_DEPTH}`,
+      tooLarge,
+      message: tooLarge
+        ? `readiness.json nesting depth exceeds ${MAX_NESTING_DEPTH}`
+        : "readiness.json is not valid JSON",
     };
+  }
 
-  const parseOutcome = parseJsonRejectingDuplicateKeys(text);
-  if (!parseOutcome.ok)
-    return { ok: false, tooLarge: false, message: parseOutcome.message };
-  const parsed: unknown = parseOutcome.value;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    return {
+      ok: false,
+      tooLarge: false,
+      message: "readiness.json is not valid JSON",
+    };
+  }
 
   // A single string over the 64 KiB bound anywhere in the document is
   // checked field by field below via `unicodeLengthGuard`-style problems on

@@ -29,13 +29,20 @@ export interface ReadinessSidecarEntry {
 const UNREADABLE_MESSAGE =
   "readiness.json exists but could not be read (permission denied or similar)";
 
+/** Contract §13/§21's Readiness Sidecar bound — matches `review.ts`'s own `READINESS_SIDECAR_MAX_BYTES`. */
+const READINESS_SIDECAR_MAX_BYTES = 1024 * 1024;
+
 /**
  * Every batch Story with a present Sidecar (contract §21 R1: absence is
  * never diagnosed here). A Sidecar that exists but could not be read
  * (`kind: "unreadable"` — MEDIUM: distinct from a genuinely absent one) is
  * reported as a synthetic `REVIEW_READINESS_INVALID` parse failure rather
  * than silently skipped, since there is no content to parse but the Story
- * still declares a Sidecar that must resolve to a definite outcome.
+ * still declares a Sidecar that must resolve to a definite outcome. An
+ * over-limit one (`kind: "oversized"`, HIGH-1 code review round 2) was never
+ * read into memory at all, so it is reported the same way Core's own
+ * `parseReadinessSidecar` reports an over-limit Sidecar it *did* read
+ * (`tooLarge: true`), without ever parsing it.
  */
 export function loadBatchReadinessSidecars(
   index: ReviewIndex,
@@ -52,9 +59,21 @@ export function loadBatchReadinessSidecars(
       });
       continue;
     }
-    // `unreadable` (or any other non-`file` state reachable while
-    // `readinessPresent` is true): no bytes to parse, so it never reaches
-    // `REVIEW_READY` and `readiness-digests` never treats it as writable.
+    if (observation?.kind === "oversized") {
+      entries.push({
+        storyDirectory: story.path,
+        parse: {
+          ok: false,
+          tooLarge: true,
+          message: `readiness.json exceeds ${READINESS_SIDECAR_MAX_BYTES} bytes`,
+        },
+      });
+      continue;
+    }
+    // `unreadable` (or any other non-`file`/`oversized` state reachable
+    // while `readinessPresent` is true): no bytes to parse, so it never
+    // reaches `REVIEW_READY` and `readiness-digests` never treats it as
+    // writable.
     entries.push({
       storyDirectory: story.path,
       parse: { ok: false, tooLarge: false, message: UNREADABLE_MESSAGE },

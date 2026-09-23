@@ -206,6 +206,25 @@ export async function runReviewReadinessDigests(
       };
     }
 
+    // LOW (code review round 2): the symlink/unsafe-path re-check runs
+    // before any temp file is staged, not after — a Sidecar path that
+    // became a symlink between `review index` reading it and now is
+    // rejected before this command ever creates a file next to it.
+    for (const item of planned) {
+      if ((await findUnsafeSourcePath(root, [item.path])) !== undefined) {
+        return {
+          mode: parsed.mode,
+          result: envelope("error", "configuration-error", 2, [
+            issue(
+              "REVIEW_PATH_UNSAFE",
+              "readiness.json path has a symlinked segment",
+              item.path,
+            ),
+          ]),
+        };
+      }
+    }
+
     // MEDIUM: stage every temp file first; a single staging failure deletes
     // every temp already created and writes nothing at all.
     const staged: StagedRewrite[] = [];
@@ -282,19 +301,6 @@ export async function runReviewReadinessDigests(
           ]),
         };
       }
-      if ((await findUnsafeSourcePath(root, [item.path])) !== undefined) {
-        await cleanupStaged(staged);
-        return {
-          mode: parsed.mode,
-          result: envelope("error", "configuration-error", 2, [
-            issue(
-              "REVIEW_PATH_UNSAFE",
-              "readiness.json path has a symlinked segment",
-              item.path,
-            ),
-          ]),
-        };
-      }
     }
 
     // Rename every staged file into place. A failure partway through
@@ -335,15 +341,24 @@ export async function runReviewReadinessDigests(
     if (after.result.outcome !== "success" || after.loaded === undefined) {
       // Extremely unlikely (the rewrite only ever touches two already-valid
       // digest fields), but never silently claim a fingerprint this run did
-      // not actually observe.
+      // not actually observe. LOW (code review round 2): the files named in
+      // `updated` really were renamed on disk, so that list is still
+      // reported here rather than dropped just because the follow-up
+      // re-index failed.
       return {
         mode: parsed.mode,
-        result: envelope("error", "ERROR", 3, [
-          issue(
-            "REVIEW_INTERNAL_ERROR",
-            "readiness-digests could not re-read the batch after rewriting it",
-          ),
-        ]),
+        result: envelope(
+          "error",
+          "ERROR",
+          3,
+          [
+            issue(
+              "REVIEW_INTERNAL_ERROR",
+              "readiness-digests could not re-read the batch after rewriting it",
+            ),
+          ],
+          { updated: toDataValue(updated) },
+        ),
       };
     }
 

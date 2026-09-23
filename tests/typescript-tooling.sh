@@ -149,6 +149,8 @@ packed_packages_have_the_bounded_public_contract() {
     './dist/review/html.js' \
     './dist/review/index.d.ts' \
     './dist/review/index.js' \
+    './dist/review/json-safety.d.ts' \
+    './dist/review/json-safety.js' \
     './dist/review/manifest.d.ts' \
     './dist/review/manifest.js' \
     './dist/review/markdown-html.d.ts' \

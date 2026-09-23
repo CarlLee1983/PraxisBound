@@ -956,3 +956,240 @@ test("LOW: readAuthority/readTaskMode governance issues are surfaced as their ow
     await cleanupWorkspace(root);
   }
 });
+
+/** A `__proto__` key both at the top level and inside a criterion, around an otherwise-valid, current, consistent Sidecar (code review round 2 HIGH-2 repro). */
+function withProtoPollutionText(readiness) {
+  const text = JSON.stringify(readiness);
+  const withNestedProto = text.replace(
+    '"owner":"runner_worker"',
+    '"__proto__":{"owner":"integration_final"},"owner":"runner_worker"',
+  );
+  return `{"__proto__":{"polluted":true},${withNestedProto.slice(1)}`;
+}
+
+test("HIGH-2: a __proto__ Sidecar blocks preflight as REVIEW_READINESS_INVALID (never REVIEW_STALE, never Object.prototype pollution)", async () => {
+  const batchId = "TST-9922-proto";
+  const { root, manifestPath } = await readyFixtureRepoWithReadiness(
+    batchId,
+    validReadiness(),
+  );
+  try {
+    await writeFile(
+      join(root, "specs/stories/RF-001-fixture/readiness.json"),
+      withProtoPollutionText(validReadiness()),
+    );
+    const execution = await run(root, [manifestPath, "--json"]);
+    assert.equal(execution.result.outcome, "REVIEW_BLOCKED");
+    assert.ok(codesOf(execution).includes("REVIEW_READINESS_INVALID"));
+    assert.ok(!codesOf(execution).includes("REVIEW_READINESS_STALE"));
+    assert.equal({}.polluted, undefined);
+    assert.equal(Object.prototype.polluted, undefined);
+  } finally {
+    await cleanupWorkspace(root);
+  }
+});
+
+test("HIGH-2: readiness-digests fails and never drops content for a __proto__ Sidecar", async () => {
+  const batchId = "TST-9923-proto";
+  const pollutedText = withProtoPollutionText(
+    validReadiness({ story_md_digest: `sha256:${"0".repeat(64)}` }),
+  );
+  const { root, manifestPath } = await readyFixtureRepoWithReadiness(
+    batchId,
+    validReadiness(),
+  );
+  const readinessPath = join(
+    root,
+    "specs/stories/RF-001-fixture/readiness.json",
+  );
+  try {
+    await writeFile(readinessPath, pollutedText);
+    const before = await readFile(readinessPath, "utf8");
+    const execution = await runReviewReadinessDigests(
+      [manifestPath, "--json"],
+      root,
+    );
+    assert.equal(execution.result.outcome, "failure");
+    assert.ok(codesOf(execution).includes("REVIEW_READINESS_INVALID"));
+    const after = await readFile(readinessPath, "utf8");
+    // The author's content must never be dropped or rewritten, even though
+    // a stale digest would otherwise make this Sidecar a rewrite candidate.
+    assert.equal(after, before);
+    assert.equal({}.polluted, undefined);
+  } finally {
+    await cleanupWorkspace(root);
+  }
+});
+
+test("HIGH-1: an over-1-MiB Sidecar is never parsed or rendered; review index/render stay success and show only a size notice", async () => {
+  const batchId = "TST-9924-oversize";
+  const marker = "MARKER_MUST_NEVER_REACH_OUTPUT";
+  const base = validReadiness();
+  const bigText = `${JSON.stringify(base)}${marker}${" ".repeat(3 * 1024 * 1024)}`;
+  const { root, manifestPath } = await readyFixtureRepoWithReadiness(
+    batchId,
+    validReadiness(),
+  );
+  const readinessPath = join(
+    root,
+    "specs/stories/RF-001-fixture/readiness.json",
+  );
+  try {
+    await writeFile(readinessPath, bigText);
+
+    const indexExecution = await runReviewIndex([manifestPath, "--json"], root);
+    assert.equal(indexExecution.result.outcome, "success");
+    const readinessSource = indexExecution.result.data.sources.find((source) =>
+      source.path.endsWith("readiness.json"),
+    );
+    assert.notEqual(readinessSource, undefined);
+    assert.match(readinessSource.sha256, /^[a-f0-9]{64}$/);
+    // The streamed digest matches the real file bytes exactly (proves the
+    // hash was computed over the actual content, not skipped).
+    const realBytes = await readFile(readinessPath);
+    const { createHash } = await import("node:crypto");
+    const expectedSha256 = createHash("sha256").update(realBytes).digest("hex");
+    assert.equal(readinessSource.sha256, expectedSha256);
+
+    const renderExecution = await runReviewRender(
+      [manifestPath, "--output", "review.html", "--json"],
+      root,
+    );
+    assert.equal(renderExecution.result.outcome, "success");
+    const html = await readFile(join(root, "review.html"), "utf8");
+    // Memory-safe path: the marker embedded 3+ MiB into the file never
+    // reaches the rendered output at all — it was never read, let alone
+    // parsed or rendered — and the page shows a bounded-size notice instead.
+    assert.doesNotMatch(html, new RegExp(marker));
+    assert.match(html, /超過上限/);
+    assert.ok(
+      html.length < 1024 * 1024,
+      `rendered HTML unexpectedly large: ${html.length} bytes`,
+    );
+
+    const preflight = await runReviewPreflight([manifestPath, "--json"], root);
+    assert.equal(preflight.result.outcome, "REVIEW_INCOMPLETE");
+    assert.equal(preflight.result.exit, 1);
+    assert.ok(codesOf(preflight).includes("REVIEW_INPUT_TOO_LARGE"));
+
+    const digests = await runReviewReadinessDigests(
+      [manifestPath, "--json"],
+      root,
+    );
+    assert.equal(digests.result.outcome, "failure");
+    assert.ok(codesOf(digests).includes("REVIEW_INPUT_TOO_LARGE"));
+    const afterDigests = await readFile(readinessPath, "utf8");
+    assert.equal(afterDigests, bigText);
+  } finally {
+    await cleanupWorkspace(root);
+  }
+});
+
+test("MEDIUM-1: a within-limit Sidecar's hostile bidi content never appears in the raw Markdown appendix (shown once, only in its own Story card)", async () => {
+  const batchId = "TST-9925-appendix";
+  const hostile = validReadiness({
+    decision_follow_ups: [
+      {
+        gate_id: "gate-1",
+        choice: "bidi-marker-‮-end",
+        follow_up_story_ref: "specs/stories/RF-001-fixture",
+      },
+    ],
+  });
+  const { root, manifestPath } = await readyFixtureRepoWithReadiness(
+    batchId,
+    hostile,
+  );
+  try {
+    const renderExecution = await runReviewRender(
+      [manifestPath, "--output", "review.html", "--json"],
+      root,
+    );
+    assert.equal(renderExecution.result.outcome, "success");
+    const html = await readFile(join(root, "review.html"), "utf8");
+    // The raw bidi override character never appears anywhere in the page.
+    assert.equal(html.includes("‮"), false);
+    // The escaped form is shown exactly once (the per-story card), not a
+    // second time in the raw Markdown appendix.
+    const occurrences = html.split("bidi-marker-").length - 1;
+    assert.equal(
+      occurrences,
+      1,
+      `expected exactly one occurrence, found ${occurrences}`,
+    );
+  } finally {
+    await cleanupWorkspace(root);
+  }
+});
+
+test("LOW: an unreadable readiness.json reports a message describing it as unreadable, not missing", async () => {
+  const batchId = "TST-9926-unreadable-message";
+  const { root, manifestPath } = await readyFixtureRepoWithReadiness(
+    batchId,
+    validReadiness(),
+  );
+  const readinessPath = join(
+    root,
+    "specs/stories/RF-001-fixture/readiness.json",
+  );
+  try {
+    await chmod(readinessPath, 0o000);
+    const indexExecution = await runReviewIndex([manifestPath, "--json"], root);
+    assert.equal(indexExecution.result.outcome, "success");
+    const readinessIssue = indexExecution.result.issues.find((entry) =>
+      entry.path?.endsWith("readiness.json"),
+    );
+    assert.notEqual(readinessIssue, undefined);
+    assert.match(readinessIssue.message, /could not be read/i);
+    assert.doesNotMatch(readinessIssue.message, /is missing/);
+  } finally {
+    await chmod(readinessPath, 0o644).catch(() => undefined);
+    await cleanupWorkspace(root);
+  }
+});
+
+test("LOW: readiness-digests re-checks the symlink/unsafe path before staging any temp file", async () => {
+  const batchId = "TST-9927-presymlink";
+  const staleA = validReadiness({
+    story_md_digest: `sha256:${"0".repeat(64)}`,
+  });
+  const { root, manifestPath } = await fixtureRepo(
+    batchId,
+    twoStoryFiles(staleA, undefined),
+    twoStoryManifest(batchId),
+  );
+  const secondReadinessPath = join(
+    root,
+    "specs/stories/RF-002-fixture/readiness.json",
+  );
+  const outsideTarget = join(root, "..", "outside-tst9927.json");
+  try {
+    await writeFile(
+      outsideTarget,
+      JSON.stringify(
+        validReadiness({ story_ref: "specs/stories/RF-002-fixture" }),
+      ),
+    );
+    await symlink(outsideTarget, secondReadinessPath);
+
+    const before = await readFile(
+      join(root, "specs/stories/RF-001-fixture/readiness.json"),
+      "utf8",
+    );
+    const execution = await runReviewReadinessDigests(
+      [manifestPath, "--json"],
+      root,
+    );
+    // The symlinked second Sidecar is rejected before the first (needing a
+    // real rewrite) is ever staged: nothing at all is written.
+    assert.equal(execution.result.outcome, "configuration-error");
+    assert.ok(codesOf(execution).includes("REVIEW_PATH_UNSAFE"));
+    const after = await readFile(
+      join(root, "specs/stories/RF-001-fixture/readiness.json"),
+      "utf8",
+    );
+    assert.equal(after, before);
+  } finally {
+    await cleanupWorkspace(root);
+  }
+});

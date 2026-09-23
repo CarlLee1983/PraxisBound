@@ -127,10 +127,12 @@ export function indexReviewBatch(
   // it still joins `sources` with `sha256: null` and a diagnostic, mirroring
   // contract §4's missing-source handling, so a stale/tampered Sidecar can
   // never silently drop out of the fingerprint and block `confirm`/
-  // `goal-plan` the same way a missing declared source does.
+  // `goal-plan` the same way a missing declared source does. An `oversized`
+  // one (HIGH-1, code review round 2) already carries a real, streamed
+  // `sha256`, so it joins `sources` exactly like `file`.
   const includedReadinessPaths = readinessPaths.filter((path) => {
     const kind = observationOf(observations, path).kind;
-    return kind === "file" || kind === "unreadable";
+    return kind === "file" || kind === "unreadable" || kind === "oversized";
   });
   const allSourcePaths = [...plan.sources, ...includedReadinessPaths].sort(
     compareUtf8,
@@ -141,11 +143,20 @@ export function indexReviewBatch(
     if (observation.kind === "file") {
       return { path, sha256: sha256Hex(observation.bytes) };
     }
+    if (observation.kind === "oversized") {
+      return { path, sha256: observation.sha256 };
+    }
+    // LOW (code review round 2): an `unreadable` source exists but could not
+    // be read — a different condition from a genuinely `missing` one, and
+    // worded accordingly, even though both keep the same `sha256: null` /
+    // `REVIEW_SOURCE_MISSING` shape (contract §4).
     diagnostics.push(
       diagnostic(
         "REVIEW_SOURCE_MISSING",
         "blocking",
-        `declared source is missing: ${path}`,
+        observation.kind === "unreadable"
+          ? `declared source exists but could not be read: ${path}`
+          : `declared source is missing: ${path}`,
         path,
       ),
     );
@@ -278,7 +289,9 @@ export function indexReviewBatch(
     // Story (Human Review 2026-09-23).
     const readinessKind = observationOf(observations, story.readinessPath).kind;
     const readinessPresent =
-      readinessKind === "file" || readinessKind === "unreadable";
+      readinessKind === "file" ||
+      readinessKind === "unreadable" ||
+      readinessKind === "oversized";
 
     return {
       id: story.storyId,

@@ -7,7 +7,7 @@ import {
   rename,
   unlink,
 } from "node:fs/promises";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import {
   basename,
   dirname,
@@ -339,6 +339,68 @@ async function readSourceObservation(
   }
 }
 
+/** Contract §13/§21's Readiness Sidecar bound: the only size limit ever applied to `readiness.json` (index/render apply none at all — see `readReadinessSidecarObservation`). */
+const READINESS_SIDECAR_MAX_BYTES = 1024 * 1024;
+
+/**
+ * Reads one Readiness Sidecar the same safe way `readSourceObservation`
+ * does, but checks its size via `fstat` on the already-`O_NOFOLLOW`-opened
+ * handle *before* reading any content (Story TST-030 HIGH-1, code review
+ * round 2): over the §13/§21 1 MiB bound, its bytes are never loaded into
+ * memory at all — only streamed through a hash so the fingerprint still
+ * covers it — and the observation is `oversized`, carrying that digest. A
+ * batch author's readiness.json can be arbitrarily large without `review
+ * index`/`review render` ever risking a heap allocation proportional to it.
+ */
+async function readReadinessSidecarObservation(
+  root: string,
+  path: string,
+): Promise<SourceObservation> {
+  const absolute = resolve(root, path);
+  let pathStats;
+  try {
+    pathStats = await lstat(absolute);
+  } catch (error) {
+    return isNotFoundError(error)
+      ? { kind: "missing" }
+      : { kind: "unreadable" };
+  }
+  if (pathStats.isSymbolicLink()) return { kind: "unsafe" };
+  if (!pathStats.isFile()) return { kind: "unreadable" };
+
+  let handle;
+  try {
+    handle = await open(
+      absolute,
+      constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK,
+    );
+  } catch (error) {
+    return isNotFoundError(error)
+      ? { kind: "missing" }
+      : { kind: "unreadable" };
+  }
+
+  try {
+    const openedStats = await handle.stat();
+    if (!openedStats.isFile()) return { kind: "unreadable" };
+    if (openedStats.size > READINESS_SIDECAR_MAX_BYTES) {
+      const hash = createHash("sha256");
+      for await (const chunk of handle.createReadStream({
+        autoClose: false,
+      })) {
+        hash.update(chunk as Uint8Array);
+      }
+      return { kind: "oversized", sha256: hash.digest("hex") };
+    }
+    const bytes = await handle.readFile();
+    return { kind: "file", bytes };
+  } catch {
+    return { kind: "unreadable" };
+  } finally {
+    await handle.close().catch(() => undefined);
+  }
+}
+
 export function toDataValue(value: unknown): ResultDataValue {
   return value as ResultDataValue;
 }
@@ -596,8 +658,11 @@ export async function runReviewIndexUnsafe(
   // capped at a few hundred small Markdown files, so throughput is not a
   // concern, and sequential reads keep this adapter simple to reason about.
   const observations = new Map<string, SourceObservation>();
-  for (const path of [...plan.plan.sources, ...readinessPaths]) {
+  for (const path of plan.plan.sources) {
     observations.set(path, await readSourceObservation(root, path));
+  }
+  for (const path of readinessPaths) {
+    observations.set(path, await readReadinessSidecarObservation(root, path));
   }
 
   const indexed = indexReviewBatch(
@@ -965,6 +1030,7 @@ export async function runReviewRender(
       return {
         path: source.path,
         bytes: observation?.kind === "file" ? observation.bytes : undefined,
+        oversized: observation?.kind === "oversized",
       };
     });
     // One shared `records/` safety check and listing for every reader below

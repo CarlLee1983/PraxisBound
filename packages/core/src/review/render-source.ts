@@ -435,6 +435,23 @@ export function renderReadinessSidecarHtml(
 }
 
 /**
+ * The notice shown in place of an over-limit Readiness Sidecar's content
+ * (Story TST-030 HIGH-1, code review round 2): its bytes were never read
+ * into memory (only streamed for a digest, in `review.ts`), so there is no
+ * content this function could show even by mistake.
+ */
+export function renderReadinessSidecarOversizedNoticeHtml(
+  path: string,
+): string {
+  return (
+    `<section class="readiness-sidecar readiness-sidecar-oversized">` +
+    `<h4>Readiness Sidecar <span class="doc-path">${escapeEvidenceField(path)}</span></h4>` +
+    `<p class="muted">此檔案超過上限，內容不予顯示。</p>` +
+    `</section>`
+  );
+}
+
+/**
  * A document's first `#` heading text, verbatim (contract §18: a Story's
  * displayed title and an ADR's own title both come from this same line).
  * `undefined` when the document has no top-level heading at all.
