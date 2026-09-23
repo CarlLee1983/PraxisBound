@@ -115,6 +115,25 @@ resolved from a Story, the current human session, or a control plane at the
 time of the effect; never read from a file.
 _Avoid_: approved flag, authorized field
 
+**Semantic Report**:
+An Agent's self-reported judgment of a Review Batch at one Requirement
+Fingerprint, covering missing splits, contradictions, insufficient acceptance,
+and open questions per Story; unverified input to a Preflight, not a Semantic
+Result.
+_Avoid_: semantic result, AI verification, review outcome
+
+**Preflight**:
+A read-only evaluation of whether a Review Batch at its current Requirement
+Fingerprint can be handed to execution; a ready outcome means no blocker was
+found, not that the batch has no defects, and it never resolves Execution
+Authorization.
+_Avoid_: approval, validation, sign-off
+
+**Preflight Report**:
+The recorded Evidence of one Preflight, keeping mechanical diagnostics apart
+from the Agent's unverified observations; historical, never current state.
+_Avoid_: preflight log, status file, readiness state
+
 **Execution Packet**:
 The start-of-work input handed to an external Agent or control plane for a
 confirmed, preflighted Review Batch; it records observed authorization and
