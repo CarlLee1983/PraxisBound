@@ -3,29 +3,36 @@
  * gathers every mechanical input the contract §9 table needs — the batch's
  * own index/plan diagnostics, the dependency graph, confirmation
  * applicability, unresolved requests, existing revision/response/story
- * findings, the fingerprint expectation, and (this slice only) whether a
+ * findings, the fingerprint expectation, the git-observed HEAD/uncommitted
+ * state (`ADR-015`, only when `--expect-revision` is given), and whether a
  * Semantic Report file exists — and hands them to Core's
  * `evaluatePreflight`, which owns every classification, severity,
  * precedence, and outcome decision (R6). This module never re-implements
- * one of those decisions; it only collects input and projects the result.
+ * one of those decisions; it only collects input, projects the result, and
+ * writes the Preflight Report (contract §2, §9 R7 deduplication).
  *
- * Out of scope for this slice (contract §9, Story R10a's vertical-slice
- * plan): the uncommitted-change / HEAD-revision git checks (`gitFindings`
- * is always `[]` here) and Preflight Report writing (`data.preflightRecord`
- * is not produced by this slice). `--expect-revision` is still parsed and
- * format-validated so a later slice can wire it in without an argv change.
+ * Out of scope for this Story (TST-028): Semantic Report parsing, its
+ * fingerprint/coverage/blocking checks, and `review packet`.
  */
 
 import { lstat } from "node:fs/promises";
 import { isAbsolute, resolve } from "node:path";
 
 import {
+  buildPreflightReportRecord,
+  canonicalUtcTime,
   computeEffectiveRevisions,
   computeUnresolvedRequests,
   evaluatePreflight,
+  preflightReportsEqualExceptCheckedAt,
+  sha256Hex,
   validateRevisionRecordSet,
+  validateStoredPreflightReportRecord,
   type PreflightConfirmationState,
   type PreflightFinding,
+  type PreflightReportExpect,
+  type PreflightReportRecord,
+  type PreflightReportRecordRef,
   type ReviewDiagnostic,
 } from "@praxisbound/core";
 
@@ -35,11 +42,20 @@ import {
   recordSetInvalidIssues,
 } from "./review-input.js";
 import {
+  createNewRecord,
   loadRecordsListingState,
+  parseRecordJson,
+  readRecordBytes,
   readResponseRecords,
   readRevisionRecords,
   recordsDirectory,
+  type RecordFilesystem,
 } from "./review-records.js";
+import {
+  nodeReviewGitAdapter,
+  type ReviewGitAdapter,
+  type ReviewGitObservation,
+} from "./review-git.js";
 import { checkStoryReadiness, createNodeStoryReader } from "./story.js";
 import {
   envelope,
@@ -214,10 +230,112 @@ function buildConfirmationState(
   return { kind: "stale", differences };
 }
 
+/**
+ * Contract §9's git rows (`ADR-015`), applied to one `ReviewGitObservation`:
+ * a revision mismatch (including no HEAD commit yet) and one
+ * `REVIEW_SOURCES_UNCOMMITTED` finding per distinct batch source or
+ * manifest path the observation reports as modified or untracked. A
+ * rename's two paths (`review-git.ts`) are both checked, so a match on
+ * either side is caught.
+ */
+function gitObservationFindings(
+  observation: Extract<ReviewGitObservation, { readonly kind: "observed" }>,
+  expectRevision: string,
+  manifestPath: string,
+  batchSourcePaths: readonly string[],
+): PreflightFinding[] {
+  const findings: PreflightFinding[] = [];
+  if (observation.head !== expectRevision) {
+    findings.push({
+      code: "REVIEW_PACKET_REVISION_MISMATCH",
+      message:
+        observation.head === undefined
+          ? `expected revision ${expectRevision} but HEAD has no commit yet`
+          : `expected revision ${expectRevision} does not match HEAD ${observation.head}`,
+    });
+  }
+  const batchPaths = new Set([manifestPath, ...batchSourcePaths]);
+  const matched = new Set<string>();
+  for (const change of observation.changes) {
+    if (batchPaths.has(change.path)) matched.add(change.path);
+  }
+  for (const path of [...matched].sort())
+    findings.push({
+      code: "REVIEW_SOURCES_UNCOMMITTED",
+      message:
+        "batch source or manifest has an uncommitted or untracked change",
+      path,
+    });
+  return findings;
+}
+
+interface PreflightBaseline {
+  readonly highestN: number;
+  readonly baseline?: {
+    readonly path: string;
+    readonly record: PreflightReportRecord;
+  };
+  readonly invalidFinding?: PreflightFinding;
+}
+
+/**
+ * Contract §2's 修訂性澄清（R-007）deduplication baseline: among
+ * `records/preflight-<fp12>-<n>.json` names for the current `fp12`, the
+ * highest `<n>` is read (bounded, `O_NOFOLLOW`, depth 32) and validated.
+ * Only that one file is ever read — never the wider collection — so no
+ * aggregate file-count or byte cap is needed (Story R10b). An invalid,
+ * over-limit, unreadable, or symlinked file is reported as an advisory
+ * finding and is never used for deduplication; `highestN` is still reported
+ * so the next write still allocates past it, never reusing its number.
+ */
+async function loadPreflightBaseline(
+  root: string,
+  manifestPath: string,
+  batchId: string,
+  fp12: string,
+  names: readonly string[],
+): Promise<PreflightBaseline> {
+  const pattern = new RegExp(`^preflight-${fp12}-([1-9][0-9]*)\\.json$`);
+  let highestN = 0;
+  let highestName: string | undefined;
+  for (const name of names) {
+    const match = pattern.exec(name);
+    if (match === null) continue;
+    const n = Number(match[1]);
+    if (n > highestN) {
+      highestN = n;
+      highestName = name;
+    }
+  }
+  if (highestName === undefined) return { highestN };
+
+  const relativePath = `${recordsDirectory(manifestPath)}/${highestName}`;
+  const invalid: PreflightFinding = {
+    code: "REVIEW_RECORD_INVALID",
+    message: "existing preflight report is invalid",
+    path: relativePath,
+  };
+  const bytes = await readRecordBytes(resolve(root, relativePath));
+  if (bytes === undefined) return { highestN, invalidFinding: invalid };
+  const parsed = parseRecordJson(bytes);
+  if (!parsed.ok) return { highestN, invalidFinding: invalid };
+  const validated = validateStoredPreflightReportRecord(parsed.data, batchId);
+  if (!validated.ok) return { highestN, invalidFinding: invalid };
+  return {
+    highestN,
+    baseline: { path: relativePath, record: validated.record },
+  };
+}
+
 /** Runs `praxisbound review preflight <manifest>`. */
 export async function runReviewPreflight(
   args: readonly string[],
   root: string = process.cwd(),
+  options: {
+    readonly gitAdapter?: ReviewGitAdapter;
+    readonly now?: () => Date;
+    readonly filesystem?: RecordFilesystem;
+  } = {},
 ): Promise<ReviewIndexExecution> {
   const parsed = parsePreflightArguments(args);
   if (!parsed.valid || parsed.manifest === undefined) {
@@ -236,7 +354,48 @@ export async function runReviewPreflight(
     );
     if (loaded.result.outcome !== "success" || loaded.loaded === undefined)
       return { mode: parsed.mode, result: loaded.result };
-    const { manifestPath, index } = loaded.loaded;
+    const loadedBatch = loaded.loaded;
+    const { manifestPath, index } = loadedBatch;
+
+    // Contract §9's git rows (`ADR-015`): git is run only when
+    // `--expect-revision` is given, exactly once, through the injected
+    // adapter. A subprocess/observation failure is a reported condition,
+    // never a silent pass: it stops the whole command at `ERROR`, exit 3,
+    // before any record is read or written.
+    const gitAdapter = options.gitAdapter ?? nodeReviewGitAdapter;
+    const gitFindings: PreflightFinding[] = [];
+    if (parsed.expectRevision !== undefined) {
+      const observation = await gitAdapter.observe(root);
+      if (observation.kind === "failed") {
+        process.stderr.write(
+          "praxisbound review preflight: internal error: git observation failed\n",
+        );
+        return {
+          mode: parsed.mode,
+          result: envelope("error", "ERROR", 3, [
+            issue(
+              "REVIEW_INTERNAL_ERROR",
+              "an unexpected internal failure occurred",
+            ),
+          ]),
+        };
+      }
+      if (observation.kind === "not-a-repository") {
+        gitFindings.push({
+          code: "REVIEW_NOT_A_GIT_REPOSITORY",
+          message: "the repository root is not inside a git working tree",
+        });
+      } else {
+        gitFindings.push(
+          ...gitObservationFindings(
+            observation,
+            parsed.expectRevision,
+            manifestPath,
+            index.sources.map((source) => source.path),
+          ),
+        );
+      }
+    }
 
     const listingState = await loadRecordsListingState(root, manifestPath);
     const recordFindings: PreflightFinding[] = [];
@@ -257,6 +416,17 @@ export async function runReviewPreflight(
       });
     }
     const names = listingState.listing.ok ? listingState.listing.names : [];
+
+    const fp12 = index.fingerprint.slice(0, 12);
+    const preflightBaseline = await loadPreflightBaseline(
+      root,
+      manifestPath,
+      index.batchId,
+      fp12,
+      names,
+    );
+    if (preflightBaseline.invalidFinding !== undefined)
+      recordFindings.push(preflightBaseline.invalidFinding);
 
     const revisionRecords = await readRevisionRecords(
       root,
@@ -391,27 +561,152 @@ export async function runReviewPreflight(
       parsed.semanticReport,
     );
 
-    const evaluation = evaluatePreflight({
+    const evaluateNow = () =>
+      evaluatePreflight({
+        fingerprint: index.fingerprint,
+        batchDiagnostics: index.diagnostics,
+        dependencies: index.dependencies,
+        confirmation,
+        unresolved,
+        recordFindings,
+        storyFindings,
+        expectFingerprint: parsed.expectFingerprint,
+        gitFindings,
+        semanticReport,
+      });
+
+    const evaluation = evaluateNow();
+
+    // Contract §13: the diagnostics bound should never be reachable within
+    // the batch's own limits; over it is `ERROR`, exit 3, not truncation,
+    // and nothing is written.
+    if (evaluation.mechanical.length + evaluation.semantic.length > 10000) {
+      return {
+        mode: parsed.mode,
+        result: envelope("error", "ERROR", 3, [
+          issue(
+            "REVIEW_INTERNAL_ERROR",
+            "the preflight diagnostics count exceeds the limit (10000)",
+          ),
+        ]),
+      };
+    }
+
+    // The confirmation ref (contract §2's Preflight Report `confirmation`
+    // field) names the one applicable confirmation, by its own file's
+    // sha256 — read once more here since `loadReviewConfirmationApplicability`
+    // returns parsed content, not the raw bytes a record ref needs.
+    let confirmationRef: PreflightReportRecordRef | null = null;
+    if (confirmationLoad.applicability?.applies === true) {
+      const confirmationPath = confirmationLoad.applicability.confirmation.path;
+      const confirmationBytes = await readRecordBytes(
+        resolve(root, confirmationPath),
+      );
+      if (confirmationBytes !== undefined) {
+        confirmationRef = {
+          path: confirmationPath,
+          sha256: sha256Hex(confirmationBytes),
+        };
+      }
+    }
+
+    const expectRef: PreflightReportExpect | null =
+      parsed.expectFingerprint !== undefined &&
+      parsed.expectRevision !== undefined
+        ? {
+            fingerprint: parsed.expectFingerprint,
+            revision: parsed.expectRevision,
+          }
+        : null;
+
+    const now = options.now ?? ((): Date => new Date());
+    const record = buildPreflightReportRecord({
+      batchId: index.batchId,
       fingerprint: index.fingerprint,
-      batchDiagnostics: index.diagnostics,
-      dependencies: index.dependencies,
-      confirmation,
-      unresolved,
-      recordFindings,
-      storyFindings,
-      expectFingerprint: parsed.expectFingerprint,
-      // The uncommitted-change / HEAD-revision git checks are a later slice
-      // (Story R10a's vertical-slice plan); `--expect-revision` is parsed
-      // and format-validated above but not yet acted on.
-      gitFindings: [],
-      semanticReport,
+      outcome: evaluation.outcome,
+      checkedAt: canonicalUtcTime(now().toISOString()),
+      confirmation: confirmationRef,
+      // Always `null` in this Story: the Semantic Report is checked only
+      // for existence here (TST-028 fills this from its parsed content).
+      semanticReport: null,
+      mechanical: evaluation.mechanical,
+      semantic: evaluation.semantic,
+      expect: expectRef,
     });
 
-    return {
-      mode: parsed.mode,
-      result: buildPreflightEnvelope(index, evaluation),
-      loaded: loaded.loaded,
+    const validatedRecord = validateStoredPreflightReportRecord(
+      record,
+      record.batchId,
+    );
+    const recordBytes = new TextEncoder().encode(JSON.stringify(record));
+
+    // R7: a rerun whose new record equals the highest existing one under
+    // this `fp12` in every field but `checkedAt` (expect included) writes
+    // nothing and names the existing file.
+    if (
+      preflightBaseline.baseline !== undefined &&
+      preflightReportsEqualExceptCheckedAt(
+        preflightBaseline.baseline.record,
+        record,
+      )
+    ) {
+      return {
+        mode: parsed.mode,
+        result: buildPreflightEnvelope(
+          index,
+          evaluation,
+          preflightBaseline.baseline.path,
+        ),
+        loaded: loadedBatch,
+      };
+    }
+
+    // H2 defense in depth (mirroring `buildConfirmationRecordBytes`): a
+    // built record that fails its own validator, or is oversized, is
+    // treated exactly like a genuine write failure below — this should be
+    // unreachable in normal operation.
+    const writeFailed = async (): Promise<ReviewIndexExecution> => {
+      recordFindings.push({
+        code: "REVIEW_RECORD_WRITE_FAILED",
+        message: "unable to write the preflight report",
+      });
+      return {
+        mode: parsed.mode,
+        result: buildPreflightEnvelope(index, evaluateNow()),
+        loaded: loadedBatch,
+      };
     };
+
+    if (!validatedRecord.ok || recordBytes.length > 1024 * 1024)
+      return await writeFailed();
+
+    const written = await createNewRecord(
+      root,
+      manifestPath,
+      (attempt) =>
+        `preflight-${fp12}-${preflightBaseline.highestN + attempt}.json`,
+      recordBytes,
+      {
+        maxAttempts: 16,
+        ...(options.filesystem ? { filesystem: options.filesystem } : {}),
+      },
+    );
+    if (written.ok) {
+      return {
+        mode: parsed.mode,
+        result: buildPreflightEnvelope(index, evaluation, written.relativePath),
+        loaded: loadedBatch,
+      };
+    }
+    if (written.reason === "unsafe") {
+      return {
+        mode: parsed.mode,
+        result: envelope("error", "configuration-error", 2, [
+          issue("REVIEW_PATH_UNSAFE", "records path has a symlinked segment"),
+        ]),
+      };
+    }
+    return await writeFailed();
   } catch (error) {
     process.stderr.write(
       `praxisbound review preflight: internal error: ${sanitizeInternalError(error, root)}\n`,
@@ -438,6 +733,7 @@ function buildPreflightEnvelope(
     }[];
   },
   evaluation: ReturnType<typeof evaluatePreflight>,
+  preflightRecordPath?: string,
 ) {
   const mechanicalAndSemantic = [
     ...evaluation.mechanical,
@@ -458,6 +754,9 @@ function buildPreflightEnvelope(
     fingerprint: index.fingerprint,
     sources: toDataValue(index.sources),
     diagnostics: toDataValue(diagnostics),
+    ...(preflightRecordPath === undefined
+      ? {}
+      : { preflightRecord: preflightRecordPath }),
   };
 
   if (evaluation.outcome === "REVIEW_READY")
@@ -507,6 +806,7 @@ export function renderReviewPreflightHuman(
           readonly code: string;
           readonly severity: "blocking" | "advisory";
         }[];
+        readonly preflightRecord?: string;
       }
     | undefined;
 
@@ -522,6 +822,10 @@ export function renderReviewPreflightHuman(
   if (data !== undefined) {
     lines.push(`Batch: ${data.batchId}`);
     lines.push(`Fingerprint: ${data.fingerprint}`);
+    if (data.preflightRecord !== undefined)
+      lines.push(
+        `Record: ${escapeHumanControlCharacters(data.preflightRecord)}`,
+      );
   }
   lines.push("", "Mechanical checks");
   if (mechanicalIssues.length === 0) {

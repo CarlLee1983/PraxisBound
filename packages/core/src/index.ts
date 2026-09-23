@@ -180,6 +180,18 @@ export type {
   PreflightOutcome,
   PreflightUnresolvedRequests,
 } from "./review/preflight.js";
+export {
+  buildPreflightReportRecord,
+  preflightReportsEqualExceptCheckedAt,
+  validateStoredPreflightReportRecord,
+} from "./review/preflight-report.js";
+export type {
+  PreflightReportExpect,
+  PreflightReportRecord,
+  PreflightReportRecordRef,
+  PreflightReportSemanticReportRef,
+  PreflightReportValidationResult,
+} from "./review/preflight-report.js";
 export type {
   AdrIndex,
   IndexReviewBatchResult,

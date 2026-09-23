@@ -65,7 +65,7 @@ verify             = execute make verify
 | `praxisbound review import <manifest> <sheet>`           | none (new capability)                 | Reads a Markdown Revision Sheet and records new requests, create-new, under the batch's `records/`; never changes a source. |
 | `praxisbound review respond <manifest> <responses.json>` | none (new capability)                 | The only way to record a Revision Response file, create-new, after the contract §7 fingerprint and coverage checks.         |
 | `praxisbound review confirm <manifest>`                  | none (new capability)                 | The only way to record a Definition Confirmation, create-new, through an interactive terminal act (contract §8).            |
-| `praxisbound review preflight <manifest>`                | none (new capability)                 | Read-only evaluation of every mechanical contract §9 check; this version writes no Preflight Report (Story TST-027).        |
+| `praxisbound review preflight <manifest>`                | none (new capability)                 | Evaluates every mechanical contract §9 check (including git, `ADR-015`) and writes one Preflight Report (Story TST-027).    |
 | `praxisbound codex activate <repo>`                      | `scripts/codex-activate`              | Preview by default; supports `--apply`; stays a late migration wave.                                                        |
 
 Global options may appear after the selected command path and before or among
@@ -576,15 +576,13 @@ in this command's own output as a claim of authorization or completion.
 
 `praxisbound review preflight <manifest> [--semantic-report <file>]
 [--expect-fingerprint <sha256> --expect-revision <commit>] [--json]` (Story
-TST-027, Additive) evaluates every mechanical contract §9 check and reports
-one result envelope; it never writes a source. **This version** (Story
-TST-027's mechanical slice) covers contract §9 minus the Semantic Report
-parsing/fingerprint/coverage/blocking rows (TST-028), the git-backed
-uncommitted-change and HEAD-revision checks (`gitFindings` is always `[]`
-here — `--expect-revision` is parsed and format-validated but not yet acted
-on), and Preflight Report writing (`data.preflightRecord` is not produced by
-this version; every run currently writes nothing). All three land together
-in a later Story before `review preflight` reaches contract §9 in full.
+TST-027, Additive) evaluates every mechanical contract §9 check, writes one
+Preflight Report (`records/preflight-<fp12>-<n>.json`, contract §2), and
+reports one result envelope. **This version** covers contract §9 minus the
+Semantic Report parsing/fingerprint/coverage/blocking rows, which TST-028
+adds; `mechanical`/`semantic` split, and `data.preflightRecord`, are already
+in place, with `semantic` always `[]` and `semanticReport: null` in the
+written record until TST-028 fills them.
 
 Argv: `--expect-fingerprint`/`--expect-revision` must both be given or both
 omitted (`usage-error`); `--expect-fingerprint` must match
@@ -631,6 +629,44 @@ outcome decision, contract §9 R6):
 - Whether `--semantic-report <file>` resolves (relative to the repository
   root) to an existing, non-symlinked regular file — checked for existence
   only, never read: `REVIEW_SEMANTIC_MISSING` when absent.
+- (`ADR-015`) When `--expect-revision` is given, one git observation (HEAD
+  and per-path working-tree status) through the injected
+  `ReviewGitAdapter` (`packages/cli/src/review-git.ts`, defaulting to
+  `nodeReviewGitAdapter`, which runs git only through `release-git.ts`'s
+  hardened runner): a directory outside git is
+  `REVIEW_NOT_A_GIT_REPOSITORY`; HEAD not equal to `--expect-revision`
+  (including no commit yet) is `REVIEW_PACKET_REVISION_MISMATCH`; each
+  distinct declared batch source or the manifest path reported modified or
+  untracked is its own `REVIEW_SOURCES_UNCOMMITTED` (a rename's old and new
+  path both count). A matching fingerprint and HEAD never stand in for this
+  check (`ADR-015`'s own rejected shortcut). Without `--expect-revision`,
+  git is never run. A git observation or subprocess failure (`kind:
+"failed"`) stops the whole command at `ERROR`, exit 3, before anything is
+  read or written — never a silent pass.
+
+Before evaluation, at most one existing `records/preflight-<fp12>-<n>.json`
+(the highest `<n>` under the current fingerprint's `fp12`) is read as the
+R7 deduplication baseline (bounded, `O_NOFOLLOW`, depth 32, validated
+against the schema); an invalid, over-limit, unreadable, or symlinked
+baseline is an advisory `REVIEW_RECORD_INVALID` finding, is never used for
+deduplication, and never blocks a new write. There is no aggregate
+file-count or byte cap on `records/preflight-*.json` (Story R10b): reading
+only the one baseline file removes the need for one. After evaluation, if
+the combined `mechanical`/`semantic` diagnostic count exceeds contract
+§13's 10000-diagnostic bound, the command reports `ERROR`, exit 3, and
+writes nothing. Otherwise it builds the record (`schemaVersion`, `batchId`,
+`fingerprint`, `outcome`, `checkedAt` from an injectable clock, the
+applicable confirmation's `{path, sha256}` or `null`, `semanticReport:
+null`, `mechanical`, `semantic: []`, `expect`) and either reuses the
+baseline's path (when it is valid and equal to the new record in every
+field but `checkedAt`, `expect` included) or writes a new
+`records/preflight-<fp12>-<n>.json` with `<n>` starting at the baseline's
+highest `<n>` plus one, create-new, exclusive. A records-directory symlink
+discovered at write time is `configuration-error`, `REVIEW_PATH_UNSAFE`,
+exit 2, nothing written (consistent with `review respond`); any other write
+failure lowers the outcome to `REVIEW_INCOMPLETE` with
+`REVIEW_RECORD_WRITE_FAILED` and leaves no partial file — the evaluation
+itself already completed, so this is never `ERROR`.
 
 | Outcome               | Status  | Exit | Meaning                                                                                              |
 | --------------------- | ------- | ---- | ---------------------------------------------------------------------------------------------------- |
@@ -643,14 +679,16 @@ outcome decision, contract §9 R6):
 | `ERROR`               | `error` | `3`  | An unexpected internal failure.                                                                      |
 
 `data` extends the `review index` minimal shape (`batchId`, `fingerprint`,
-`sources`, `diagnostics`) with no additional field in this version;
-`data.preflightRecord` is added when Preflight Report writing lands. Human
-output (stderr not used; stdout in `--json` mode, stdout otherwise) lists two
-labelled sections — "Mechanical checks" and "Agent observations (unverified)"
-(always "none" in this version, since Semantic Report parsing is TST-028) —
-and, on `REVIEW_READY`, the fixed line 「只表示未發現阻擋，不宣稱沒有缺陷」
-(contract §9, Story R8). Every message and path is ESC-escaped the same way
-every other review command escapes untrusted text.
+`sources`, `diagnostics`) with `preflightRecord` (the repo-relative path of
+the Preflight Report written or reused), omitted only when a write failure
+downgraded the outcome to `REVIEW_INCOMPLETE`. Human output (stderr not
+used; stdout in `--json` mode, stdout otherwise) lists a `Record:` line, then
+two labelled sections — "Mechanical checks" and "Agent observations
+(unverified)" (always "none" in this version, since Semantic Report parsing
+is TST-028) — and, on `REVIEW_READY`, the fixed line
+「只表示未發現阻擋，不宣稱沒有缺陷」 (contract §9, Story R8). Every message
+and path is ESC-escaped the same way every other review command escapes
+untrusted text.
 
 ## `review preflight` and `review packet` outcomes
 

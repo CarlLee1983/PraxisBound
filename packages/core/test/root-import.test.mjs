@@ -20,6 +20,7 @@ test("AC-005/TST012-AC-004/TST014-AC-003: the Core package root exposes only the
     "adoptionMarkerPath",
     "adoptionNextSteps",
     "assertResultEnvelope",
+    "buildPreflightReportRecord",
     "buildTargetLookup",
     "canonicalUtcTime",
     "compareConfirmationApplicability",
@@ -66,6 +67,7 @@ test("AC-005/TST012-AC-004/TST014-AC-003: the Core package root exposes only the
     "planMutation",
     "planReviewBatch",
     "posixCksum",
+    "preflightReportsEqualExceptCheckedAt",
     "rawJsonMaxDepth",
     "readStoryDecisions",
     "renderConfirmationStatus",
@@ -81,6 +83,7 @@ test("AC-005/TST012-AC-004/TST014-AC-003: the Core package root exposes only the
     "validateResultEnvelope",
     "validateRevisionRecordSet",
     "validateStoredConfirmationRecord",
+    "validateStoredPreflightReportRecord",
     "validateStoredResponsesRecord",
     "validateStoredRevisionRecord",
   ]);
