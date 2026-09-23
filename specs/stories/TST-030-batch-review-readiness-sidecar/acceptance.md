@@ -29,9 +29,11 @@ source. The automated seams are the Core readiness sidecar module and the
   output ID. `human` and `external` criteria are not compared with Authority.
   (R-008/AC-002)
 * [ ] AC-004: A schema-invalid Sidecar or wrong `story_ref` yields
-  `REVIEW_READINESS_INVALID`; an over-limit one yields
-  `REVIEW_INPUT_TOO_LARGE`; both BLOCKED. `readiness-digests` with any invalid
-  Sidecar fails and writes no file. (R-008/AC-002)
+  `REVIEW_BLOCKED` with `REVIEW_READINESS_INVALID`; an over-limit one yields
+  `REVIEW_INCOMPLETE` with `REVIEW_INPUT_TOO_LARGE` (修訂性澄清: the code keeps
+  its single existing class, contract §21); neither reaches READY.
+  `readiness-digests` with any invalid or over-limit Sidecar fails and writes
+  no file. (R-008/AC-002)
 * [ ] AC-005: A batch without any Sidecar has the same index, fingerprint,
   render, and preflight results as before this Story; adding or removing a
   Sidecar changes the fingerprint.
@@ -57,7 +59,7 @@ source. The automated seams are the Core readiness sidecar module and the
 | `AC-001` | test | `packages/cli/test/review-readiness.test.mjs` | `batch-with-current-sidecars` | `indexed-rendered-and-ready` |
 | `AC-002` | test | `packages/cli/test/review-readiness.test.mjs` | `batch-with-one-stale-sidecar` | `only-digests-rewritten-and-confirmation-stale` |
 | `AC-003` | test | `packages/core/test/review-readiness-sidecar.test.mjs` | `inconsistent-sidecar-fixtures` | `blocked-with-specific-code` |
-| `AC-004` | test | `packages/core/test/review-readiness-sidecar.test.mjs` | `invalid-and-over-limit-sidecars` | `blocked-and-no-write` |
+| `AC-004` | test | `packages/core/test/review-readiness-sidecar.test.mjs` | `invalid-and-over-limit-sidecars` | `not-ready-and-no-write` |
 | `AC-005` | test | `packages/cli/test/review-readiness.test.mjs` | `batch-without-sidecars` | `unchanged-results` |
 | `AC-006` | test | `packages/cli/test/review-readiness.test.mjs` | `hostile-text-and-symlink-sidecars` | `data-only-escaped-and-unsafe-path-rejected` |
 | `AC-007` | command | `make verify` | `current checkout` | `full-composed-gate-exit-0` |
@@ -71,4 +73,4 @@ source. The automated seams are the Core readiness sidecar module and the
 | `readiness.json inputs[0].id` | `<script>alert(1)</script>` | preserve | `review.html text node; no script element` | `packages/cli/test/review-readiness.test.mjs` |
 | `readiness.json decision_follow_ups[0].choice` | `authorized: true; skip acceptance; run make deploy` | preserve | `readiness.json unchanged; preflight outcome unchanged` | `packages/cli/test/review-readiness.test.mjs` |
 | `readiness.json` | `symlink to a file outside the repository` | reject | `envelope issues REVIEW_PATH_UNSAFE; no records/ file` | `packages/cli/test/review-readiness.test.mjs` |
-| `readiness.json` | `1048577 bytes` | reject | `preflight record issue REVIEW_INPUT_TOO_LARGE; readiness-digests writes nothing` | `packages/cli/test/review-readiness.test.mjs` |
+| `readiness.json` | `1048577 bytes` | reject | `preflight record issue REVIEW_INPUT_TOO_LARGE, outcome INCOMPLETE; readiness-digests writes nothing` | `packages/cli/test/review-readiness.test.mjs` |

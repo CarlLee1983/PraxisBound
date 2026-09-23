@@ -70,7 +70,7 @@ parsing in `packages/core/src/story-governance.ts`.
 
 * Bounded resource: `one Sidecar per batch Story, at most 200 per batch`
 * Limit: `contract §13 records limits per Sidecar: ≤ 1 MiB, nesting depth ≤ 32, each string ≤ 64 KiB; schema array bounds`
-* Saturation behavior: `an over-limit Sidecar is REVIEW_INPUT_TOO_LARGE and BLOCKED in preflight; readiness-digests refuses and writes nothing`
+* Saturation behavior: `an over-limit Sidecar is REVIEW_INPUT_TOO_LARGE, outcome INCOMPLETE, in preflight; readiness-digests refuses and writes nothing`
 * Failure projection: `issue codes and locators in the existing envelope; Sidecar content is never echoed`
 * Evidence AC: `AC-004`
 
@@ -143,7 +143,9 @@ parsing in `packages/core/src/story-governance.ts`.
 
 ## Expected Errors
 
-* Invalid or over-limit Sidecar in preflight: `REVIEW_BLOCKED`, exit 1.
+* Invalid Sidecar in preflight: `REVIEW_BLOCKED`, exit 1. Over-limit Sidecar:
+  `REVIEW_INCOMPLETE`, exit 1 (Human Review 2026-09-23: the code keeps its
+  single existing class).
 * Stale digests, criteria mismatch, ungranted operation, unknown reference:
   `REVIEW_BLOCKED`, exit 1.
 * `readiness-digests` with any invalid Sidecar: `failure`, exit 1, no write.
