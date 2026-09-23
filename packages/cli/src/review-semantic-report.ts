@@ -3,15 +3,21 @@
  * Story TST-028, R10a). The path rule mirrors `--output`'s
  * (`resolveOutputPath`/`findUnsafeSourcePath` in `review.ts`): it must
  * resolve inside the repository with no symlinked segment, and the file is
- * opened with `O_NOFOLLOW`. Every other decision (well-formed, bound to the
- * current fingerprint, coverage, blocking) is Core's
+ * opened with `O_NOFOLLOW`. The path is always lexically normalized
+ * (`resolve()`, unconditionally — never the caller-supplied literal) before
+ * either the safety check or the open, so the two can never disagree about
+ * which path they are judging (review round security C1); after opening,
+ * the file's real identity (`fstat` dev/ino) is compared against a fresh
+ * `lstat` of that same normalized path, closing the window between the
+ * safety check and the open (TOCTOU, M1). Every other decision (well
+ * formed, bound to the current fingerprint, coverage, blocking) is Core's
  * `evaluateSemanticReport`; this module only resolves the path, reads the
  * file within the §13 size bound, and records its sha256 whenever the bytes
  * were actually read (Story TST-028 Capacity "Failure projection").
  */
 
 import { constants } from "node:fs";
-import { open } from "node:fs/promises";
+import { lstat, open } from "node:fs/promises";
 import { isAbsolute, relative, resolve } from "node:path";
 
 import {
@@ -31,7 +37,10 @@ export interface SemanticReportLoad {
   readonly sha256: string | undefined;
   /** The report's own `agent` field, once read as a valid string — the Agent's unverified claim (R5). */
   readonly agent: string | undefined;
-  readonly findings: readonly PreflightFinding[];
+  /** R1 "gate" diagnostics (missing, size-before-read too-large, and every diagnostic Core's `evaluateSemanticReport` returns in `gate`) — placed in `mechanical[]` by the caller (Story H1). */
+  readonly gateFindings: readonly PreflightFinding[];
+  /** R2–R4 diagnostics (coverage, duplicate/outside-batch Story, locator, blocking, observation) — placed in `semantic[]` by the caller. */
+  readonly semanticFindings: readonly PreflightFinding[];
 }
 
 function missingFinding(): PreflightFinding {
@@ -48,22 +57,40 @@ function tooLargeFinding(): PreflightFinding {
   };
 }
 
-function invalidEncodingFinding(): PreflightFinding {
-  return {
-    code: "REVIEW_SEMANTIC_INVALID",
-    message: "Semantic Report is not valid UTF-8",
-  };
-}
-
 function absent(): SemanticReportLoad {
   return {
     unsafe: false,
     sha256: undefined,
     agent: undefined,
-    findings: [missingFinding()],
+    gateFindings: [missingFinding()],
+    semanticFindings: [],
   };
 }
 
+function unsafeLoad(): SemanticReportLoad {
+  return {
+    unsafe: true,
+    sha256: undefined,
+    agent: undefined,
+    gateFindings: [],
+    semanticFindings: [],
+  };
+}
+
+/**
+ * Always lexically normalizes `argument` (via `resolve()`, unconditionally
+ * — never the caller-supplied literal, even when it is already absolute)
+ * before computing the repository-relative path the safety check judges.
+ * Security C1: the earlier `isAbsolute(argument) ? argument : resolve(...)`
+ * form kept an absolute argument's literal `..`/symlink segments for the
+ * later `open()` while the safety check judged a *different*,
+ * `path.relative`-normalized string — an absolute argument like
+ * `<root>/link/../report.json`, where `link` is a symlink out of the
+ * repository, would normalize away to a safe-looking relative path while
+ * still being opened, un-normalized, through the symlink. Resolving once,
+ * unconditionally, and using that single result for both the check and the
+ * open removes the discrepancy.
+ */
 function resolveRepoRelativePath(
   root: string,
   argument: string,
@@ -74,11 +101,12 @@ function resolveRepoRelativePath(
       readonly relativePath: string;
     }
   | { readonly ok: false } {
-  const absolute = isAbsolute(argument) ? argument : resolve(root, argument);
+  const absolute = resolve(root, argument);
   const relativePath = relative(root, absolute).split("\\").join("/");
   if (
     relativePath === "" ||
-    relativePath.startsWith("..") ||
+    relativePath === ".." ||
+    relativePath.startsWith("../") ||
     isAbsolute(relativePath)
   )
     return { ok: false };
@@ -99,14 +127,12 @@ export async function loadSemanticReport(
   if (argument === undefined) return absent();
 
   const resolved = resolveRepoRelativePath(root, argument);
-  if (!resolved.ok)
-    return { unsafe: true, sha256: undefined, agent: undefined, findings: [] };
+  if (!resolved.ok) return unsafeLoad();
 
   const unsafeSegment = await findUnsafeSourcePath(root, [
     resolved.relativePath,
   ]);
-  if (unsafeSegment !== undefined)
-    return { unsafe: true, sha256: undefined, agent: undefined, findings: [] };
+  if (unsafeSegment !== undefined) return unsafeLoad();
 
   let handle;
   try {
@@ -118,14 +144,28 @@ export async function loadSemanticReport(
     return absent();
   }
   try {
-    const stats = await handle.stat();
-    if (!stats.isFile()) return absent();
-    if (stats.size > RECORD_MAX_BYTES)
+    const openedStats = await handle.stat();
+    // TOCTOU (M1): re-`lstat` the same normalized path right after opening
+    // and require it to name the exact file the open landed on. A mismatch
+    // means something changed the path between the safety check and the
+    // open (or the open otherwise resolved somewhere else) — treated as
+    // unsafe, never read.
+    let diskStats;
+    try {
+      diskStats = await lstat(resolved.absolute);
+    } catch {
+      return unsafeLoad();
+    }
+    if (openedStats.dev !== diskStats.dev || openedStats.ino !== diskStats.ino)
+      return unsafeLoad();
+    if (!openedStats.isFile()) return absent();
+    if (openedStats.size > RECORD_MAX_BYTES)
       return {
         unsafe: false,
         sha256: undefined,
         agent: undefined,
-        findings: [tooLargeFinding()],
+        gateFindings: [tooLargeFinding()],
+        semanticFindings: [],
       };
     const bytes = await readBounded(handle, RECORD_MAX_BYTES);
     if (bytes === undefined)
@@ -133,34 +173,29 @@ export async function loadSemanticReport(
         unsafe: false,
         sha256: undefined,
         agent: undefined,
-        findings: [tooLargeFinding()],
+        gateFindings: [tooLargeFinding()],
+        semanticFindings: [],
       };
     const sha256 = sha256Hex(bytes);
 
-    let text: string;
-    try {
-      text = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
-    } catch {
-      return {
-        unsafe: false,
-        sha256,
-        agent: undefined,
-        findings: [invalidEncodingFinding()],
-      };
-    }
-
-    const evaluation = evaluateSemanticReport(text, context);
+    const evaluation = evaluateSemanticReport(bytes, context);
+    const toFinding = (diagnostic: {
+      readonly code: string;
+      readonly message: string;
+      readonly locator?: PreflightFinding["locator"];
+    }): PreflightFinding => ({
+      code: diagnostic.code,
+      message: diagnostic.message,
+      ...(diagnostic.locator === undefined
+        ? {}
+        : { locator: diagnostic.locator }),
+    });
     return {
       unsafe: false,
       sha256,
       agent: evaluation.agent,
-      findings: evaluation.diagnostics.map((diagnostic) => ({
-        code: diagnostic.code,
-        message: diagnostic.message,
-        ...(diagnostic.locator === undefined
-          ? {}
-          : { locator: diagnostic.locator }),
-      })),
+      gateFindings: evaluation.gate.map(toFinding),
+      semanticFindings: evaluation.semantic.map(toFinding),
     };
   } finally {
     await handle.close().catch(() => undefined);

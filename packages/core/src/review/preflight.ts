@@ -62,12 +62,22 @@ export interface PreflightInput {
   /** REVIEW_PACKET_REVISION_MISMATCH, REVIEW_NOT_A_GIT_REPOSITORY, REVIEW_SOURCES_UNCOMMITTED. */
   readonly gitFindings: readonly PreflightFinding[];
   /**
-   * The Semantic Report's own diagnostics (Story TST-028): the CLI decides
-   * `REVIEW_SEMANTIC_MISSING` (absent or unreadable file) and the
-   * size-before-read `REVIEW_INPUT_TOO_LARGE`; Core's `semantic-report.js`
-   * decides every other code once the file's bytes were read. Placed into
-   * `semantic[]`, never `mechanical[]`, though still classified by
-   * `CLASS_BY_CODE` and counted toward the outcome (R6).
+   * The Semantic Report's R1 "gate" diagnostics (Story TST-028, H1):
+   * `REVIEW_SEMANTIC_MISSING` (absent or unreadable file), the
+   * size-before-read `REVIEW_INPUT_TOO_LARGE`, and Core's
+   * `semantic-report.js` `gate` output (too-large/invalid/stale) once the
+   * file's bytes were read. These are tool verdicts about the report as a
+   * whole, so they are placed into `mechanical[]`, same as every other
+   * check here — never `semantic[]`.
+   */
+  readonly semanticGateFindings: readonly PreflightFinding[];
+  /**
+   * The Semantic Report's R2–R4 diagnostics (Story TST-028): coverage, a
+   * duplicate or out-of-batch Story, a non-matching issue locator, and each
+   * issue's own blocking/observation diagnostic — computed only once the
+   * report passed every gate check (Story Capacity "Failure projection").
+   * Placed into `semantic[]`, never `mechanical[]`, though still classified
+   * by `CLASS_BY_CODE` and counted toward the outcome (R6).
    */
   readonly semanticFindings: readonly PreflightFinding[];
 }
@@ -343,6 +353,7 @@ export function evaluatePreflight(input: PreflightInput): PreflightEvaluation {
       input.expectFingerprint,
     ),
     ...input.gitFindings.map(finalizeFinding),
+    ...input.semanticGateFindings.map(finalizeFinding),
   ];
   const semanticRaw: ReviewDiagnostic[] =
     input.semanticFindings.map(finalizeFinding);

@@ -244,13 +244,17 @@ function resolveManifestPath(
       readonly relativePath: string;
     }
   | { readonly ok: false } {
-  const absolute = isAbsolute(manifestArgument)
-    ? manifestArgument
-    : resolve(root, manifestArgument);
+  // Security C1: always resolve, unconditionally, even when the argument is
+  // already absolute — an un-normalized absolute path (e.g. one containing
+  // a `link/../` segment through a symlink) must never reach `open()`
+  // while a *different*, lexically normalized path is what the safety
+  // check below judged.
+  const absolute = resolve(root, manifestArgument);
   const relativePath = relative(root, absolute).split("\\").join("/");
   if (
     relativePath === "" ||
-    relativePath.startsWith("..") ||
+    relativePath === ".." ||
+    relativePath.startsWith("../") ||
     isAbsolute(relativePath)
   ) {
     return { ok: false };
@@ -493,6 +497,14 @@ export async function runReviewIndexUnsafe(
     );
     try {
       const openedStats = await handle.stat();
+      // TOCTOU (M1): the fresh `lstat` above already ran before this open;
+      // re-comparing its identity against what actually got opened closes
+      // the window where the path changed in between.
+      if (
+        openedStats.dev !== manifestStats.dev ||
+        openedStats.ino !== manifestStats.ino
+      )
+        throw new Error("manifest identity changed between check and open");
       if (!openedStats.isFile()) throw new Error("not a regular file");
       manifestBytes = await handle.readFile();
     } finally {
@@ -604,13 +616,14 @@ function resolveOutputPath(
       readonly relativePath: string;
     }
   | { readonly ok: false } {
-  const absolute = isAbsolute(outputArgument)
-    ? outputArgument
-    : resolve(root, outputArgument);
+  // Security C1 (same fix as `resolveManifestPath`): always resolve,
+  // unconditionally, even when the argument is already absolute.
+  const absolute = resolve(root, outputArgument);
   const relativePath = relative(root, absolute).split("\\").join("/");
   if (
     relativePath === "" ||
-    relativePath.startsWith("..") ||
+    relativePath === ".." ||
+    relativePath.startsWith("../") ||
     isAbsolute(relativePath)
   ) {
     return { ok: false };

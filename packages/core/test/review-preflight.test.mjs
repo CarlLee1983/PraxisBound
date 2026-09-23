@@ -17,6 +17,7 @@ function baseInput(overrides = {}) {
     storyFindings: [],
     expectFingerprint: undefined,
     gitFindings: [],
+    semanticGateFindings: [],
     semanticFindings: [],
     ...overrides,
   };
@@ -186,10 +187,10 @@ test("AC-003: a matching expectFingerprint produces no diagnostic", () => {
   assert.deepEqual(result.mechanical, []);
 });
 
-test("AC-003: a missing Semantic Report yields REVIEW_SEMANTIC_MISSING and REVIEW_INCOMPLETE", () => {
+test("AC-003/H1: a missing Semantic Report yields REVIEW_SEMANTIC_MISSING in mechanical[] (a gate diagnostic, shown in Mechanical checks) and REVIEW_INCOMPLETE", () => {
   const result = evaluatePreflight(
     baseInput({
-      semanticFindings: [
+      semanticGateFindings: [
         {
           code: "REVIEW_SEMANTIC_MISSING",
           message: "no Semantic Report was provided",
@@ -198,9 +199,9 @@ test("AC-003: a missing Semantic Report yields REVIEW_SEMANTIC_MISSING and REVIE
     }),
   );
   assert.equal(result.outcome, "REVIEW_INCOMPLETE");
-  assert.deepEqual(result.mechanical, []);
+  assert.deepEqual(result.semantic, []);
   assert.deepEqual(
-    result.semantic.map((diagnostic) => diagnostic.code),
+    result.mechanical.map((diagnostic) => diagnostic.code),
     ["REVIEW_SEMANTIC_MISSING"],
   );
 });
@@ -373,4 +374,29 @@ test("a message over 4096 characters is shortened deterministically to exactly 4
   );
   assert.equal(result.mechanical[0].message.length, 4096);
   assert.ok(result.mechanical[0].message.endsWith("..."));
+});
+
+test("H1: semanticGateFindings land in mechanical[] and semanticFindings land in semantic[], in the same run", () => {
+  const result = evaluatePreflight(
+    baseInput({
+      semanticGateFindings: [
+        { code: "REVIEW_SEMANTIC_STALE", message: "fingerprint mismatch" },
+      ],
+      semanticFindings: [
+        {
+          code: "REVIEW_SEMANTIC_OBSERVATION",
+          message: "an observation",
+        },
+      ],
+    }),
+  );
+  assert.deepEqual(
+    result.mechanical.map((diagnostic) => diagnostic.code),
+    ["REVIEW_SEMANTIC_STALE"],
+  );
+  assert.deepEqual(
+    result.semantic.map((diagnostic) => diagnostic.code),
+    ["REVIEW_SEMANTIC_OBSERVATION"],
+  );
+  assert.equal(result.outcome, "REVIEW_STALE");
 });

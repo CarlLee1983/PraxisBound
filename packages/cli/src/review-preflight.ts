@@ -609,6 +609,9 @@ export async function runReviewPreflight(
     const batchBlockSha256 = sha256Hex(
       new TextEncoder().encode(index.fingerprint),
     );
+    // R4/M2: only a declared batch source is a legal issue locator path —
+    // never the manifest's own `#batch` path.
+    const sourcePaths = new Set(index.sources.map((source) => source.path));
     const semanticLoad = await loadSemanticReport(root, parsed.semanticReport, {
       batchId: index.batchId,
       fingerprint: index.fingerprint,
@@ -616,6 +619,7 @@ export async function runReviewPreflight(
         .map((story) => story.id)
         .filter((id): id is string => id !== undefined),
       locatorLookup,
+      sourcePaths,
       manifestPath,
       batchBlockSha256,
     });
@@ -630,7 +634,12 @@ export async function runReviewPreflight(
         ]),
       };
     }
-    const semanticFindings = semanticLoad.findings;
+    // H1/Story Capacity: R1 "gate" diagnostics (missing, size, schema,
+    // batch, fingerprint) are tool verdicts, shown in "Mechanical checks";
+    // only R2–R4 (coverage, duplicate/outside-batch, locator, blocking,
+    // observation) go into `semantic[]`, and only once the gate is clean.
+    const semanticGateFindings = semanticLoad.gateFindings;
+    const semanticFindings = semanticLoad.semanticFindings;
     const semanticReportRef: PreflightReportSemanticReportRef | null =
       semanticLoad.sha256 === undefined
         ? null
@@ -647,6 +656,7 @@ export async function runReviewPreflight(
         storyFindings,
         expectFingerprint: parsed.expectFingerprint,
         gitFindings,
+        semanticGateFindings,
         semanticFindings,
       });
 

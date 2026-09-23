@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
-import { mkdir, readFile, symlink, writeFile } from "node:fs/promises";
+import { execFile as execFileCallback } from "node:child_process";
+import { mkdir, readFile, readdir, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { promisify } from "node:util";
 import test from "node:test";
 
 import { validateResultEnvelope } from "@praxisbound/core";
@@ -17,6 +19,8 @@ import {
   fixtureRepo,
   indexData,
 } from "./review-import-respond-support.mjs";
+
+const execFile = promisify(execFileCallback);
 
 // A minimal Story that passes `story check --ready` (mirrors
 // review-preflight-command.test.mjs's AC-001 happy path fixture).
@@ -142,6 +146,17 @@ async function preflightRecord(root, batchId, relativePath) {
   return JSON.parse(bytes);
 }
 
+async function preflightRecordsFor(root, batchId) {
+  const dir = join(root, "specs", "batches", batchId, "records");
+  try {
+    return (await readdir(dir))
+      .filter((name) => name.startsWith("preflight-"))
+      .sort();
+  } catch {
+    return [];
+  }
+}
+
 test("AC-001: a confirmed batch with a valid, current Semantic Report covering every Story with only non-blocking issues yields REVIEW_READY, records semanticReport.sha256, and lists the issue as REVIEW_SEMANTIC_OBSERVATION with its locator", async () => {
   const batchId = "TST-9801-semantic";
   const { root, manifestPath } = await readyFixtureRepo(batchId);
@@ -227,6 +242,21 @@ test("AC-003: a Semantic Report bound to a previous fingerprint yields REVIEW_ST
     assert.ok(codesOf(execution).includes("REVIEW_SEMANTIC_STALE"));
     assert.ok(!codesOf(execution).includes("REVIEW_SEMANTIC_OBSERVATION"));
     assert.ok(!codesOf(execution).includes("REVIEW_SEMANTIC_BLOCKING"));
+
+    // M3: the written Preflight Report record itself, not only the envelope.
+    const record = await preflightRecord(
+      root,
+      batchId,
+      execution.result.data.preflightRecord,
+    );
+    assert.equal(record.outcome, "REVIEW_STALE");
+    assert.deepEqual(record.semantic, []);
+    assert.notEqual(record.semanticReport, null);
+    assert.match(record.semanticReport.sha256, /^[a-f0-9]{64}$/);
+    assert.ok(
+      record.mechanical.some((entry) => entry.code === "REVIEW_SEMANTIC_STALE"),
+      JSON.stringify(record.mechanical),
+    );
   } finally {
     await cleanupWorkspace(root);
   }
@@ -325,7 +355,7 @@ test("AC-003: an issue locator naming an unknown anchor is REVIEW_SEMANTIC_INVAL
   }
 });
 
-test("AC-004/security matrix: a Semantic Report nested deeper than 32 is REVIEW_INPUT_TOO_LARGE, rejected before its content is read", async () => {
+test("AC-004/security matrix: a Semantic Report nested deeper than 32 is REVIEW_INPUT_TOO_LARGE", async () => {
   const batchId = "TST-9805-semantic";
   const { root, manifestPath } = await readyFixtureRepo(batchId);
   try {
@@ -348,6 +378,23 @@ test("AC-004/security matrix: a Semantic Report nested deeper than 32 is REVIEW_
     ]);
     assert.notEqual(execution.result.outcome, "REVIEW_READY");
     assert.ok(codesOf(execution).includes("REVIEW_INPUT_TOO_LARGE"));
+
+    // M3: the written Preflight Report record itself, not only the envelope.
+    const record = await preflightRecord(
+      root,
+      batchId,
+      execution.result.data.preflightRecord,
+    );
+    assert.ok(
+      record.mechanical.some(
+        (entry) => entry.code === "REVIEW_INPUT_TOO_LARGE",
+      ),
+      JSON.stringify(record.mechanical),
+    );
+    // The bytes were read within the 1 MiB bound before this content-level
+    // rejection, so sha256 is still recorded (Story Capacity).
+    assert.notEqual(record.semanticReport, null);
+    assert.match(record.semanticReport.sha256, /^[a-f0-9]{64}$/);
   } finally {
     await cleanupWorkspace(root);
   }
@@ -538,6 +585,95 @@ test("security matrix: an ESC sequence and a U+202E bidi override in the Semanti
   }
 });
 
+test('C1: an absolute --semantic-report path through a symlinked directory plus a `..` segment (`<root>/link/../report.json`, link -> ../outside/sub) never reads the file it resolves to outside the repository — the normalized path and the opened path are always the same string, so this can never again reach data.semanticAgent === "outside"', async () => {
+  const batchId = "TST-9811-semantic";
+  const { root, manifestPath } = await readyFixtureRepo(batchId);
+  try {
+    const data = await indexData(root, manifestPath);
+    await writeConfirmation(root, batchId, data);
+
+    // `link` resolves (kernel path resolution, not string collapsing) to
+    // `<container>/outside/sub`; appending `/../report.json` lands on
+    // `<container>/outside/report.json` — a file the repository never
+    // declares. Before the fix, `open()` reached this file directly
+    // (`data.semanticAgent === "outside"`, the reviewer's own repro) while
+    // the safety check judged the unrelated, already-`..`-collapsed
+    // `report.json`. The fix removes the discrepancy by always resolving
+    // once, unconditionally, for both: the collapsed path (`<root>/report.json`,
+    // which does not exist in this fixture) is what both the check and the
+    // open now agree on, so the file outside the repository is never
+    // opened at all — this is Semantic Report `Missing`, not `Unsafe`, and
+    // is exactly as safe: no byte outside the repository is ever read.
+    const outsideRoot = join(root, "..", "outside");
+    const outsideSub = join(outsideRoot, "sub");
+    await mkdir(outsideSub, { recursive: true });
+    await writeFile(
+      join(outsideRoot, "report.json"),
+      semanticReportText({
+        batchId,
+        fingerprint: data.fingerprint,
+        agent: "outside",
+      }),
+    );
+    await symlink("../outside/sub", join(root, "link"));
+
+    // Built by plain string concatenation, deliberately never through
+    // `path.join`/`path.resolve` (which would themselves lexically collapse
+    // `link/..` away before the CLI ever saw it) — this is the literal
+    // argv value an attacker or a misconfigured caller would pass.
+    const absoluteArgument = `${root}/link/../report.json`;
+
+    const execution = await runReviewPreflight(
+      [manifestPath, "--semantic-report", absoluteArgument, "--json"],
+      root,
+    );
+    assert.deepEqual(validateResultEnvelope(execution.result), {
+      ok: true,
+      value: execution.result,
+    });
+    // The critical security property: the outside file's content (its
+    // `agent: "outside"` claim) never reaches the envelope, in any form.
+    assert.ok(!JSON.stringify(execution.result).includes("outside"));
+    assert.notEqual(execution.result.outcome, "REVIEW_READY");
+    assert.ok(codesOf(execution).includes("REVIEW_SEMANTIC_MISSING"));
+  } finally {
+    await cleanupWorkspace(root);
+  }
+});
+
+test("C1 (companion, no `..` collapsing): --semantic-report link/report.json, where link is a symlink out of the repository with no `..` to cancel it, is still rejected configuration-error REVIEW_PATH_UNSAFE — the segment-by-segment safety check (unaffected by the C1 fix) already caught this case", async () => {
+  const batchId = "TST-9819-semantic";
+  const { root, manifestPath } = await readyFixtureRepo(batchId);
+  try {
+    const data = await indexData(root, manifestPath);
+    await writeConfirmation(root, batchId, data);
+    const outsideRoot = join(root, "..", "outside-plain");
+    await mkdir(outsideRoot, { recursive: true });
+    await writeFile(
+      join(outsideRoot, "report.json"),
+      semanticReportText({ batchId, fingerprint: data.fingerprint }),
+    );
+    await symlink("../outside-plain", join(root, "link"));
+
+    const execution = await runReviewPreflight(
+      [manifestPath, "--semantic-report", "link/report.json", "--json"],
+      root,
+    );
+    assert.deepEqual(validateResultEnvelope(execution.result), {
+      ok: true,
+      value: execution.result,
+    });
+    assert.equal(execution.result.outcome, "configuration-error");
+    assert.equal(execution.result.issues[0].code, "REVIEW_PATH_UNSAFE");
+    assert.equal(execution.result.data, undefined);
+
+    const names = await preflightRecordsFor(root, batchId);
+    assert.deepEqual(names, []);
+  } finally {
+    await cleanupWorkspace(root);
+  }
+});
+
 test("AC-006/security matrix: --semantic-report as a symlink to a file outside the repository is rejected (configuration-error, REVIEW_PATH_UNSAFE) and writes no Preflight Report", async () => {
   const batchId = "TST-9810-semantic";
   const { root, manifestPath } = await readyFixtureRepo(batchId);
@@ -562,6 +698,210 @@ test("AC-006/security matrix: --semantic-report as a symlink to a file outside t
     assert.equal(execution.result.outcome, "configuration-error");
     assert.equal(execution.result.issues[0].code, "REVIEW_PATH_UNSAFE");
     assert.equal(execution.result.data, undefined);
+  } finally {
+    await cleanupWorkspace(root);
+  }
+});
+
+test("LOW: a missing --semantic-report path (flag given but nothing there) is REVIEW_SEMANTIC_MISSING", async () => {
+  const batchId = "TST-9812-semantic";
+  const { root, manifestPath } = await readyFixtureRepo(batchId);
+  try {
+    const data = await indexData(root, manifestPath);
+    await writeConfirmation(root, batchId, data);
+
+    const execution = await run(root, [
+      manifestPath,
+      "--semantic-report",
+      "does-not-exist.json",
+      "--json",
+    ]);
+    assert.notEqual(execution.result.outcome, "REVIEW_READY");
+    assert.ok(codesOf(execution).includes("REVIEW_SEMANTIC_MISSING"));
+  } finally {
+    await cleanupWorkspace(root);
+  }
+});
+
+test("LOW: a --semantic-report path naming a directory is REVIEW_SEMANTIC_MISSING", async () => {
+  const batchId = "TST-9813-semantic";
+  const { root, manifestPath } = await readyFixtureRepo(batchId);
+  try {
+    const data = await indexData(root, manifestPath);
+    await writeConfirmation(root, batchId, data);
+    await mkdir(join(root, "a-directory"));
+
+    const execution = await run(root, [
+      manifestPath,
+      "--semantic-report",
+      "a-directory",
+      "--json",
+    ]);
+    assert.notEqual(execution.result.outcome, "REVIEW_READY");
+    assert.ok(codesOf(execution).includes("REVIEW_SEMANTIC_MISSING"));
+  } finally {
+    await cleanupWorkspace(root);
+  }
+});
+
+test("LOW: a --semantic-report path naming a FIFO (not a regular file) is REVIEW_SEMANTIC_MISSING", async () => {
+  const batchId = "TST-9814-semantic";
+  const { root, manifestPath } = await readyFixtureRepo(batchId);
+  try {
+    const data = await indexData(root, manifestPath);
+    await writeConfirmation(root, batchId, data);
+    const fifoPath = join(root, "a-fifo");
+    try {
+      await execFile("mkfifo", [fifoPath]);
+    } catch {
+      // mkfifo unavailable on this platform: nothing to assert.
+      return;
+    }
+
+    const execution = await run(root, [
+      manifestPath,
+      "--semantic-report",
+      "a-fifo",
+      "--json",
+    ]);
+    assert.notEqual(execution.result.outcome, "REVIEW_READY");
+    assert.ok(codesOf(execution).includes("REVIEW_SEMANTIC_MISSING"));
+  } finally {
+    await cleanupWorkspace(root);
+  }
+});
+
+test("LOW: a --semantic-report path escaping the repository via .. is rejected configuration-error REVIEW_PATH_UNSAFE", async () => {
+  const batchId = "TST-9815-semantic";
+  const { root, manifestPath } = await readyFixtureRepo(batchId);
+  try {
+    const data = await indexData(root, manifestPath);
+    await writeConfirmation(root, batchId, data);
+    await writeFile(
+      join(root, "..", "x.json"),
+      semanticReportText({ batchId, fingerprint: data.fingerprint }),
+    );
+
+    const execution = await runReviewPreflight(
+      [manifestPath, "--semantic-report", "../x.json", "--json"],
+      root,
+    );
+    assert.deepEqual(validateResultEnvelope(execution.result), {
+      ok: true,
+      value: execution.result,
+    });
+    assert.equal(execution.result.outcome, "configuration-error");
+    assert.equal(execution.result.issues[0].code, "REVIEW_PATH_UNSAFE");
+    assert.equal(execution.result.data, undefined);
+  } finally {
+    await cleanupWorkspace(root);
+  }
+});
+
+test("LOW: a --semantic-report file that is not valid UTF-8 is REVIEW_SEMANTIC_INVALID, and its sha256 is still recorded", async () => {
+  const batchId = "TST-9816-semantic";
+  const { root, manifestPath } = await readyFixtureRepo(batchId);
+  try {
+    const data = await indexData(root, manifestPath);
+    await writeConfirmation(root, batchId, data);
+    await writeFile(
+      join(root, "semantic-report.json"),
+      Uint8Array.from([0xff, 0xfe, 0xfd]),
+    );
+
+    const execution = await run(root, [
+      manifestPath,
+      "--semantic-report",
+      "semantic-report.json",
+      "--json",
+    ]);
+    assert.notEqual(execution.result.outcome, "REVIEW_READY");
+    assert.ok(codesOf(execution).includes("REVIEW_SEMANTIC_INVALID"));
+
+    const record = await preflightRecord(
+      root,
+      batchId,
+      execution.result.data.preflightRecord,
+    );
+    assert.notEqual(record.semanticReport, null);
+    assert.match(record.semanticReport.sha256, /^[a-f0-9]{64}$/);
+  } finally {
+    await cleanupWorkspace(root);
+  }
+});
+
+test("M2: an issue locator naming a real, existing repository path that is not a declared batch source (the manifest itself) is REVIEW_SEMANTIC_INVALID", async () => {
+  const batchId = "TST-9817-semantic";
+  const { root, manifestPath } = await readyFixtureRepo(batchId);
+  try {
+    const data = await indexData(root, manifestPath);
+    await writeConfirmation(root, batchId, data);
+    const categories = noneCategories();
+    categories["open-question"] = {
+      result: "issues",
+      issues: [
+        {
+          locator: {
+            path: manifestPath,
+            anchor: "#batch",
+            blockSha256: "a".repeat(64),
+          },
+          observation: "an observation at the manifest's own path",
+          impact: "minor",
+          blocking: false,
+          suggestion: "",
+        },
+      ],
+    };
+    const reportName = await writeSemanticReport(
+      root,
+      "semantic-report.json",
+      semanticReportText({
+        batchId,
+        fingerprint: data.fingerprint,
+        categories,
+      }),
+    );
+
+    const execution = await run(root, [
+      manifestPath,
+      "--semantic-report",
+      reportName,
+      "--json",
+    ]);
+    assert.notEqual(execution.result.outcome, "REVIEW_READY");
+    assert.ok(codesOf(execution).includes("REVIEW_SEMANTIC_INVALID"));
+  } finally {
+    await cleanupWorkspace(root);
+  }
+});
+
+test("LOW: a conclusion whose result is none but that also carries an issues field is REVIEW_SEMANTIC_INVALID (schema-invalid)", async () => {
+  const batchId = "TST-9818-semantic";
+  const { root, manifestPath } = await readyFixtureRepo(batchId);
+  try {
+    const data = await indexData(root, manifestPath);
+    await writeConfirmation(root, batchId, data);
+    const categories = noneCategories();
+    categories["open-question"] = { result: "none", issues: [] };
+    const reportName = await writeSemanticReport(
+      root,
+      "semantic-report.json",
+      semanticReportText({
+        batchId,
+        fingerprint: data.fingerprint,
+        categories,
+      }),
+    );
+
+    const execution = await run(root, [
+      manifestPath,
+      "--semantic-report",
+      reportName,
+      "--json",
+    ]);
+    assert.notEqual(execution.result.outcome, "REVIEW_READY");
+    assert.ok(codesOf(execution).includes("REVIEW_SEMANTIC_INVALID"));
   } finally {
     await cleanupWorkspace(root);
   }
