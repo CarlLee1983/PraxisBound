@@ -43,6 +43,10 @@
         "ACTIVATION_APPLY_FAILED_RECOVERED",
         "ACTIVATION_RECOVERY_INCOMPLETE",
         "ACTIVATION_CLEANUP_INCOMPLETE",
+        "REVIEW_READY",
+        "REVIEW_BLOCKED",
+        "REVIEW_INCOMPLETE",
+        "REVIEW_STALE",
         "ERROR"
       ]
     },
@@ -71,7 +75,8 @@
             "INIT_PREVIEW",
             "ACTIVATION_PREVIEW",
             "ACTIVATION_APPLIED",
-            "ACTIVATION_UNCHANGED"
+            "ACTIVATION_UNCHANGED",
+            "REVIEW_READY"
           ]
         },
         "exit": { "const": 0 }
@@ -93,7 +98,10 @@
             "ACTIVATION_OPERATION_REFUSED",
             "ACTIVATION_APPLY_FAILED_RECOVERED",
             "ACTIVATION_RECOVERY_INCOMPLETE",
-            "ACTIVATION_CLEANUP_INCOMPLETE"
+            "ACTIVATION_CLEANUP_INCOMPLETE",
+            "REVIEW_BLOCKED",
+            "REVIEW_INCOMPLETE",
+            "REVIEW_STALE"
           ]
         },
         "exit": { "const": 1 }

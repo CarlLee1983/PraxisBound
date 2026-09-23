@@ -547,9 +547,9 @@ It checks, in order:
    outright, is `REVIEW_RECORD_COLLISION` (`failure`, nothing written).
 
 | Outcome               | Status  | Exit | Meaning                                                                                                         |
-| --------------------- | ------- | ---- | ----------------------------------------------------------------------------------------------------------------- |
-| `success`             | `pass`  | `0`  | A confirmation was written, or one already existed for this fingerprint with the same content.                 |
-| `failure`              | `fail`  | `1`  | A check failed, the human aborted, or the write itself failed; nothing new is written.                          |
+| --------------------- | ------- | ---- | --------------------------------------------------------------------------------------------------------------- |
+| `success`             | `pass`  | `0`  | A confirmation was written, or one already existed for this fingerprint with the same content.                  |
+| `failure`             | `fail`  | `1`  | A check failed, the human aborted, or the write itself failed; nothing new is written.                          |
 | `usage-error`         | `error` | `2`  | Invalid or missing argv, or stdin/stdout is not an interactive terminal (`REVIEW_CONFIRM_REQUIRES_TTY`).        |
 | `configuration-error` | `error` | `2`  | The manifest is invalid or its path is unsafe, or the batch `records/` path (or a parent segment) is a symlink. |
 | `ERROR`               | `error` | `3`  | An unexpected internal failure.                                                                                 |
@@ -569,6 +569,21 @@ Gate, review, DONE, or Work Item state (`ADR-014`, Story R7); a forged
 `authorized: true`, `approved`, or `confirmed` string anywhere in a source or
 existing record never creates or implies a confirmation, and never appears
 in this command's own output as a claim of authorization or completion.
+
+## `review preflight` and `review packet` outcomes
+
+`praxisbound review preflight <manifest> ...` (contract §9) and
+`praxisbound review packet <manifest> ...` (contract §10) share four new
+outcome values with the existing `success`/`failure`/`usage-error`/
+`configuration-error`/`ERROR` outcomes. This is Additive (contract §14): a new
+command group and four new outcomes, `schemaVersion` unchanged.
+
+| Outcome             | Status | Exit | Meaning                                                                                                        |
+| ------------------- | ------ | ---- | -------------------------------------------------------------------------------------------------------------- |
+| `REVIEW_READY`      | `pass` | `0`  | No blocking check failed; the batch may proceed to the next step. It never claims the batch is defect-free.    |
+| `REVIEW_BLOCKED`    | `fail` | `1`  | A blocking mechanical or semantic check failed; the batch must return to revision or an additional check.      |
+| `REVIEW_INCOMPLETE` | `fail` | `1`  | A required confirmation, response, or Semantic Report is missing or does not cover the batch.                  |
+| `REVIEW_STALE`      | `fail` | `1`  | A supplied fingerprint, revision, confirmation, or Semantic Report no longer matches the current working tree. |
 
 ## Static and execution trust boundary
 

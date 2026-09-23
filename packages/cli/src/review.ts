@@ -126,9 +126,31 @@ export function envelope(
   data?: Readonly<Record<string, ResultDataValue>>,
 ): ResultEnvelope;
 export function envelope(
+  status: "pass",
+  outcome: "REVIEW_READY",
+  exit: 0,
+  issues: readonly ResultIssue[],
+  data?: Readonly<Record<string, ResultDataValue>>,
+): ResultEnvelope;
+export function envelope(
+  status: "fail",
+  outcome: "REVIEW_BLOCKED" | "REVIEW_INCOMPLETE" | "REVIEW_STALE",
+  exit: 1,
+  issues: readonly ResultIssue[],
+  data?: Readonly<Record<string, ResultDataValue>>,
+): ResultEnvelope;
+export function envelope(
   status: "pass" | "fail" | "error",
   outcome:
-    "success" | "failure" | "usage-error" | "configuration-error" | "ERROR",
+    | "success"
+    | "failure"
+    | "usage-error"
+    | "configuration-error"
+    | "ERROR"
+    | "REVIEW_READY"
+    | "REVIEW_BLOCKED"
+    | "REVIEW_INCOMPLETE"
+    | "REVIEW_STALE",
   exit: 0 | 1 | 2 | 3,
   issues: readonly ResultIssue[],
   data?: Readonly<Record<string, ResultDataValue>>,

@@ -163,6 +163,10 @@ const resultMappings = [
   ["fail", "ACTIVATION_APPLY_FAILED_RECOVERED", 1],
   ["fail", "ACTIVATION_RECOVERY_INCOMPLETE", 1],
   ["fail", "ACTIVATION_CLEANUP_INCOMPLETE", 1],
+  ["pass", "REVIEW_READY", 0],
+  ["fail", "REVIEW_BLOCKED", 1],
+  ["fail", "REVIEW_INCOMPLETE", 1],
+  ["fail", "REVIEW_STALE", 1],
   ["error", "ERROR", 2],
   ["error", "ERROR", 3],
 ];
@@ -215,6 +219,8 @@ test("PB003-AC-002: the schema rejects contract-breaking envelopes", () => {
     { ...valid, path: "../outside" },
     { ...valid, unknown: true },
     { ...valid, issues: [{ code: "invalid-code", message: "bad" }] },
+    { ...valid, status: "fail", outcome: "REVIEW_READY", exit: 1 },
+    { ...valid, status: "pass", outcome: "REVIEW_STALE", exit: 0 },
   ];
 
   for (const value of invalid)
