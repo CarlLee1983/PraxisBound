@@ -4,10 +4,6 @@
   "manifestSha256": "4f12f97b8757116267e36da0fe666b8aa76fd8d4332947418d4a1ae351738a08",
   "reviewedSources": [
     {
-      "path": "specs/decisions/ADR-001-example.md",
-      "sha256": "8429f306dbe21c4979f4230bc4d9d169b8e22293632975d0cf186f7ac03b2208"
-    },
-    {
       "path": "specs/features/example/spec.md",
       "sha256": "4d77c414b66fa5c18a24a733c71da146859f2f131fd9b3094801cfe8f329becc"
     },

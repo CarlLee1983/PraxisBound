@@ -1,6 +1,6 @@
 {
   "schemaVersion": "1.0.0",
-  "reviewId": "00000000-0000-4000-8000-000000000001",
+  "reviewId": "not-a-uuid",
   "manifestSha256": "4f12f97b8757116267e36da0fe666b8aa76fd8d4332947418d4a1ae351738a08",
   "reviewedSources": [
     {

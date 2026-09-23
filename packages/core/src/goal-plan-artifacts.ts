@@ -1,23 +1,24 @@
 /**
- * Pure Goal Plan Manifest and Plan Coverage Review artifacts.
+ * Pure Goal Plan Declaration, Goal Plan Manifest, and Plan Coverage Review
+ * artifacts in the shape ForgePilot's `goal preflight` consumes
+ * (`specs/features/batch-review/schemas/goal-plan/`).
  *
- * The functions in this module receive raw bytes and caller-owned source facts.
- * They do not read a filesystem, process, clock, or network, and they never
- * reserialize a candidate artifact while validating it.  JSON is decoded only
- * to inspect the declared shape; every integrity decision hashes the bytes
- * supplied by the caller.
+ * The functions in this module receive raw bytes and caller-owned source
+ * facts. They do not read a filesystem, process, clock, or network, and they
+ * never reserialize a candidate artifact while validating it. JSON is decoded
+ * only to inspect the declared shape; every integrity decision hashes the
+ * bytes supplied by the caller. Artifact text — a reviewer name, a `storyRef`,
+ * or any other field — is data; it never changes a validation result (Story
+ * TST-029 R5).
  */
 
 import { sha256Hex } from "./review/fingerprint.js";
 
-/** The only Goal Plan Manifest schema currently supported by this module. */
-export const GOAL_PLAN_MANIFEST_SCHEMA_VERSION = 1 as const;
-
-/** The only Plan Coverage Review schema currently supported by this module. */
-export const PLAN_COVERAGE_REVIEW_SCHEMA_VERSION = 1 as const;
+/** The only Goal Plan artifact schema version this module supports. */
+export const GOAL_PLAN_SCHEMA_VERSION = "1.0.0" as const;
 
 export type GoalPlanArtifactClass =
-  "goal-plan-manifest" | "plan-coverage-review";
+  "goal-plan-declaration" | "goal-plan-manifest" | "plan-coverage-review";
 
 /** Stable public categories for rejected artifact input. */
 export type GoalPlanFailureCategory =
@@ -27,85 +28,109 @@ export type GoalPlanFailureCategory =
   | "digest-mismatch"
   | "approval-binding-mismatch";
 
-export interface GoalPlanNode {
-  readonly planNodeRef: string;
-  readonly storyRef: string;
-  readonly readinessContract: GoalPlanReadinessContract;
-  readonly [field: string]: unknown;
+export interface PlanIdentity {
+  readonly id: string;
+  readonly revision: number;
 }
 
-export interface GoalPlanReadinessContract {
-  readonly identity: string;
-  readonly sha256: string;
-}
-
-export interface GoalPlanEdge {
-  readonly from: string;
-  readonly to: string;
+export interface CoverageIndex {
+  readonly batchId: string;
+  readonly fingerprint: string;
 }
 
 export interface GoalPlanSourceDigest {
-  readonly identity: string;
+  readonly path: string;
   readonly sha256: string;
 }
 
+export interface GoalPlanDeclarationNode {
+  readonly nodeRef: string;
+  readonly storyRef: string;
+  readonly dependsOn: readonly string[];
+}
+
+export interface GoalPlanDeclaration {
+  readonly schemaVersion: typeof GOAL_PLAN_SCHEMA_VERSION;
+  readonly plan: PlanIdentity;
+  readonly nodes: readonly GoalPlanDeclarationNode[];
+}
+
+export interface GoalPlanManifestNode {
+  readonly nodeRef: string;
+  readonly storyRef: string;
+  readonly readinessContract: GoalPlanSourceDigest;
+  readonly dependsOn: readonly string[];
+}
+
 export interface GoalPlanManifest {
-  readonly schemaVersion: typeof GOAL_PLAN_MANIFEST_SCHEMA_VERSION;
-  readonly planId: string;
-  readonly revision: number;
-  readonly goalId?: string;
-  readonly title?: string;
-  readonly nodes: readonly GoalPlanNode[];
-  readonly edges: readonly GoalPlanEdge[];
+  readonly schemaVersion: typeof GOAL_PLAN_SCHEMA_VERSION;
+  readonly plan: PlanIdentity;
+  readonly declaration: GoalPlanSourceDigest;
+  readonly nodes: readonly GoalPlanManifestNode[];
   readonly reviewedSources: readonly GoalPlanSourceDigest[];
+  readonly coverageIndex: CoverageIndex;
+}
+
+export interface PlanCoverageReviewer {
+  readonly name: string;
+  readonly assurance: "self-asserted";
 }
 
 export interface PlanCoverageReview {
-  readonly schemaVersion: typeof PLAN_COVERAGE_REVIEW_SCHEMA_VERSION;
+  readonly schemaVersion: typeof GOAL_PLAN_SCHEMA_VERSION;
   readonly reviewId: string;
-  readonly manifestDigest: string;
-  readonly coverageIndexIdentity: string;
-  readonly conclusion: "approved";
-  readonly approvedBy: string;
-  readonly approvedAt: string;
+  readonly manifestSha256: string;
   readonly reviewedSources: readonly GoalPlanSourceDigest[];
+  readonly coverageIndex: CoverageIndex;
+  readonly conclusion: "approved";
+  readonly reviewer: PlanCoverageReviewer;
+  readonly reviewedAt: string;
 }
 
-/** A source identity and the exact bytes that identity names. */
+/** A repository-relative path and the exact bytes it names. */
 export interface GoalPlanSourceBytes {
-  readonly identity: string;
+  readonly path: string;
   readonly bytes: Uint8Array;
 }
 
-/** Caller-owned source facts accepted by the validators and exporter. */
+/** Caller-owned source facts accepted by the validators and exporters. */
 export type GoalPlanSourceFacts =
   | ReadonlyMap<string, Uint8Array>
   | readonly GoalPlanSourceBytes[]
   | Readonly<Record<string, Uint8Array>>;
 
+export interface GoalPlanDeclarationExportInput {
+  readonly planId: string;
+  readonly revision: number;
+  readonly nodes: readonly {
+    readonly nodeRef: string;
+    readonly storyRef: string;
+    readonly dependsOn: readonly string[];
+  }[];
+}
+
 export interface GoalPlanManifestExportInput {
   readonly planId: string;
   readonly revision: number;
-  readonly nodes: readonly GoalPlanNode[];
-  readonly edges: readonly GoalPlanEdge[];
+  readonly declaration: GoalPlanSourceBytes;
+  readonly nodes: readonly {
+    readonly nodeRef: string;
+    readonly storyRef: string;
+    readonly readiness: GoalPlanSourceBytes;
+    readonly dependsOn: readonly string[];
+  }[];
   readonly reviewedSources: readonly GoalPlanSourceBytes[];
-  readonly schemaVersion?: number;
-  readonly goalId?: string;
-  readonly title?: string;
+  readonly coverageIndex: CoverageIndex;
 }
 
 export interface PlanCoverageReviewExportInput {
   readonly manifestBytes: Uint8Array;
   readonly reviewId: string;
-  readonly coverageIndexIdentity: string;
   readonly conclusion: "approved";
-  readonly approvedBy: string;
-  readonly approvedAt: string;
-  readonly schemaVersion?: number;
-  /** Raw integrity facts; required when the referenced Manifest lists sources. */
+  readonly reviewer: PlanCoverageReviewer;
+  readonly reviewedAt: string;
+  /** Raw integrity facts for the Manifest's declaration, readiness, and reviewed sources. */
   readonly sources?: GoalPlanSourceFacts;
-  /** Defaults to the Manifest's reviewedSources when omitted. */
-  readonly reviewedSources?: readonly GoalPlanSourceDigest[];
 }
 
 export interface GoalPlanValidationFailure {
@@ -116,8 +141,15 @@ export interface GoalPlanValidationFailure {
   readonly path?: string;
   readonly expected?: string;
   readonly observed?: string;
-  /** A referenced Manifest failure preserved for Coverage Review diagnostics. */
+  /** A referenced artifact's failure category preserved for diagnostics. */
   readonly causeCategory?: GoalPlanFailureCategory;
+}
+
+export interface GoalPlanDeclarationValidationSuccess {
+  readonly ok: true;
+  readonly artifact: "goal-plan-declaration";
+  readonly declaration: GoalPlanDeclaration;
+  readonly declarationDigest: string;
 }
 
 export interface GoalPlanManifestValidationSuccess {
@@ -125,7 +157,6 @@ export interface GoalPlanManifestValidationSuccess {
   readonly artifact: "goal-plan-manifest";
   readonly manifest: GoalPlanManifest;
   readonly manifestDigest: string;
-  readonly sourceDigests: readonly GoalPlanSourceDigest[];
 }
 
 export interface PlanCoverageReviewValidationSuccess {
@@ -134,8 +165,10 @@ export interface PlanCoverageReviewValidationSuccess {
   readonly review: PlanCoverageReview;
   readonly reviewDigest: string;
   readonly manifestDigest: string;
-  readonly sourceDigests: readonly GoalPlanSourceDigest[];
 }
+
+export type GoalPlanDeclarationValidation =
+  GoalPlanDeclarationValidationSuccess | GoalPlanValidationFailure;
 
 export type GoalPlanManifestValidation =
   GoalPlanManifestValidationSuccess | GoalPlanValidationFailure;
@@ -143,13 +176,29 @@ export type GoalPlanManifestValidation =
 export type PlanCoverageReviewValidation =
   PlanCoverageReviewValidationSuccess | GoalPlanValidationFailure;
 
-const SHA256_PATTERN = /^[0-9a-f]{64}$/;
-const UTC_TIMESTAMP_PATTERN =
-  /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/;
-const MAX_NODES = 10000;
-const MAX_EDGES = 20000;
-const MAX_SOURCES = 10000;
-const MAX_ID_LENGTH = 4096;
+const SHA256_PATTERN = /^[a-f0-9]{64}$/;
+const BATCH_ID_PATTERN =
+  /^[A-Z][A-Z0-9]*(?:-[A-Z0-9]+)*-[0-9]+(?:-[a-z0-9]+(?:-[a-z0-9]+)*)?$/;
+const PLAN_OR_NODE_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
+// Copied verbatim from schemas/goal-plan/goal-plan-defs.schema.json `repoPath`.
+// The excluded control/format/bidi ranges are deliberate (repoPath schema pattern).
+/* eslint-disable no-control-regex */
+const REPO_PATH_PATTERN =
+  /^(?!\/)(?![A-Za-z]:)(?!.*(?:^|\/)\.\.?(?:\/|$))(?!.*\/\/)(?!.*\/$)(?!.*\\)(?!.*[\u0000-\u001f\u007f-\u009f\u2028\u2029\u200b-\u200f\u202a-\u202e\u2066-\u2069\ufeff]).+$/;
+const REVIEW_ID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+// The excluded control/format/bidi ranges are deliberate (reviewer.name schema pattern).
+const REVIEWER_NAME_PATTERN =
+  /^(?!.*[\u0000-\u001f\u007f-\u009f\u2028\u2029\u200b-\u200f\u202a-\u202e\u2066-\u2069\ufeff])\S(?:[\s\S]*\S)?$/;
+/* eslint-enable no-control-regex */
+const REVIEWED_AT_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
+
+const MAX_NODES = 1000;
+const MAX_DEPENDS_ON = 1000;
+const MAX_REVIEWED_SOURCES = 4000;
+const MAX_REPO_PATH_LENGTH = 1024;
+const MAX_BATCH_ID_LENGTH = 128;
+const MAX_REVIEWER_NAME_LENGTH = 256;
 /** Bound untrusted JSON before parsing opaque node metadata and review data. */
 const MAX_ARTIFACT_BYTES = 8 * 1024 * 1024;
 const MAX_JSON_DEPTH = 128;
@@ -167,35 +216,6 @@ interface ParsedJsonFailure {
 }
 
 type ParsedJsonResult = ParsedJson | ParsedJsonFailure;
-
-interface SourceEntryResult {
-  readonly ok: true;
-  readonly entries: readonly [string, Uint8Array][];
-}
-
-interface SourceEntryFailure {
-  readonly ok: false;
-  readonly message: string;
-  readonly path: string;
-}
-
-type SourceEntriesResult = SourceEntryResult | SourceEntryFailure;
-
-interface BindingResult {
-  readonly ok: true;
-  readonly bindings: readonly GoalPlanSourceDigest[];
-}
-
-interface BindingFailure {
-  readonly ok: false;
-  readonly category: "malformed-artifact" | "digest-mismatch";
-  readonly message: string;
-  readonly path: string;
-  readonly expected?: string;
-  readonly observed?: string;
-}
-
-type BindingReadResult = BindingResult | BindingFailure;
 
 function isRecord(value: unknown): value is JsonRecord {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -497,43 +517,11 @@ function parseJson(bytes: Uint8Array): ParsedJsonResult {
   }
 }
 
-function readSchemaVersion(
-  value: unknown,
-  artifact: GoalPlanArtifactClass,
-): GoalPlanValidationFailure | number {
-  if (!isRecord(value) || !("schemaVersion" in value))
-    return failure(
-      artifact,
-      "malformed-artifact",
-      "artifact is missing required field schemaVersion",
-      { path: "schemaVersion" },
-    );
-  if (typeof value.schemaVersion !== "number")
-    return failure(
-      artifact,
-      "malformed-artifact",
-      "artifact schemaVersion must be a number",
-      { path: "schemaVersion" },
-    );
-  return value.schemaVersion;
-}
-
-function schemaFailure(
-  artifact: GoalPlanArtifactClass,
-  schemaVersion: number,
-): GoalPlanValidationFailure {
-  return failure(
-    artifact,
-    "unsupported-schema",
-    `unsupported ${artifact} schemaVersion: ${String(schemaVersion)}`,
-    { path: "schemaVersion", expected: "1", observed: String(schemaVersion) },
-  );
-}
-
 function rejectUnknownFields(
+  artifact: GoalPlanArtifactClass,
   value: JsonRecord,
   allowed: ReadonlySet<string>,
-  artifact: GoalPlanArtifactClass,
+  path = "",
 ): GoalPlanValidationFailure | undefined {
   for (const field of Object.keys(value)) {
     if (!allowed.has(field))
@@ -541,532 +529,63 @@ function rejectUnknownFields(
         artifact,
         "malformed-artifact",
         `${artifact} declares an unknown field: ${field}`,
-        { path: field },
+        { path: path === "" ? field : `${path}.${field}` },
       );
   }
   return undefined;
 }
 
-function readOptionalManifestText(
-  value: JsonRecord,
-  field: "planId" | "goalId" | "title",
-): GoalPlanValidationFailure | undefined {
-  if (!(field in value)) return undefined;
-  if (typeof value[field] !== "string" || value[field].trim().length === 0)
-    return failure(
-      "goal-plan-manifest",
-      "malformed-artifact",
-      `Manifest ${field} must be a non-empty string when present`,
-      { path: field },
-    );
-  if (value[field].length > MAX_ID_LENGTH)
-    return failure(
-      "goal-plan-manifest",
-      "malformed-artifact",
-      `Manifest ${field} is too long`,
-      { path: field },
-    );
-  return undefined;
-}
-
-function rejectUnknownExportFields(
-  input: JsonRecord,
-  allowed: ReadonlySet<string>,
-  artifact: GoalPlanArtifactClass,
-): void {
-  for (const field of Object.keys(input)) {
-    if (!allowed.has(field))
-      throw exportFailure(
-        `${artifact} export input declares an unknown field: ${field}`,
-        "malformed-artifact",
-      );
-  }
-}
-
-function readSourceEntries(value: GoalPlanSourceFacts): SourceEntriesResult {
-  if (value instanceof Map) {
-    const entries: [string, Uint8Array][] = [];
-    for (const [identity, bytes] of value.entries()) {
-      if (typeof identity !== "string")
-        return {
-          ok: false,
-          message: "source identity must be a string",
-          path: "sources",
-        };
-      if (!isUint8Array(bytes))
-        return {
-          ok: false,
-          message: `source bytes for ${identity} must be a Uint8Array`,
-          path: `sources.${identity}`,
-        };
-      entries.push([identity, bytes]);
-    }
-    return { ok: true, entries };
-  }
-
-  if (Array.isArray(value)) {
-    const entries: [string, Uint8Array][] = [];
-    for (const [index, source] of value.entries()) {
-      if (!isRecord(source) || typeof source.identity !== "string")
-        return {
-          ok: false,
-          message: "source entry must declare a string identity",
-          path: `sources[${index}].identity`,
-        };
-      if (!isUint8Array(source.bytes))
-        return {
-          ok: false,
-          message: "source entry bytes must be a Uint8Array",
-          path: `sources[${index}].bytes`,
-        };
-      entries.push([source.identity, source.bytes]);
-    }
-    return { ok: true, entries };
-  }
-
-  if (isRecord(value)) {
-    const entries: [string, Uint8Array][] = [];
-    for (const [identity, bytes] of Object.entries(value)) {
-      if (!isUint8Array(bytes))
-        return {
-          ok: false,
-          message: `source bytes for ${identity} must be a Uint8Array`,
-          path: `sources.${identity}`,
-        };
-      entries.push([identity, bytes]);
-    }
-    return { ok: true, entries };
-  }
-
-  return {
-    ok: false,
-    message: "source facts must be a Map, an array, or an object",
-    path: "sources",
-  };
-}
-
-function verifySourceDigests(
-  bindings: readonly GoalPlanSourceDigest[],
-  sourceFacts: GoalPlanSourceFacts,
+function readSchemaVersion(
+  value: unknown,
   artifact: GoalPlanArtifactClass,
 ): GoalPlanValidationFailure | undefined {
-  const entriesResult = readSourceEntries(sourceFacts);
-  if (!entriesResult.ok)
-    return failure(artifact, "malformed-artifact", entriesResult.message, {
-      path: entriesResult.path,
-    });
-
-  const byIdentity = new Map<string, Uint8Array>();
-  for (const [identity, bytes] of entriesResult.entries) {
-    if (byIdentity.has(identity))
-      return failure(
-        artifact,
-        "malformed-artifact",
-        `source facts repeat identity: ${identity}`,
-        { path: "sources" },
-      );
-    byIdentity.set(identity, bytes);
-  }
-
-  for (const [index, binding] of bindings.entries()) {
-    const bytes = byIdentity.get(binding.identity);
-    if (bytes === undefined)
-      return failure(
-        artifact,
-        "digest-mismatch",
-        `reviewed source is missing: ${binding.identity}`,
-        {
-          path: `reviewedSources[${index}].sha256`,
-          expected: binding.sha256,
-          observed: "missing",
-        },
-      );
-    const observed = sha256Hex(bytes);
-    if (observed !== binding.sha256)
-      return failure(
-        artifact,
-        "digest-mismatch",
-        `reviewed source digest mismatch: ${binding.identity}`,
-        {
-          path: `reviewedSources[${index}].sha256`,
-          expected: binding.sha256,
-          observed,
-        },
-      );
-  }
-
+  if (
+    !isRecord(value) ||
+    typeof value.schemaVersion !== "string" ||
+    value.schemaVersion !== GOAL_PLAN_SCHEMA_VERSION
+  )
+    return failure(
+      artifact,
+      "unsupported-schema",
+      `${artifact} schemaVersion must be ${GOAL_PLAN_SCHEMA_VERSION}`,
+      {
+        path: "schemaVersion",
+        expected: GOAL_PLAN_SCHEMA_VERSION,
+        observed: isRecord(value) ? String(value.schemaVersion) : "missing",
+      },
+    );
   return undefined;
 }
 
-function readBindings(
+function readPlanIdentity(
+  artifact: GoalPlanArtifactClass,
   value: unknown,
-  field = "reviewedSources",
-): BindingReadResult {
-  if (!Array.isArray(value))
-    return {
-      ok: false,
-      category: "malformed-artifact",
-      message: `${field} must be an array`,
-      path: field,
-    };
-  if (value.length > MAX_SOURCES)
-    return {
-      ok: false,
-      category: "malformed-artifact",
-      message: `${field} exceeds the supported source count`,
-      path: field,
-    };
-
-  const seen = new Set<string>();
-  const bindings: GoalPlanSourceDigest[] = [];
-  for (const [index, entry] of value.entries()) {
-    if (!isRecord(entry))
-      return {
-        ok: false,
-        category: "malformed-artifact",
-        message: "reviewed source entry must be an object",
-        path: `${field}[${index}]`,
-      };
-    for (const entryField of Object.keys(entry)) {
-      if (entryField !== "identity" && entryField !== "sha256")
-        return {
-          ok: false,
-          category: "malformed-artifact",
-          message: `${field}[${index}] declares an unknown field: ${entryField}`,
-          path: `${field}[${index}].${entryField}`,
-        };
-    }
-    if (
-      typeof entry.identity !== "string" ||
-      entry.identity.trim().length === 0
-    )
-      return {
-        ok: false,
-        category: "malformed-artifact",
-        message: "reviewed source identity must be a non-empty string",
-        path: `${field}[${index}].identity`,
-      };
-    if (entry.identity.length > MAX_ID_LENGTH)
-      return {
-        ok: false,
-        category: "malformed-artifact",
-        message: "reviewed source identity is too long",
-        path: `${field}[${index}].identity`,
-      };
-    if (seen.has(entry.identity))
-      return {
-        ok: false,
-        category: "malformed-artifact",
-        message: `reviewed source identity is duplicated: ${entry.identity}`,
-        path: `${field}[${index}].identity`,
-      };
-    seen.add(entry.identity);
-    if (typeof entry.sha256 !== "string" || !SHA256_PATTERN.test(entry.sha256))
-      return {
-        ok: false,
-        category: "malformed-artifact",
-        message: "reviewed source sha256 must be lowercase hexadecimal SHA-256",
-        path: `${field}[${index}].sha256`,
-      };
-    bindings.push({ identity: entry.identity, sha256: entry.sha256 });
-  }
-
-  return { ok: true, bindings };
-}
-
-function readNodes(value: unknown):
-  | { readonly ok: true; readonly nodes: readonly GoalPlanNode[] }
-  | {
-      readonly ok: false;
-      readonly category: "malformed-artifact" | "invalid-topology";
-      readonly message: string;
-      readonly path: string;
-    } {
-  if (!Array.isArray(value))
-    return {
-      ok: false,
-      category: "malformed-artifact",
-      message: "nodes must be an array",
-      path: "nodes",
-    };
-  if (value.length > MAX_NODES)
-    return {
-      ok: false,
-      category: "malformed-artifact",
-      message: "nodes exceeds the supported count",
-      path: "nodes",
-    };
-
-  const seen = new Set<string>();
-  const nodes: GoalPlanNode[] = [];
-  for (const [index, valueEntry] of value.entries()) {
-    if (!isRecord(valueEntry))
-      return {
-        ok: false,
-        category: "malformed-artifact",
-        message: "plan node must be an object",
-        path: `nodes[${index}]`,
-      };
-    if (!("planNodeRef" in valueEntry))
-      return {
-        ok: false,
-        category: "invalid-topology",
-        message: "plan node is missing planNodeRef",
-        path: `nodes[${index}].planNodeRef`,
-      };
-    if (
-      typeof valueEntry.planNodeRef !== "string" ||
-      valueEntry.planNodeRef.trim().length === 0
-    )
-      return {
-        ok: false,
-        category: "malformed-artifact",
-        message: "plan node planNodeRef must be a non-empty string",
-        path: `nodes[${index}].planNodeRef`,
-      };
-    if (valueEntry.planNodeRef.length > MAX_ID_LENGTH)
-      return {
-        ok: false,
-        category: "malformed-artifact",
-        message: "plan node planNodeRef is too long",
-        path: `nodes[${index}].planNodeRef`,
-      };
-    if (seen.has(valueEntry.planNodeRef))
-      return {
-        ok: false,
-        category: "invalid-topology",
-        message: `plan node reference is duplicated: ${valueEntry.planNodeRef}`,
-        path: `nodes[${index}].planNodeRef`,
-      };
-    seen.add(valueEntry.planNodeRef);
-
-    if (
-      typeof valueEntry.storyRef !== "string" ||
-      valueEntry.storyRef.trim().length === 0
-    )
-      return {
-        ok: false,
-        category: "malformed-artifact",
-        message: "plan node storyRef must be a non-empty string",
-        path: `nodes[${index}].storyRef`,
-      };
-    if (valueEntry.storyRef.length > MAX_ID_LENGTH)
-      return {
-        ok: false,
-        category: "malformed-artifact",
-        message: "plan node storyRef is too long",
-        path: `nodes[${index}].storyRef`,
-      };
-
-    const readinessContract = valueEntry.readinessContract;
-    if (!isRecord(readinessContract))
-      return {
-        ok: false,
-        category: "malformed-artifact",
-        message: "plan node readinessContract must be an object",
-        path: `nodes[${index}].readinessContract`,
-      };
-    const unknownReadinessField = Object.keys(readinessContract).find(
-      (field) => field !== "identity" && field !== "sha256",
-    );
-    if (unknownReadinessField !== undefined)
-      return {
-        ok: false,
-        category: "malformed-artifact",
-        message: `readinessContract declares an unknown field: ${unknownReadinessField}`,
-        path: `nodes[${index}].readinessContract.${unknownReadinessField}`,
-      };
-    if (
-      typeof readinessContract.identity !== "string" ||
-      readinessContract.identity.trim().length === 0 ||
-      readinessContract.identity.length > MAX_ID_LENGTH
-    )
-      return {
-        ok: false,
-        category: "malformed-artifact",
-        message:
-          "readinessContract identity must be a non-empty bounded string",
-        path: `nodes[${index}].readinessContract.identity`,
-      };
-    if (
-      typeof readinessContract.sha256 !== "string" ||
-      !SHA256_PATTERN.test(readinessContract.sha256)
-    )
-      return {
-        ok: false,
-        category: "malformed-artifact",
-        message:
-          "readinessContract sha256 must be lowercase hexadecimal SHA-256",
-        path: `nodes[${index}].readinessContract.sha256`,
-      };
-    nodes.push(valueEntry as GoalPlanNode);
-  }
-  return { ok: true, nodes };
-}
-
-function readEdges(
-  value: unknown,
-  nodeIds: ReadonlySet<string>,
+  path = "plan",
 ):
-  | { readonly ok: true; readonly edges: readonly GoalPlanEdge[] }
-  | {
-      readonly ok: false;
-      readonly category: "malformed-artifact" | "invalid-topology";
-      readonly message: string;
-      readonly path: string;
-    } {
-  if (!Array.isArray(value))
-    return {
-      ok: false,
-      category: "malformed-artifact",
-      message: "edges must be an array",
-      path: "edges",
-    };
-  if (value.length > MAX_EDGES)
-    return {
-      ok: false,
-      category: "malformed-artifact",
-      message: "edges exceeds the supported count",
-      path: "edges",
-    };
-
-  const outgoing = new Map<string, Set<string>>();
-  const indegree = new Map<string, number>();
-  for (const id of nodeIds) {
-    outgoing.set(id, new Set());
-    indegree.set(id, 0);
-  }
-
-  const edges: GoalPlanEdge[] = [];
-  for (const [index, valueEntry] of value.entries()) {
-    if (!isRecord(valueEntry))
-      return {
-        ok: false,
-        category: "malformed-artifact",
-        message: "plan edge must be an object",
-        path: `edges[${index}]`,
-      };
-    const unknownEdgeField = Object.keys(valueEntry).find(
-      (field) => field !== "from" && field !== "to",
-    );
-    if (unknownEdgeField !== undefined)
-      return {
-        ok: false,
-        category: "malformed-artifact",
-        message: `plan edge declares an unknown field: ${unknownEdgeField}`,
-        path: `edges[${index}].${unknownEdgeField}`,
-      };
-    if (
-      typeof valueEntry.from !== "string" ||
-      valueEntry.from.trim().length === 0
-    )
-      return {
-        ok: false,
-        category: "invalid-topology",
-        message: "plan edge is missing its from node reference",
-        path: `edges[${index}].from`,
-      };
-    if (typeof valueEntry.to !== "string" || valueEntry.to.trim().length === 0)
-      return {
-        ok: false,
-        category: "invalid-topology",
-        message: "plan edge is missing its to node reference",
-        path: `edges[${index}].to`,
-      };
-    if (!nodeIds.has(valueEntry.from) || !nodeIds.has(valueEntry.to))
-      return {
-        ok: false,
-        category: "invalid-topology",
-        message: `plan edge references an unknown node: ${valueEntry.from} -> ${valueEntry.to}`,
-        path: `edges[${index}]`,
-      };
-    if (valueEntry.from === valueEntry.to)
-      return {
-        ok: false,
-        category: "invalid-topology",
-        message: `plan edge is a self-edge: ${valueEntry.from}`,
-        path: `edges[${index}]`,
-      };
-
-    const children = outgoing.get(valueEntry.from) as Set<string>;
-    if (children.has(valueEntry.to))
-      return {
-        ok: false,
-        category: "invalid-topology",
-        message: `plan edge is duplicated: ${valueEntry.from} -> ${valueEntry.to}`,
-        path: `edges[${index}]`,
-      };
-    children.add(valueEntry.to);
-    indegree.set(valueEntry.to, (indegree.get(valueEntry.to) ?? 0) + 1);
-    edges.push({ from: valueEntry.from, to: valueEntry.to });
-  }
-
-  const ready: string[] = [];
-  for (const [id, degree] of indegree.entries()) {
-    if (degree === 0) ready.push(id);
-  }
-  let readyIndex = 0;
-  let visited = 0;
-  while (readyIndex < ready.length) {
-    const id = ready[readyIndex] as string;
-    readyIndex += 1;
-    visited += 1;
-    for (const child of outgoing.get(id) ?? []) {
-      const nextDegree = (indegree.get(child) ?? 0) - 1;
-      indegree.set(child, nextDegree);
-      if (nextDegree === 0) ready.push(child);
-    }
-  }
-  if (visited !== nodeIds.size)
-    return {
-      ok: false,
-      category: "invalid-topology",
-      message: "plan edges contain a cycle",
-      path: "edges",
-    };
-
-  return { ok: true, edges };
-}
-
-function readManifestShape(value: unknown):
-  | {
-      readonly ok: true;
-      readonly manifest: GoalPlanManifest;
-      readonly sourceDigests: readonly GoalPlanSourceDigest[];
-    }
+  | { readonly ok: true; readonly plan: PlanIdentity }
   | GoalPlanValidationFailure {
   if (!isRecord(value))
     return failure(
-      "goal-plan-manifest",
+      artifact,
       "malformed-artifact",
-      "Goal Plan Manifest must be a JSON object",
+      `${path} must be an object`,
+      {
+        path,
+      },
     );
-
-  const unknownFieldFailure = rejectUnknownFields(
+  const unknown = rejectUnknownFields(
+    artifact,
     value,
-    new Set([
-      "schemaVersion",
-      "planId",
-      "revision",
-      "goalId",
-      "title",
-      "nodes",
-      "edges",
-      "reviewedSources",
-    ]),
-    "goal-plan-manifest",
+    new Set(["id", "revision"]),
+    path,
   );
-  if (unknownFieldFailure !== undefined) return unknownFieldFailure;
-  if (
-    typeof value.planId !== "string" ||
-    value.planId.trim().length === 0 ||
-    value.planId.length > MAX_ID_LENGTH
-  )
+  if (unknown !== undefined) return unknown;
+  if (typeof value.id !== "string" || !PLAN_OR_NODE_ID_PATTERN.test(value.id))
     return failure(
-      "goal-plan-manifest",
+      artifact,
       "malformed-artifact",
-      "Manifest planId must be a non-empty bounded string",
-      { path: "planId" },
+      `${path}.id must match the plan identity pattern`,
+      { path: `${path}.id` },
     );
   if (
     typeof value.revision !== "number" ||
@@ -1074,284 +593,739 @@ function readManifestShape(value: unknown):
     value.revision < 1
   )
     return failure(
-      "goal-plan-manifest",
+      artifact,
       "malformed-artifact",
-      "Manifest revision must be a positive safe integer",
-      { path: "revision" },
+      `${path}.revision must be a positive safe integer`,
+      { path: `${path}.revision` },
     );
-  for (const field of ["goalId", "title"] as const) {
-    const optionalFailure = readOptionalManifestText(value, field);
-    if (optionalFailure !== undefined) return optionalFailure;
-  }
-
-  const nodesResult = readNodes(value.nodes);
-  if (!nodesResult.ok)
-    return failure(
-      "goal-plan-manifest",
-      nodesResult.category,
-      nodesResult.message,
-      {
-        path: nodesResult.path,
-      },
-    );
-  const edgesResult = readEdges(
-    value.edges,
-    new Set(nodesResult.nodes.map((node) => node.planNodeRef)),
-  );
-  if (!edgesResult.ok)
-    return failure(
-      "goal-plan-manifest",
-      edgesResult.category,
-      edgesResult.message,
-      {
-        path: edgesResult.path,
-      },
-    );
-  const bindingsResult = readBindings(value.reviewedSources);
-  if (!bindingsResult.ok)
-    return failure(
-      "goal-plan-manifest",
-      bindingsResult.category,
-      bindingsResult.message,
-      {
-        path: bindingsResult.path,
-        ...(bindingsResult.expected === undefined
-          ? {}
-          : { expected: bindingsResult.expected }),
-        ...(bindingsResult.observed === undefined
-          ? {}
-          : { observed: bindingsResult.observed }),
-      },
-    );
-
-  const sourcesByIdentity = new Map(
-    bindingsResult.bindings.map((source) => [source.identity, source.sha256]),
-  );
-  for (const [index, node] of nodesResult.nodes.entries()) {
-    const sourceDigest = sourcesByIdentity.get(node.readinessContract.identity);
-    if (sourceDigest === undefined)
-      return failure(
-        "goal-plan-manifest",
-        "digest-mismatch",
-        `readiness contract source is not declared: ${node.readinessContract.identity}`,
-        {
-          path: `nodes[${index}].readinessContract.identity`,
-          expected: node.readinessContract.sha256,
-          observed: "missing source binding",
-        },
-      );
-    if (sourceDigest !== node.readinessContract.sha256)
-      return failure(
-        "goal-plan-manifest",
-        "digest-mismatch",
-        `readiness contract digest does not match its source binding: ${node.readinessContract.identity}`,
-        {
-          path: `nodes[${index}].readinessContract.sha256`,
-          expected: node.readinessContract.sha256,
-          observed: sourceDigest,
-        },
-      );
-  }
-
-  const manifest = {
-    ...value,
-    schemaVersion: GOAL_PLAN_MANIFEST_SCHEMA_VERSION,
-    planId: value.planId,
-    revision: value.revision,
-    nodes: nodesResult.nodes,
-    edges: edgesResult.edges,
-    reviewedSources: bindingsResult.bindings,
-  } as GoalPlanManifest;
-  return {
-    ok: true,
-    manifest,
-    sourceDigests: bindingsResult.bindings,
-  };
+  return { ok: true, plan: { id: value.id, revision: value.revision } };
 }
 
-function isCanonicalUtcTimestamp(value: string): boolean {
-  if (!UTC_TIMESTAMP_PATTERN.test(value)) return false;
-  const timestamp = Date.parse(value);
-  if (!Number.isFinite(timestamp)) return false;
-  const normalized = new Date(timestamp).toISOString();
-  return normalized === value || normalized.replace(".000Z", "Z") === value;
+function readRepoPath(value: unknown): value is string {
+  return (
+    typeof value === "string" &&
+    value.length > 0 &&
+    value.length <= MAX_REPO_PATH_LENGTH &&
+    REPO_PATH_PATTERN.test(value)
+  );
 }
 
-function readReviewShape(value: unknown):
-  | {
-      readonly ok: true;
-      readonly review: PlanCoverageReview;
-      readonly sourceDigests: readonly GoalPlanSourceDigest[];
-    }
+function readSourceDigest(
+  artifact: GoalPlanArtifactClass,
+  value: unknown,
+  path: string,
+):
+  | { readonly ok: true; readonly binding: GoalPlanSourceDigest }
   | GoalPlanValidationFailure {
   if (!isRecord(value))
     return failure(
-      "plan-coverage-review",
+      artifact,
       "malformed-artifact",
-      "Plan Coverage Review must be a JSON object",
+      `${path} must be an object`,
+      {
+        path,
+      },
     );
-  const unknownFieldFailure = rejectUnknownFields(
+  const unknown = rejectUnknownFields(
+    artifact,
+    value,
+    new Set(["path", "sha256"]),
+    path,
+  );
+  if (unknown !== undefined) return unknown;
+  if (!readRepoPath(value.path))
+    return failure(
+      artifact,
+      "malformed-artifact",
+      `${path}.path must be a valid repository-relative path`,
+      { path: `${path}.path` },
+    );
+  if (typeof value.sha256 !== "string" || !SHA256_PATTERN.test(value.sha256))
+    return failure(
+      artifact,
+      "malformed-artifact",
+      `${path}.sha256 must be lowercase hexadecimal SHA-256`,
+      { path: `${path}.sha256` },
+    );
+  return { ok: true, binding: { path: value.path, sha256: value.sha256 } };
+}
+
+function readCoverageIndex(
+  artifact: GoalPlanArtifactClass,
+  value: unknown,
+  path = "coverageIndex",
+):
+  | { readonly ok: true; readonly coverageIndex: CoverageIndex }
+  | GoalPlanValidationFailure {
+  if (!isRecord(value))
+    return failure(
+      artifact,
+      "malformed-artifact",
+      `${path} must be an object`,
+      {
+        path,
+      },
+    );
+  const unknown = rejectUnknownFields(
+    artifact,
+    value,
+    new Set(["batchId", "fingerprint"]),
+    path,
+  );
+  if (unknown !== undefined) return unknown;
+  if (
+    typeof value.batchId !== "string" ||
+    value.batchId.length > MAX_BATCH_ID_LENGTH ||
+    !BATCH_ID_PATTERN.test(value.batchId)
+  )
+    return failure(
+      artifact,
+      "malformed-artifact",
+      `${path}.batchId must be a valid Batch identity`,
+      { path: `${path}.batchId` },
+    );
+  if (
+    typeof value.fingerprint !== "string" ||
+    !SHA256_PATTERN.test(value.fingerprint)
+  )
+    return failure(
+      artifact,
+      "malformed-artifact",
+      `${path}.fingerprint must be lowercase hexadecimal SHA-256`,
+      { path: `${path}.fingerprint` },
+    );
+  return {
+    ok: true,
+    coverageIndex: { batchId: value.batchId, fingerprint: value.fingerprint },
+  };
+}
+
+function readReviewedSources(
+  artifact: GoalPlanArtifactClass,
+  value: unknown,
+  path = "reviewedSources",
+):
+  | { readonly ok: true; readonly bindings: readonly GoalPlanSourceDigest[] }
+  | GoalPlanValidationFailure {
+  if (!Array.isArray(value))
+    return failure(artifact, "malformed-artifact", `${path} must be an array`, {
+      path,
+    });
+  if (value.length > MAX_REVIEWED_SOURCES)
+    return failure(
+      artifact,
+      "malformed-artifact",
+      `${path} exceeds the supported source count`,
+      { path },
+    );
+  const bindings: GoalPlanSourceDigest[] = [];
+  let previous: string | undefined;
+  const seen = new Set<string>();
+  for (const [index, entry] of value.entries()) {
+    const result = readSourceDigest(artifact, entry, `${path}[${index}]`);
+    if (!result.ok) return result;
+    if (seen.has(result.binding.path))
+      return failure(
+        artifact,
+        "malformed-artifact",
+        `${path} repeats path: ${result.binding.path}`,
+        { path: `${path}[${index}].path` },
+      );
+    seen.add(result.binding.path);
+    if (previous !== undefined && previous >= result.binding.path)
+      return failure(
+        artifact,
+        "malformed-artifact",
+        `${path} must be sorted by UTF-8 path bytes`,
+        { path: `${path}[${index}].path` },
+      );
+    previous = result.binding.path;
+    bindings.push(result.binding);
+  }
+  return { ok: true, bindings };
+}
+
+function readDependsOn(
+  artifact: GoalPlanArtifactClass,
+  value: unknown,
+  path: string,
+):
+  | { readonly ok: true; readonly dependsOn: readonly string[] }
+  | GoalPlanValidationFailure {
+  if (!Array.isArray(value))
+    return failure(artifact, "malformed-artifact", `${path} must be an array`, {
+      path,
+    });
+  if (value.length > MAX_DEPENDS_ON)
+    return failure(
+      artifact,
+      "malformed-artifact",
+      `${path} exceeds the supported dependency count`,
+      { path },
+    );
+  const dependsOn: string[] = [];
+  const seen = new Set<string>();
+  let previous: string | undefined;
+  for (const [index, entry] of value.entries()) {
+    if (typeof entry !== "string" || !PLAN_OR_NODE_ID_PATTERN.test(entry))
+      return failure(
+        artifact,
+        "malformed-artifact",
+        `${path}[${index}] must be a valid node reference`,
+        { path: `${path}[${index}]` },
+      );
+    if (seen.has(entry))
+      return failure(
+        artifact,
+        "malformed-artifact",
+        `${path} repeats a dependency: ${entry}`,
+        { path: `${path}[${index}]` },
+      );
+    seen.add(entry);
+    if (previous !== undefined && previous >= entry)
+      return failure(
+        artifact,
+        "malformed-artifact",
+        `${path} must be sorted by UTF-8 node reference`,
+        { path: `${path}[${index}]` },
+      );
+    previous = entry;
+    dependsOn.push(entry);
+  }
+  return { ok: true, dependsOn };
+}
+
+interface TopologyNode {
+  readonly nodeRef: string;
+  readonly dependsOn: readonly string[];
+}
+
+function validateTopology(
+  artifact: GoalPlanArtifactClass,
+  nodes: readonly TopologyNode[],
+): GoalPlanValidationFailure | undefined {
+  const known = new Set(nodes.map((node) => node.nodeRef));
+  const colors = new Map<string, 1 | 2>();
+  const graph = new Map<string, string[]>();
+  for (const node of nodes) {
+    for (const dependency of node.dependsOn) {
+      if (!known.has(dependency))
+        return failure(
+          artifact,
+          "invalid-topology",
+          `node ${node.nodeRef} depends on an unknown node: ${dependency}`,
+        );
+      if (dependency === node.nodeRef)
+        return failure(
+          artifact,
+          "invalid-topology",
+          `node ${node.nodeRef} depends on itself`,
+        );
+      const outgoing = graph.get(dependency) ?? [];
+      outgoing.push(node.nodeRef);
+      graph.set(dependency, outgoing);
+    }
+  }
+  let cyclic = false;
+  const visit = (id: string): boolean => {
+    colors.set(id, 1);
+    for (const next of graph.get(id) ?? []) {
+      if (colors.get(next) === 1) return true;
+      if (colors.get(next) === undefined && visit(next)) return true;
+    }
+    colors.set(id, 2);
+    return false;
+  };
+  for (const id of known) {
+    if (colors.get(id) === undefined && visit(id)) {
+      cyclic = true;
+      break;
+    }
+  }
+  if (cyclic)
+    return failure(artifact, "invalid-topology", "topology contains a cycle");
+  return undefined;
+}
+
+function readDeclarationShape(
+  value: unknown,
+):
+  | { readonly ok: true; readonly declaration: GoalPlanDeclaration }
+  | GoalPlanValidationFailure {
+  const artifact: GoalPlanArtifactClass = "goal-plan-declaration";
+  if (!isRecord(value))
+    return failure(
+      artifact,
+      "malformed-artifact",
+      "Declaration must be a JSON object",
+    );
+  const unknownTop = rejectUnknownFields(
+    artifact,
+    value,
+    new Set(["schemaVersion", "plan", "nodes"]),
+  );
+  if (unknownTop !== undefined) return unknownTop;
+  const planResult = readPlanIdentity(artifact, value.plan);
+  if (!planResult.ok) return planResult;
+
+  if (!Array.isArray(value.nodes) || value.nodes.length === 0)
+    return failure(
+      artifact,
+      "malformed-artifact",
+      "Declaration nodes must be a non-empty array",
+      {
+        path: "nodes",
+      },
+    );
+  if (value.nodes.length > MAX_NODES)
+    return failure(
+      artifact,
+      "malformed-artifact",
+      "Declaration nodes exceeds the supported count",
+      {
+        path: "nodes",
+      },
+    );
+
+  const nodes: GoalPlanDeclarationNode[] = [];
+  const seenRefs = new Set<string>();
+  for (const [index, entry] of value.nodes.entries()) {
+    const nodePath = `nodes[${index}]`;
+    if (!isRecord(entry))
+      return failure(
+        artifact,
+        "malformed-artifact",
+        `${nodePath} must be an object`,
+        {
+          path: nodePath,
+        },
+      );
+    const unknownNode = rejectUnknownFields(
+      artifact,
+      entry,
+      new Set(["nodeRef", "storyRef", "dependsOn"]),
+      nodePath,
+    );
+    if (unknownNode !== undefined) return unknownNode;
+    if (
+      typeof entry.nodeRef !== "string" ||
+      !PLAN_OR_NODE_ID_PATTERN.test(entry.nodeRef)
+    )
+      return failure(
+        artifact,
+        "malformed-artifact",
+        `${nodePath}.nodeRef is invalid`,
+        {
+          path: `${nodePath}.nodeRef`,
+        },
+      );
+    if (seenRefs.has(entry.nodeRef))
+      return failure(
+        artifact,
+        "invalid-topology",
+        `duplicate plan node reference: ${entry.nodeRef}`,
+        { path: `${nodePath}.nodeRef` },
+      );
+    seenRefs.add(entry.nodeRef);
+    if (!readRepoPath(entry.storyRef))
+      return failure(
+        artifact,
+        "malformed-artifact",
+        `${nodePath}.storyRef is invalid`,
+        {
+          path: `${nodePath}.storyRef`,
+        },
+      );
+    const dependsOnResult = readDependsOn(
+      artifact,
+      entry.dependsOn,
+      `${nodePath}.dependsOn`,
+    );
+    if (!dependsOnResult.ok) return dependsOnResult;
+    nodes.push({
+      nodeRef: entry.nodeRef,
+      storyRef: entry.storyRef,
+      dependsOn: dependsOnResult.dependsOn,
+    });
+  }
+
+  const topologyFailure = validateTopology(artifact, nodes);
+  if (topologyFailure !== undefined) return topologyFailure;
+
+  return {
+    ok: true,
+    declaration: {
+      schemaVersion: GOAL_PLAN_SCHEMA_VERSION,
+      plan: planResult.plan,
+      nodes,
+    },
+  };
+}
+
+function validateDeclarationStructure(
+  bytes: Uint8Array,
+):
+  | { readonly ok: true; readonly declaration: GoalPlanDeclaration }
+  | GoalPlanValidationFailure {
+  const parsed = parseJson(bytes);
+  if (!parsed.ok)
+    return failure(
+      "goal-plan-declaration",
+      "malformed-artifact",
+      parsed.message,
+    );
+  const schemaFailure = readSchemaVersion(
+    parsed.value,
+    "goal-plan-declaration",
+  );
+  if (schemaFailure !== undefined) return schemaFailure;
+  return readDeclarationShape(parsed.value);
+}
+
+export function validateGoalPlanDeclaration(
+  declarationBytes: Uint8Array,
+): GoalPlanDeclarationValidation {
+  try {
+    const snapshot = snapshotUint8Array(declarationBytes);
+    if (!snapshot.ok)
+      return failure(
+        "goal-plan-declaration",
+        "malformed-artifact",
+        snapshot.reason === "too-large"
+          ? "artifact bytes exceed the supported size"
+          : "artifact bytes must be a Uint8Array",
+      );
+    const structure = validateDeclarationStructure(snapshot.bytes);
+    if (!structure.ok) return structure;
+    return {
+      ok: true,
+      artifact: "goal-plan-declaration",
+      declaration: structure.declaration,
+      declarationDigest: sha256Hex(snapshot.bytes),
+    };
+  } catch {
+    return failure(
+      "goal-plan-declaration",
+      "malformed-artifact",
+      "Declaration bytes could not be read",
+    );
+  }
+}
+
+function readManifestShape(
+  value: unknown,
+):
+  | { readonly ok: true; readonly manifest: GoalPlanManifest }
+  | GoalPlanValidationFailure {
+  const artifact: GoalPlanArtifactClass = "goal-plan-manifest";
+  if (!isRecord(value))
+    return failure(
+      artifact,
+      "malformed-artifact",
+      "Manifest must be a JSON object",
+    );
+  const unknownTop = rejectUnknownFields(
+    artifact,
     value,
     new Set([
       "schemaVersion",
-      "reviewId",
-      "manifestDigest",
-      "coverageIndexIdentity",
-      "conclusion",
-      "approvedBy",
-      "approvedAt",
+      "plan",
+      "declaration",
+      "nodes",
       "reviewedSources",
+      "coverageIndex",
     ]),
-    "plan-coverage-review",
   );
-  if (unknownFieldFailure !== undefined) return unknownFieldFailure;
-  for (const field of [
-    "reviewId",
-    "coverageIndexIdentity",
-    "approvedBy",
-  ] as const) {
-    if (
-      typeof value[field] !== "string" ||
-      value[field].trim().length === 0 ||
-      value[field].length > MAX_ID_LENGTH
-    )
-      return failure(
-        "plan-coverage-review",
-        "approval-binding-mismatch",
-        `Plan Coverage Review ${field} must be a non-empty bounded string`,
-        { path: field },
-      );
-  }
-  if (value.conclusion !== "approved")
+  if (unknownTop !== undefined) return unknownTop;
+
+  const planResult = readPlanIdentity(artifact, value.plan);
+  if (!planResult.ok) return planResult;
+  const declarationResult = readSourceDigest(
+    artifact,
+    value.declaration,
+    "declaration",
+  );
+  if (!declarationResult.ok) return declarationResult;
+  const reviewedSourcesResult = readReviewedSources(
+    artifact,
+    value.reviewedSources,
+  );
+  if (!reviewedSourcesResult.ok) return reviewedSourcesResult;
+  const coverageIndexResult = readCoverageIndex(artifact, value.coverageIndex);
+  if (!coverageIndexResult.ok) return coverageIndexResult;
+
+  if (!Array.isArray(value.nodes) || value.nodes.length === 0)
     return failure(
-      "plan-coverage-review",
-      "approval-binding-mismatch",
-      'Plan Coverage Review must declare the explicit "approved" conclusion',
-      { path: "conclusion", expected: "approved" },
-    );
-  if (
-    typeof value.approvedAt !== "string" ||
-    !isCanonicalUtcTimestamp(value.approvedAt)
-  )
-    return failure(
-      "plan-coverage-review",
-      "approval-binding-mismatch",
-      "Plan Coverage Review approvedAt must be a canonical UTC timestamp",
-      { path: "approvedAt" },
-    );
-  if (!("manifestDigest" in value))
-    return failure(
-      "plan-coverage-review",
-      "approval-binding-mismatch",
-      "Plan Coverage Review is missing manifestDigest",
-      { path: "manifestDigest" },
-    );
-  if (typeof value.manifestDigest !== "string")
-    return failure(
-      "plan-coverage-review",
+      artifact,
       "malformed-artifact",
-      "Plan Coverage Review manifestDigest must be a string",
-      { path: "manifestDigest" },
-    );
-  if (!SHA256_PATTERN.test(value.manifestDigest))
-    return failure(
-      "plan-coverage-review",
-      "malformed-artifact",
-      "manifestDigest must be lowercase hexadecimal SHA-256",
-      { path: "manifestDigest" },
-    );
-  if (!("reviewedSources" in value))
-    return failure(
-      "plan-coverage-review",
-      "approval-binding-mismatch",
-      "Plan Coverage Review is missing reviewedSources",
-      { path: "reviewedSources" },
-    );
-  const bindingsResult = readBindings(value.reviewedSources);
-  if (!bindingsResult.ok)
-    return failure(
-      "plan-coverage-review",
-      bindingsResult.category,
-      bindingsResult.message,
+      "Manifest nodes must be a non-empty array",
       {
-        path: bindingsResult.path,
-        ...(bindingsResult.expected === undefined
-          ? {}
-          : { expected: bindingsResult.expected }),
-        ...(bindingsResult.observed === undefined
-          ? {}
-          : { observed: bindingsResult.observed }),
+        path: "nodes",
       },
     );
-  const review = {
-    ...value,
-    schemaVersion: PLAN_COVERAGE_REVIEW_SCHEMA_VERSION,
-    reviewId: value.reviewId as string,
-    manifestDigest: value.manifestDigest,
-    coverageIndexIdentity: value.coverageIndexIdentity as string,
-    conclusion: value.conclusion,
-    approvedBy: value.approvedBy as string,
-    approvedAt: value.approvedAt as string,
-    reviewedSources: bindingsResult.bindings,
-  } as PlanCoverageReview;
-  return { ok: true, review, sourceDigests: bindingsResult.bindings };
+  if (value.nodes.length > MAX_NODES)
+    return failure(
+      artifact,
+      "malformed-artifact",
+      "Manifest nodes exceeds the supported count",
+      {
+        path: "nodes",
+      },
+    );
+
+  const nodes: GoalPlanManifestNode[] = [];
+  const seenRefs = new Set<string>();
+  let previousRef: string | undefined;
+  for (const [index, entry] of value.nodes.entries()) {
+    const nodePath = `nodes[${index}]`;
+    if (!isRecord(entry))
+      return failure(
+        artifact,
+        "malformed-artifact",
+        `${nodePath} must be an object`,
+        {
+          path: nodePath,
+        },
+      );
+    const unknownNode = rejectUnknownFields(
+      artifact,
+      entry,
+      new Set(["nodeRef", "storyRef", "readinessContract", "dependsOn"]),
+      nodePath,
+    );
+    if (unknownNode !== undefined) return unknownNode;
+    if (
+      typeof entry.nodeRef !== "string" ||
+      !PLAN_OR_NODE_ID_PATTERN.test(entry.nodeRef)
+    )
+      return failure(
+        artifact,
+        "malformed-artifact",
+        `${nodePath}.nodeRef is invalid`,
+        {
+          path: `${nodePath}.nodeRef`,
+        },
+      );
+    if (seenRefs.has(entry.nodeRef))
+      return failure(
+        artifact,
+        "invalid-topology",
+        `duplicate plan node reference: ${entry.nodeRef}`,
+        { path: `${nodePath}.nodeRef` },
+      );
+    seenRefs.add(entry.nodeRef);
+    if (previousRef !== undefined && previousRef >= entry.nodeRef)
+      return failure(
+        artifact,
+        "malformed-artifact",
+        "Manifest nodes must be sorted by UTF-8 node reference",
+        { path: `${nodePath}.nodeRef` },
+      );
+    previousRef = entry.nodeRef;
+
+    if (!readRepoPath(entry.storyRef))
+      return failure(
+        artifact,
+        "malformed-artifact",
+        `${nodePath}.storyRef is invalid`,
+        {
+          path: `${nodePath}.storyRef`,
+        },
+      );
+    const readinessResult = readSourceDigest(
+      artifact,
+      entry.readinessContract,
+      `${nodePath}.readinessContract`,
+    );
+    if (!readinessResult.ok) return readinessResult;
+    if (readinessResult.binding.path !== `${entry.storyRef}/readiness.json`)
+      return failure(
+        artifact,
+        "malformed-artifact",
+        `${nodePath}.readinessContract.path must equal ${entry.storyRef}/readiness.json`,
+        { path: `${nodePath}.readinessContract.path` },
+      );
+    const dependsOnResult = readDependsOn(
+      artifact,
+      entry.dependsOn,
+      `${nodePath}.dependsOn`,
+    );
+    if (!dependsOnResult.ok) return dependsOnResult;
+
+    nodes.push({
+      nodeRef: entry.nodeRef,
+      storyRef: entry.storyRef,
+      readinessContract: readinessResult.binding,
+      dependsOn: dependsOnResult.dependsOn,
+    });
+  }
+
+  const topologyFailure = validateTopology(artifact, nodes);
+  if (topologyFailure !== undefined) return topologyFailure;
+
+  return {
+    ok: true,
+    manifest: {
+      schemaVersion: GOAL_PLAN_SCHEMA_VERSION,
+      plan: planResult.plan,
+      declaration: declarationResult.binding,
+      nodes,
+      reviewedSources: reviewedSourcesResult.bindings,
+      coverageIndex: coverageIndexResult.coverageIndex,
+    },
+  };
 }
 
-function sameBindings(
-  left: readonly GoalPlanSourceDigest[],
-  right: readonly GoalPlanSourceDigest[],
-): boolean {
-  if (left.length !== right.length) return false;
-  const rightByIdentity = new Map(
-    right.map((binding) => [binding.identity, binding.sha256]),
-  );
-  return left.every(
-    (binding) => rightByIdentity.get(binding.identity) === binding.sha256,
-  );
-}
-
-function validateManifestStructure(bytes: Uint8Array):
-  | {
-      readonly ok: true;
-      readonly manifest: GoalPlanManifest;
-      readonly sourceDigests: readonly GoalPlanSourceDigest[];
-    }
+function validateManifestStructure(
+  bytes: Uint8Array,
+):
+  | { readonly ok: true; readonly manifest: GoalPlanManifest }
   | GoalPlanValidationFailure {
   const parsed = parseJson(bytes);
   if (!parsed.ok)
     return failure("goal-plan-manifest", "malformed-artifact", parsed.message);
-  const schemaVersion = readSchemaVersion(parsed.value, "goal-plan-manifest");
-  if (typeof schemaVersion !== "number") return schemaVersion;
-  if (schemaVersion !== GOAL_PLAN_MANIFEST_SCHEMA_VERSION)
-    return schemaFailure("goal-plan-manifest", schemaVersion);
+  const schemaFailure = readSchemaVersion(parsed.value, "goal-plan-manifest");
+  if (schemaFailure !== undefined) return schemaFailure;
   return readManifestShape(parsed.value);
 }
 
-function validateReviewStructure(bytes: Uint8Array):
+function readSourceEntries(value: GoalPlanSourceFacts):
   | {
       readonly ok: true;
-      readonly review: PlanCoverageReview;
-      readonly sourceDigests: readonly GoalPlanSourceDigest[];
+      readonly entries: readonly (readonly [string, Uint8Array])[];
     }
-  | GoalPlanValidationFailure {
-  const parsed = parseJson(bytes);
-  if (!parsed.ok)
+  | { readonly ok: false; readonly message: string } {
+  if (value instanceof Map) {
+    const entries: [string, Uint8Array][] = [];
+    for (const [path, bytes] of value.entries()) {
+      if (typeof path !== "string")
+        return { ok: false, message: "source path must be a string" };
+      if (!isUint8Array(bytes))
+        return {
+          ok: false,
+          message: `source bytes for ${path} must be a Uint8Array`,
+        };
+      entries.push([path, bytes]);
+    }
+    return { ok: true, entries };
+  }
+  if (Array.isArray(value)) {
+    const entries: [string, Uint8Array][] = [];
+    for (const [index, source] of value.entries()) {
+      if (!isRecord(source) || typeof source.path !== "string")
+        return {
+          ok: false,
+          message: `sources[${index}] must declare a string path`,
+        };
+      if (!isUint8Array(source.bytes))
+        return {
+          ok: false,
+          message: `sources[${index}].bytes must be a Uint8Array`,
+        };
+      entries.push([source.path, source.bytes]);
+    }
+    return { ok: true, entries };
+  }
+  if (isRecord(value)) {
+    const entries: [string, Uint8Array][] = [];
+    for (const [path, bytes] of Object.entries(value)) {
+      if (!isUint8Array(bytes))
+        return {
+          ok: false,
+          message: `source bytes for ${path} must be a Uint8Array`,
+        };
+      entries.push([path, bytes]);
+    }
+    return { ok: true, entries };
+  }
+  return {
+    ok: false,
+    message: "source facts must be a Map, an array, or an object",
+  };
+}
+
+function sourceBytesByPath(
+  sourceFacts: GoalPlanSourceFacts,
+):
+  | { readonly ok: true; readonly byPath: ReadonlyMap<string, Uint8Array> }
+  | { readonly ok: false; readonly message: string } {
+  const entriesResult = readSourceEntries(sourceFacts);
+  if (!entriesResult.ok) return entriesResult;
+  const byPath = new Map<string, Uint8Array>();
+  for (const [path, bytes] of entriesResult.entries) {
+    byPath.set(path, bytes);
+  }
+  return { ok: true, byPath };
+}
+
+function verifyBinding(
+  artifact: GoalPlanArtifactClass,
+  binding: GoalPlanSourceDigest,
+  path: string,
+  byPath: ReadonlyMap<string, Uint8Array>,
+): GoalPlanValidationFailure | undefined {
+  const bytes = byPath.get(binding.path);
+  if (bytes === undefined)
     return failure(
-      "plan-coverage-review",
-      "malformed-artifact",
-      parsed.message,
+      artifact,
+      "digest-mismatch",
+      `bound artifact is missing from source facts: ${binding.path}`,
+      { path, expected: binding.sha256, observed: "missing" },
     );
-  const schemaVersion = readSchemaVersion(parsed.value, "plan-coverage-review");
-  if (typeof schemaVersion !== "number") return schemaVersion;
-  if (schemaVersion !== PLAN_COVERAGE_REVIEW_SCHEMA_VERSION)
-    return schemaFailure("plan-coverage-review", schemaVersion);
-  return readReviewShape(parsed.value);
+  const observed = sha256Hex(bytes);
+  if (observed !== binding.sha256)
+    return failure(
+      artifact,
+      "digest-mismatch",
+      `bound artifact digest does not match its current bytes: ${binding.path}`,
+      { path, expected: binding.sha256, observed },
+    );
+  return undefined;
+}
+
+function sameStringSet(a: readonly string[], b: readonly string[]): boolean {
+  if (a.length !== b.length) return false;
+  const values = new Set(a);
+  return b.every((value) => values.has(value));
+}
+
+function matchDeclarationToManifest(
+  declaration: GoalPlanDeclaration,
+  manifest: GoalPlanManifest,
+): GoalPlanValidationFailure | undefined {
+  if (
+    declaration.plan.id !== manifest.plan.id ||
+    declaration.plan.revision !== manifest.plan.revision ||
+    declaration.nodes.length !== manifest.nodes.length
+  )
+    return failure(
+      "goal-plan-manifest",
+      "invalid-topology",
+      "Declaration identity or node count does not match the Manifest",
+    );
+  const declared = new Map(
+    declaration.nodes.map((node) => [node.nodeRef, node] as const),
+  );
+  for (const node of manifest.nodes) {
+    const declaredNode = declared.get(node.nodeRef);
+    if (
+      declaredNode === undefined ||
+      declaredNode.storyRef !== node.storyRef ||
+      !sameStringSet(declaredNode.dependsOn, node.dependsOn)
+    )
+      return failure(
+        "goal-plan-manifest",
+        "invalid-topology",
+        `Declaration node does not match the Manifest topology: ${node.nodeRef}`,
+      );
+  }
+  return undefined;
 }
 
 /**
- * Validate one Goal Plan Manifest against optional caller-supplied raw source
- * facts. When facts are supplied, every declared digest is checked directly
- * against those bytes; no text or JSON normalization occurs.
+ * Validate a Goal Plan Manifest's shape, topology, and — when source facts
+ * are supplied — every digest binding: the Declaration it references, each
+ * reviewed source, and each node's Readiness Sidecar contract.
  */
 function validateGoalPlanManifestInput(
   manifestBytes: Uint8Array,
@@ -1359,33 +1333,80 @@ function validateGoalPlanManifestInput(
 ): GoalPlanManifestValidation {
   const structure = validateManifestStructure(manifestBytes);
   if (!structure.ok) return structure;
+  const manifest = structure.manifest;
 
-  if (sourceFacts === undefined && structure.sourceDigests.length > 0)
+  if (sourceFacts === undefined)
     return failure(
       "goal-plan-manifest",
       "digest-mismatch",
-      "raw source facts are required to verify reviewed source digests",
+      "raw source facts are required to verify the Declaration, reviewed sources, and readiness bindings",
       {
-        path: "reviewedSources",
+        path: "declaration",
         expected: "caller-supplied raw source bytes",
         observed: "missing",
       },
     );
-  if (sourceFacts !== undefined) {
-    const digestFailure = verifySourceDigests(
-      structure.sourceDigests,
-      sourceFacts,
+
+  const byPathResult = sourceBytesByPath(sourceFacts);
+  if (!byPathResult.ok)
+    return failure(
       "goal-plan-manifest",
+      "malformed-artifact",
+      byPathResult.message,
+      {
+        path: "sources",
+      },
     );
-    if (digestFailure !== undefined) return digestFailure;
+  const byPath = byPathResult.byPath;
+
+  const declarationBindingFailure = verifyBinding(
+    "goal-plan-manifest",
+    manifest.declaration,
+    "declaration.sha256",
+    byPath,
+  );
+  if (declarationBindingFailure !== undefined) return declarationBindingFailure;
+
+  const declarationBytes = byPath.get(manifest.declaration.path) as Uint8Array;
+  const declarationResult = validateGoalPlanDeclaration(declarationBytes);
+  if (!declarationResult.ok)
+    return failure(
+      "goal-plan-manifest",
+      declarationResult.category,
+      `referenced Declaration is not valid: ${declarationResult.message}`,
+      { path: "declaration", causeCategory: declarationResult.category },
+    );
+  const matchFailure = matchDeclarationToManifest(
+    declarationResult.declaration,
+    manifest,
+  );
+  if (matchFailure !== undefined) return matchFailure;
+
+  for (const [index, source] of manifest.reviewedSources.entries()) {
+    const sourceFailure = verifyBinding(
+      "goal-plan-manifest",
+      source,
+      `reviewedSources[${index}].sha256`,
+      byPath,
+    );
+    if (sourceFailure !== undefined) return sourceFailure;
+  }
+
+  for (const [index, node] of manifest.nodes.entries()) {
+    const readinessFailure = verifyBinding(
+      "goal-plan-manifest",
+      node.readinessContract,
+      `nodes[${index}].readinessContract.sha256`,
+      byPath,
+    );
+    if (readinessFailure !== undefined) return readinessFailure;
   }
 
   return {
     ok: true,
     artifact: "goal-plan-manifest",
-    manifest: structure.manifest,
+    manifest,
     manifestDigest: sha256Hex(manifestBytes),
-    sourceDigests: structure.sourceDigests,
   };
 }
 
@@ -1413,9 +1434,180 @@ export function validateGoalPlanManifest(
   }
 }
 
+function readReviewer(
+  value: unknown,
+):
+  | { readonly ok: true; readonly reviewer: PlanCoverageReviewer }
+  | GoalPlanValidationFailure {
+  const artifact: GoalPlanArtifactClass = "plan-coverage-review";
+  if (!isRecord(value))
+    return failure(
+      artifact,
+      "malformed-artifact",
+      "reviewer must be an object",
+      {
+        path: "reviewer",
+      },
+    );
+  const unknown = rejectUnknownFields(
+    artifact,
+    value,
+    new Set(["name", "assurance"]),
+    "reviewer",
+  );
+  if (unknown !== undefined) return unknown;
+  if (
+    typeof value.name !== "string" ||
+    value.name.length === 0 ||
+    value.name.length > MAX_REVIEWER_NAME_LENGTH ||
+    !REVIEWER_NAME_PATTERN.test(value.name)
+  )
+    return failure(artifact, "malformed-artifact", "reviewer.name is invalid", {
+      path: "reviewer.name",
+    });
+  if (value.assurance !== "self-asserted")
+    return failure(
+      artifact,
+      "malformed-artifact",
+      'reviewer.assurance must be "self-asserted"',
+      { path: "reviewer.assurance" },
+    );
+  return {
+    ok: true,
+    reviewer: { name: value.name, assurance: "self-asserted" },
+  };
+}
+
+function readReviewShape(
+  value: unknown,
+):
+  | { readonly ok: true; readonly review: PlanCoverageReview }
+  | GoalPlanValidationFailure {
+  const artifact: GoalPlanArtifactClass = "plan-coverage-review";
+  if (!isRecord(value))
+    return failure(
+      artifact,
+      "malformed-artifact",
+      "Plan Coverage Review must be a JSON object",
+    );
+  const unknownTop = rejectUnknownFields(
+    artifact,
+    value,
+    new Set([
+      "schemaVersion",
+      "reviewId",
+      "manifestSha256",
+      "reviewedSources",
+      "coverageIndex",
+      "conclusion",
+      "reviewer",
+      "reviewedAt",
+    ]),
+  );
+  if (unknownTop !== undefined) return unknownTop;
+
+  if (
+    typeof value.reviewId !== "string" ||
+    !REVIEW_ID_PATTERN.test(value.reviewId)
+  )
+    return failure(
+      artifact,
+      "malformed-artifact",
+      "reviewId must be a UUIDv4",
+      {
+        path: "reviewId",
+      },
+    );
+  if (
+    typeof value.manifestSha256 !== "string" ||
+    !SHA256_PATTERN.test(value.manifestSha256)
+  )
+    return failure(
+      artifact,
+      "malformed-artifact",
+      "manifestSha256 must be lowercase hexadecimal SHA-256",
+      { path: "manifestSha256" },
+    );
+  const reviewedSourcesResult = readReviewedSources(
+    artifact,
+    value.reviewedSources,
+  );
+  if (!reviewedSourcesResult.ok) return reviewedSourcesResult;
+  const coverageIndexResult = readCoverageIndex(artifact, value.coverageIndex);
+  if (!coverageIndexResult.ok) return coverageIndexResult;
+  if (value.conclusion !== "approved")
+    return failure(
+      artifact,
+      "malformed-artifact",
+      'conclusion must be the literal "approved"',
+      { path: "conclusion", expected: "approved" },
+    );
+  const reviewerResult = readReviewer(value.reviewer);
+  if (!reviewerResult.ok) return reviewerResult;
+  if (
+    typeof value.reviewedAt !== "string" ||
+    !REVIEWED_AT_PATTERN.test(value.reviewedAt) ||
+    !Number.isFinite(Date.parse(value.reviewedAt))
+  )
+    return failure(
+      artifact,
+      "malformed-artifact",
+      "reviewedAt must be an ISO 8601 UTC timestamp with exactly .000Z",
+      { path: "reviewedAt" },
+    );
+
+  return {
+    ok: true,
+    review: {
+      schemaVersion: GOAL_PLAN_SCHEMA_VERSION,
+      reviewId: value.reviewId,
+      manifestSha256: value.manifestSha256,
+      reviewedSources: reviewedSourcesResult.bindings,
+      coverageIndex: coverageIndexResult.coverageIndex,
+      conclusion: "approved",
+      reviewer: reviewerResult.reviewer,
+      reviewedAt: value.reviewedAt,
+    },
+  };
+}
+
+function validateReviewStructure(
+  bytes: Uint8Array,
+):
+  | { readonly ok: true; readonly review: PlanCoverageReview }
+  | GoalPlanValidationFailure {
+  const parsed = parseJson(bytes);
+  if (!parsed.ok)
+    return failure(
+      "plan-coverage-review",
+      "malformed-artifact",
+      parsed.message,
+    );
+  const schemaFailure = readSchemaVersion(parsed.value, "plan-coverage-review");
+  if (schemaFailure !== undefined) return schemaFailure;
+  return readReviewShape(parsed.value);
+}
+
+function sameBindings(
+  left: readonly GoalPlanSourceDigest[],
+  right: readonly GoalPlanSourceDigest[],
+): boolean {
+  if (left.length !== right.length) return false;
+  const rightByPath = new Map(
+    right.map((binding) => [binding.path, binding.sha256]),
+  );
+  return left.every(
+    (binding) => rightByPath.get(binding.path) === binding.sha256,
+  );
+}
+
+function sameCoverageIndex(a: CoverageIndex, b: CoverageIndex): boolean {
+  return a.batchId === b.batchId && a.fingerprint === b.fingerprint;
+}
+
 /**
- * Validate a Plan Coverage Review against the exact Manifest bytes and, when
- * supplied, the raw source facts named by that Manifest.
+ * Validate a Plan Coverage Review against the exact Manifest bytes and,
+ * when supplied, the raw source facts the Manifest binds.
  */
 function validatePlanCoverageReviewInput(
   reviewBytes: Uint8Array,
@@ -1424,6 +1616,7 @@ function validatePlanCoverageReviewInput(
 ): PlanCoverageReviewValidation {
   const structure = validateReviewStructure(reviewBytes);
   if (!structure.ok) return structure;
+
   const manifestSnapshot = snapshotUint8Array(manifestBytes);
   if (!manifestSnapshot.ok)
     return failure(
@@ -1435,16 +1628,16 @@ function validatePlanCoverageReviewInput(
       { path: "manifestBytes" },
     );
   const stableManifestBytes = manifestSnapshot.bytes;
-
   const actualManifestDigest = sha256Hex(stableManifestBytes);
-  if (structure.review.manifestDigest !== actualManifestDigest)
+
+  if (structure.review.manifestSha256 !== actualManifestDigest)
     return failure(
       "plan-coverage-review",
       "approval-binding-mismatch",
-      "Plan Coverage Review manifestDigest does not match the supplied Manifest bytes",
+      "manifestSha256 does not match the supplied Manifest bytes",
       {
-        path: "manifestDigest",
-        expected: structure.review.manifestDigest,
+        path: "manifestSha256",
+        expected: structure.review.manifestSha256,
         observed: actualManifestDigest,
       },
     );
@@ -1462,30 +1655,33 @@ function validatePlanCoverageReviewInput(
       "plan-coverage-review",
       category,
       `referenced Goal Plan Manifest is not valid: ${manifestResult.message}`,
-      {
-        path: "manifest",
-        causeCategory: manifestResult.category,
-      },
+      { path: "manifest", causeCategory: manifestResult.category },
     );
   }
 
-  if (!sameBindings(structure.sourceDigests, manifestResult.sourceDigests))
-    return failure(
-      "plan-coverage-review",
-      "approval-binding-mismatch",
-      "Plan Coverage Review reviewedSources do not match the Manifest bindings",
-      { path: "reviewedSources" },
-    );
   if (
-    !manifestResult.sourceDigests.some(
-      (source) => source.identity === structure.review.coverageIndexIdentity,
+    !sameBindings(
+      structure.review.reviewedSources,
+      manifestResult.manifest.reviewedSources,
     )
   )
     return failure(
       "plan-coverage-review",
       "approval-binding-mismatch",
-      `Coverage Index source is not bound by the Manifest: ${structure.review.coverageIndexIdentity}`,
-      { path: "coverageIndexIdentity" },
+      "reviewedSources do not match the Manifest's reviewedSources",
+      { path: "reviewedSources" },
+    );
+  if (
+    !sameCoverageIndex(
+      structure.review.coverageIndex,
+      manifestResult.manifest.coverageIndex,
+    )
+  )
+    return failure(
+      "plan-coverage-review",
+      "approval-binding-mismatch",
+      "coverageIndex does not match the Manifest's coverageIndex",
+      { path: "coverageIndex" },
     );
 
   return {
@@ -1494,7 +1690,6 @@ function validatePlanCoverageReviewInput(
     review: structure.review,
     reviewDigest: sha256Hex(reviewBytes),
     manifestDigest: actualManifestDigest,
-    sourceDigests: manifestResult.sourceDigests,
   };
 }
 
@@ -1527,45 +1722,15 @@ export function validatePlanCoverageReview(
   }
 }
 
-function sourceBytesForExport(
-  sources: readonly GoalPlanSourceBytes[],
-): readonly GoalPlanSourceDigest[] {
-  const identities = new Set<string>();
-  return sources.map((source, index) => {
-    if (!isRecord(source) || typeof source.identity !== "string")
-      throw exportFailure(
-        `reviewedSources[${index}] must declare a string identity`,
-        "malformed-artifact",
-      );
-    if (source.identity.trim().length === 0)
-      throw exportFailure(
-        `reviewedSources[${index}].identity must not be empty`,
-        "malformed-artifact",
-      );
-    if (identities.has(source.identity))
-      throw exportFailure(
-        `reviewedSources repeats identity: ${source.identity}`,
-        "malformed-artifact",
-      );
-    if (!(source.bytes instanceof Uint8Array))
-      throw exportFailure(
-        `reviewedSources[${index}].bytes must be a Uint8Array`,
-        "malformed-artifact",
-      );
-    identities.add(source.identity);
-    return { identity: source.identity, sha256: sha256Hex(source.bytes) };
-  });
-}
-
 function serializeArtifact(
   artifact: JsonRecord,
   artifactClass: GoalPlanArtifactClass,
 ): Uint8Array {
   try {
-    const serialized = JSON.stringify(artifact);
+    const serialized = JSON.stringify(artifact, null, 2);
     if (serialized === undefined)
       throw new Error("artifact did not serialize to JSON");
-    return new TextEncoder().encode(serialized);
+    return new TextEncoder().encode(`${serialized}\n`);
   } catch (error) {
     if (error instanceof TypeError && "category" in error) throw error;
     throw exportFailure(
@@ -1577,67 +1742,186 @@ function serializeArtifact(
   }
 }
 
-/**
- * Export a compact, newline-free v1 Goal Plan Manifest. Source digests are
- * calculated from the supplied bytes at export time.
- */
+function sourceBindingForExport(
+  source: GoalPlanSourceBytes,
+  field: string,
+): GoalPlanSourceDigest {
+  if (!isRecord(source) || typeof source.path !== "string")
+    throw exportFailure(
+      `${field} must declare a string path`,
+      "malformed-artifact",
+    );
+  if (!(source.bytes instanceof Uint8Array))
+    throw exportFailure(
+      `${field}.bytes must be a Uint8Array`,
+      "malformed-artifact",
+    );
+  return { path: source.path, sha256: sha256Hex(source.bytes) };
+}
+
+function sortedReviewedSources(
+  sources: readonly GoalPlanSourceBytes[],
+): readonly GoalPlanSourceDigest[] {
+  const seen = new Set<string>();
+  const bindings = sources.map((source, index) => {
+    const binding = sourceBindingForExport(source, `reviewedSources[${index}]`);
+    if (seen.has(binding.path))
+      throw exportFailure(
+        `reviewedSources repeats path: ${binding.path}`,
+        "malformed-artifact",
+      );
+    seen.add(binding.path);
+    return binding;
+  });
+  return [...bindings].sort((a, b) =>
+    a.path < b.path ? -1 : a.path > b.path ? 1 : 0,
+  );
+}
+
+function sortedDependsOn(dependsOn: readonly string[]): readonly string[] {
+  const unique = [...new Set(dependsOn)];
+  if (unique.length !== dependsOn.length)
+    throw exportFailure("dependsOn repeats a dependency", "malformed-artifact");
+  return unique.sort();
+}
+
+function rejectUnknownExportFields(
+  input: JsonRecord,
+  allowed: ReadonlySet<string>,
+  artifact: GoalPlanArtifactClass,
+): void {
+  for (const field of Object.keys(input)) {
+    if (!allowed.has(field))
+      throw exportFailure(
+        `${artifact} export input declares an unknown field: ${field}`,
+        "malformed-artifact",
+      );
+  }
+}
+
+/** Export a Goal Plan Declaration: sorted nodes, each with sorted dependsOn. */
+function exportGoalPlanDeclarationInput(
+  input: GoalPlanDeclarationExportInput,
+): Uint8Array {
+  if (!isRecord(input))
+    throw exportFailure(
+      "Declaration export input must be an object",
+      "malformed-artifact",
+    );
+  rejectUnknownExportFields(
+    input,
+    new Set(["planId", "revision", "nodes"]),
+    "goal-plan-declaration",
+  );
+  const nodes = [...input.nodes]
+    .map((node) => ({
+      nodeRef: node.nodeRef,
+      storyRef: node.storyRef,
+      dependsOn: sortedDependsOn(node.dependsOn),
+    }))
+    .sort((a, b) =>
+      a.nodeRef < b.nodeRef ? -1 : a.nodeRef > b.nodeRef ? 1 : 0,
+    );
+
+  const orderedArtifact: JsonRecord = {
+    schemaVersion: GOAL_PLAN_SCHEMA_VERSION,
+    plan: { id: input.planId, revision: input.revision },
+    nodes: nodes.map((node) => ({
+      nodeRef: node.nodeRef,
+      storyRef: node.storyRef,
+      dependsOn: node.dependsOn,
+    })),
+  };
+  const bytes = serializeArtifact(orderedArtifact, "goal-plan-declaration");
+  const validation = validateGoalPlanDeclaration(bytes);
+  if (!validation.ok)
+    throw exportFailure(
+      `exported Declaration is invalid: ${validation.message}`,
+      validation.category,
+    );
+  return bytes;
+}
+
+export function exportGoalPlanDeclaration(
+  input: GoalPlanDeclarationExportInput,
+): Uint8Array {
+  try {
+    return exportGoalPlanDeclarationInput(input);
+  } catch (error) {
+    throw exportBoundaryFailure(error, "goal-plan-declaration");
+  }
+}
+
+/** Export a Goal Plan Manifest bound to the exact Declaration and source bytes supplied. */
 function exportGoalPlanManifestInput(
   input: GoalPlanManifestExportInput,
 ): Uint8Array {
   if (!isRecord(input))
     throw exportFailure(
-      "Goal Plan Manifest export input must be an object",
+      "Manifest export input must be an object",
       "malformed-artifact",
     );
   rejectUnknownExportFields(
     input,
     new Set([
-      "schemaVersion",
       "planId",
       "revision",
-      "goalId",
-      "title",
+      "declaration",
       "nodes",
-      "edges",
       "reviewedSources",
+      "coverageIndex",
     ]),
     "goal-plan-manifest",
   );
-  if (
-    input.schemaVersion !== undefined &&
-    input.schemaVersion !== GOAL_PLAN_MANIFEST_SCHEMA_VERSION
-  )
-    throw exportFailure(
-      `unsupported Goal Plan Manifest schemaVersion: ${String(input.schemaVersion)}`,
-      "unsupported-schema",
-    );
-  if (!Array.isArray(input.nodes) || !Array.isArray(input.edges))
-    throw exportFailure(
-      "Goal Plan Manifest export requires nodes and edges arrays",
-      "malformed-artifact",
-    );
-  if (!Array.isArray(input.reviewedSources))
-    throw exportFailure(
-      "Goal Plan Manifest export requires reviewedSources",
-      "malformed-artifact",
+  const declaration = sourceBindingForExport(input.declaration, "declaration");
+  const reviewedSources = sortedReviewedSources(input.reviewedSources);
+
+  const nodes = [...input.nodes]
+    .map((node) => {
+      const readiness = sourceBindingForExport(
+        node.readiness,
+        `nodes.readiness`,
+      );
+      return {
+        nodeRef: node.nodeRef,
+        storyRef: node.storyRef,
+        readinessContract: readiness,
+        dependsOn: sortedDependsOn(node.dependsOn),
+      };
+    })
+    .sort((a, b) =>
+      a.nodeRef < b.nodeRef ? -1 : a.nodeRef > b.nodeRef ? 1 : 0,
     );
 
-  const sourceDigests = sourceBytesForExport(input.reviewedSources);
   const orderedArtifact: JsonRecord = {
-    schemaVersion: GOAL_PLAN_MANIFEST_SCHEMA_VERSION,
-    planId: input.planId,
-    revision: input.revision,
-    ...(input.goalId === undefined ? {} : { goalId: input.goalId }),
-    ...(input.title === undefined ? {} : { title: input.title }),
-    nodes: input.nodes,
-    edges: input.edges,
-    reviewedSources: sourceDigests,
+    schemaVersion: GOAL_PLAN_SCHEMA_VERSION,
+    plan: { id: input.planId, revision: input.revision },
+    declaration,
+    nodes: nodes.map((node) => ({
+      nodeRef: node.nodeRef,
+      storyRef: node.storyRef,
+      readinessContract: node.readinessContract,
+      dependsOn: node.dependsOn,
+    })),
+    reviewedSources,
+    coverageIndex: {
+      batchId: input.coverageIndex.batchId,
+      fingerprint: input.coverageIndex.fingerprint,
+    },
   };
   const bytes = serializeArtifact(orderedArtifact, "goal-plan-manifest");
-  const validation = validateGoalPlanManifest(bytes, input.reviewedSources);
+
+  const sourceFacts = new Map<string, Uint8Array>();
+  sourceFacts.set(input.declaration.path, input.declaration.bytes);
+  for (const source of input.reviewedSources)
+    sourceFacts.set(source.path, source.bytes);
+  for (const node of input.nodes)
+    sourceFacts.set(node.readiness.path, node.readiness.bytes);
+
+  const validation = validateGoalPlanManifest(bytes, sourceFacts);
   if (!validation.ok)
     throw exportFailure(
-      `exported Goal Plan Manifest is invalid: ${validation.message}`,
+      `exported Manifest is invalid: ${validation.message}`,
       validation.category,
     );
   return bytes;
@@ -1653,44 +1937,33 @@ export function exportGoalPlanManifest(
   }
 }
 
-/** Export a Coverage Review bound to the exact Manifest bytes and bindings. */
+/** Export a Plan Coverage Review bound to the exact Manifest bytes and its bindings. */
 function exportPlanCoverageReviewInput(
   input: PlanCoverageReviewExportInput,
 ): Uint8Array {
   if (!isRecord(input))
     throw exportFailure(
-      "Plan Coverage Review export input must be an object",
+      "Coverage Review export input must be an object",
       "malformed-artifact",
     );
   rejectUnknownExportFields(
     input,
     new Set([
-      "schemaVersion",
       "manifestBytes",
       "reviewId",
-      "coverageIndexIdentity",
       "conclusion",
-      "approvedBy",
-      "approvedAt",
+      "reviewer",
+      "reviewedAt",
       "sources",
-      "reviewedSources",
     ]),
     "plan-coverage-review",
   );
-  if (
-    input.schemaVersion !== undefined &&
-    input.schemaVersion !== PLAN_COVERAGE_REVIEW_SCHEMA_VERSION
-  )
-    throw exportFailure(
-      `unsupported Plan Coverage Review schemaVersion: ${String(input.schemaVersion)}`,
-      "unsupported-schema",
-    );
   const manifestSnapshot = snapshotUint8Array(input.manifestBytes);
   if (!manifestSnapshot.ok)
     throw exportFailure(
       manifestSnapshot.reason === "too-large"
-        ? "Plan Coverage Review manifestBytes exceed the supported artifact size"
-        : "Plan Coverage Review export requires manifestBytes",
+        ? "Coverage Review manifestBytes exceed the supported artifact size"
+        : "Coverage Review export requires manifestBytes",
       "malformed-artifact",
     );
   const manifestBytes = manifestSnapshot.bytes;
@@ -1711,37 +1984,19 @@ function exportPlanCoverageReviewInput(
         manifestValidation.category,
       );
   }
-  if (input.sources === undefined && manifestStructure.sourceDigests.length > 0)
-    throw exportFailure(
-      "Coverage Review export requires raw source facts for a Manifest with reviewed sources",
-      "digest-mismatch",
-    );
 
-  let reviewedSources: readonly GoalPlanSourceDigest[] =
-    manifestStructure.sourceDigests;
-  if (input.reviewedSources !== undefined) {
-    const reviewBindings = readBindings(input.reviewedSources);
-    if (!reviewBindings.ok)
-      throw exportFailure(
-        `Coverage Review reviewedSources are invalid: ${reviewBindings.message}`,
-        reviewBindings.category,
-      );
-    reviewedSources = reviewBindings.bindings;
-  }
-  if (!sameBindings(reviewedSources, manifestStructure.sourceDigests))
-    throw exportFailure(
-      "Coverage Review reviewedSources must match the Manifest bindings",
-      "approval-binding-mismatch",
-    );
   const orderedArtifact: JsonRecord = {
-    schemaVersion: PLAN_COVERAGE_REVIEW_SCHEMA_VERSION,
+    schemaVersion: GOAL_PLAN_SCHEMA_VERSION,
     reviewId: input.reviewId,
-    manifestDigest: sha256Hex(manifestBytes),
-    coverageIndexIdentity: input.coverageIndexIdentity,
+    manifestSha256: sha256Hex(manifestBytes),
+    reviewedSources: manifestStructure.manifest.reviewedSources,
+    coverageIndex: manifestStructure.manifest.coverageIndex,
     conclusion: input.conclusion,
-    approvedBy: input.approvedBy,
-    approvedAt: input.approvedAt,
-    reviewedSources,
+    reviewer: {
+      name: input.reviewer.name,
+      assurance: input.reviewer.assurance,
+    },
+    reviewedAt: input.reviewedAt,
   };
   const bytes = serializeArtifact(orderedArtifact, "plan-coverage-review");
   const validation = validatePlanCoverageReview(
@@ -1751,7 +2006,7 @@ function exportPlanCoverageReviewInput(
   );
   if (!validation.ok)
     throw exportFailure(
-      `exported Plan Coverage Review is invalid: ${validation.message}`,
+      `exported Coverage Review is invalid: ${validation.message}`,
       validation.category,
     );
   return bytes;

@@ -1,62 +1,58 @@
 {
-  "schemaVersion": 1,
-  "planId": "fixture-goal-plan",
-  "revision": 1,
+  "schemaVersion": "1.0.0",
+  "plan": { "id": "fixture-goal-plan", "revision": 1 },
+  "declaration": {
+    "path": "specs/plans/fixture-goal-plan.json",
+    "sha256": "c5eb4091cc468eaa6ab39c2d52ffa8da9f13c1ab4375de4c2d1c05469c544f8d"
+  },
   "nodes": [
     {
-      "planNodeRef": "node-a",
-      "storyRef": "FP-57",
+      "nodeRef": "node-a",
+      "storyRef": "specs/stories/EX-001-first",
       "readinessContract": {
-        "identity": "sources/readiness-contract.md",
-        "sha256": "5543e010d0504413b1e053680b1e277beda08d5f1780a438c70456796522d4e4"
+        "path": "specs/stories/EX-001-first/readiness.json",
+        "sha256": "d6a81f64a2c54e4ff937ac28eeccbac4c68c78f6d288c022ffb9690308fafc40"
       },
-      "label": "Prepare"
+      "dependsOn": []
     },
     {
-      "planNodeRef": "node-b",
-      "storyRef": "FP-58",
+      "nodeRef": "node-b",
+      "storyRef": "specs/stories/EX-002-second",
       "readinessContract": {
-        "identity": "sources/readiness-contract.md",
-        "sha256": "5543e010d0504413b1e053680b1e277beda08d5f1780a438c70456796522d4e4"
+        "path": "specs/stories/EX-002-second/readiness.json",
+        "sha256": "e9825600d17652b1a0d596a74a4626c87036df71bd25d47c4edbc4c5cf191495"
       },
-      "label": "Execute"
-    },
-    {
-      "planNodeRef": "node-c",
-      "storyRef": "FP-59",
-      "readinessContract": {
-        "identity": "sources/readiness-contract.md",
-        "sha256": "5543e010d0504413b1e053680b1e277beda08d5f1780a438c70456796522d4e4"
-      },
-      "label": "Review"
-    }
-  ],
-  "edges": [
-    {
-      "from": "node-a",
-      "to": "node-b"
-    },
-    {
-      "from": "node-b",
-      "to": "node-c"
+      "dependsOn": ["node-a"]
     }
   ],
   "reviewedSources": [
     {
-      "identity": "sources/requirements.md",
-      "sha256": "2c39b1a43da19975cc767515193c1e975b109aa61b6a842cf1eaf9d4bc7260db"
+      "path": "specs/decisions/ADR-001-example.md",
+      "sha256": "8429f306dbe21c4979f4230bc4d9d169b8e22293632975d0cf186f7ac03b2208"
     },
     {
-      "identity": "sources/plan-input.json",
-      "sha256": "76a14bc215277d52bae2fb2ed815b7ba6fa307aa795cdc9815a4febc4ac26e86"
+      "path": "specs/features/example/spec.md",
+      "sha256": "4d77c414b66fa5c18a24a733c71da146859f2f131fd9b3094801cfe8f329becc"
     },
     {
-      "identity": "sources/readiness-contract.md",
-      "sha256": "5543e010d0504413b1e053680b1e277beda08d5f1780a438c70456796522d4e4"
+      "path": "specs/stories/EX-001-first/acceptance.md",
+      "sha256": "9cc0e828c5279d1a733a1f5013b51442bda88bab9b2fe2cee6122c593d3f94f3"
     },
     {
-      "identity": "sources/coverage-index.md",
-      "sha256": "d137db68c92cb02f288bb149e1f934bfc852c13326efbe5a032251042ad1d765"
+      "path": "specs/stories/EX-001-first/story.md",
+      "sha256": "580a0f0562c6a9dce4deea16a7002f2d53a53178239e4a5677520a59093ba724"
+    },
+    {
+      "path": "specs/stories/EX-002-second/acceptance.md",
+      "sha256": "4c4c7a2aaa7d6eea818ba14b2bfd622907fceba6e9477bfb2173136cf353d287"
+    },
+    {
+      "path": "specs/stories/EX-002-second/story.md",
+      "sha256": "7172f55129a5e1f7b810d6b92f1a5f3f4843d9daa58d5eb84ed481b3e6ee5c61"
     }
-  ]
+  ],
+  "coverageIndex": {
+    "batchId": "BR-001-goal-plan-fixture",
+    "fingerprint": "7cc082593adf00fe141410aaeb24974dd4750db3b4e0f54be636f05651ec5019"
+  }
 }

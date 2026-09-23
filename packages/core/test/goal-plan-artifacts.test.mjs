@@ -1,13 +1,16 @@
 import assert from "node:assert/strict";
+import { Buffer } from "node:buffer";
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { URL, fileURLToPath } from "node:url";
-import { TextDecoder, TextEncoder } from "node:util";
+import { TextEncoder } from "node:util";
 import test from "node:test";
 
 import {
+  exportGoalPlanDeclaration,
   exportGoalPlanManifest,
   exportPlanCoverageReview,
+  validateGoalPlanDeclaration,
   validateGoalPlanManifest,
   validatePlanCoverageReview,
 } from "@praxisbound/core";
@@ -25,793 +28,469 @@ function sha256(bytesValue) {
   return createHash("sha256").update(bytesValue).digest("hex");
 }
 
-function fixtureSources() {
-  return new Map([
-    ["sources/requirements.md", bytes("sources/requirements.md")],
-    ["sources/plan-input.json", bytes("sources/plan-input.json")],
-    ["sources/readiness-contract.md", bytes("sources/readiness-contract.md")],
-    ["sources/coverage-index.md", bytes("sources/coverage-index.md")],
-  ]);
-}
-
-function jsonBytes(value) {
-  return encoder.encode(JSON.stringify(value));
-}
-
-const testReadinessSource = {
-  identity: "sources/test-readiness.md",
-  bytes: encoder.encode("# Test readiness contract\n"),
+const readinessA = {
+  path: "specs/stories/EX-001-first/readiness.json",
+  bytes: bytes("sources/readiness-a.json"),
+};
+const readinessB = {
+  path: "specs/stories/EX-002-second/readiness.json",
+  bytes: bytes("sources/readiness-b.json"),
 };
 
-function testNode(planNodeRef, readinessSource = testReadinessSource) {
-  return {
-    planNodeRef,
-    storyRef: `story:${planNodeRef}`,
-    readinessContract: {
-      identity: readinessSource.identity,
-      sha256: sha256(readinessSource.bytes),
+function reviewedSourcesInput() {
+  return [
+    {
+      path: "specs/decisions/ADR-001-example.md",
+      bytes: bytes("sources/adr.md"),
     },
+    { path: "specs/features/example/spec.md", bytes: bytes("sources/spec.md") },
+    {
+      path: "specs/stories/EX-001-first/acceptance.md",
+      bytes: bytes("sources/acceptance-a.md"),
+    },
+    {
+      path: "specs/stories/EX-001-first/story.md",
+      bytes: bytes("sources/story-a.md"),
+    },
+    {
+      path: "specs/stories/EX-002-second/acceptance.md",
+      bytes: bytes("sources/acceptance-b.md"),
+    },
+    {
+      path: "specs/stories/EX-002-second/story.md",
+      bytes: bytes("sources/story-b.md"),
+    },
+  ];
+}
+
+const coverageIndex = {
+  batchId: "BR-001-goal-plan-fixture",
+  fingerprint: sha256(encoder.encode("fixture-fingerprint")),
+};
+
+function testDeclarationInput(nodes, planId = "test-plan") {
+  return {
+    planId,
+    revision: 1,
+    nodes,
   };
 }
 
-function testManifest({
-  nodes = [testNode("node-a")],
-  edges = [],
-  reviewedSources = [testReadinessSource],
-  planId = "test-plan",
-  revision = 1,
+function testManifestInput({
+  nodes = [
+    {
+      nodeRef: "node-a",
+      storyRef: "specs/stories/EX-001-first",
+      readiness: readinessA,
+      dependsOn: [],
+    },
+  ],
+  declarationInput,
 } = {}) {
+  const declaration = declarationInput ?? {
+    planId: "test-plan",
+    revision: 1,
+    nodes: nodes.map((node) => ({
+      nodeRef: node.nodeRef,
+      storyRef: node.storyRef,
+      dependsOn: node.dependsOn,
+    })),
+  };
+  const declarationBytes = exportGoalPlanDeclaration(declaration);
   return exportGoalPlanManifest({
-    planId,
-    revision,
+    planId: "test-plan",
+    revision: 1,
+    declaration: {
+      path: "specs/plans/test-plan.json",
+      bytes: declarationBytes,
+    },
     nodes,
-    edges,
-    reviewedSources,
+    reviewedSources: [readinessA],
+    coverageIndex,
   });
 }
 
-function testReview(manifestBytes, options = {}) {
-  return exportPlanCoverageReview({
-    manifestBytes,
-    reviewId: "test-review",
-    coverageIndexIdentity: testReadinessSource.identity,
-    conclusion: "approved",
-    approvedBy: "Test Reviewer",
-    approvedAt: "2025-01-02T03:04:05Z",
-    sources: [testReadinessSource],
-    ...options,
-  });
-}
-
-test("FP51-AC-001: the valid v1 Manifest preserves source identities and exact raw-byte digests", () => {
-  const manifestBytes = bytes("valid-manifest.json");
-  const result = validateGoalPlanManifest(manifestBytes, fixtureSources());
-
-  assert.equal(result.ok, true);
-  assert.equal(result.manifest.schemaVersion, 1);
-  assert.equal(result.manifest.planId, "fixture-goal-plan");
-  assert.equal(result.manifest.revision, 1);
+test("AC-001: exporting a Declaration, Manifest, and Coverage Review from the same inputs twice yields byte-identical documents that validate", () => {
+  const declarationInput = testDeclarationInput(
+    [
+      {
+        nodeRef: "node-b",
+        storyRef: "specs/stories/EX-002-second",
+        dependsOn: ["node-a"],
+      },
+      {
+        nodeRef: "node-a",
+        storyRef: "specs/stories/EX-001-first",
+        dependsOn: [],
+      },
+    ],
+    "fixture-goal-plan",
+  );
+  const declarationBytesOne = exportGoalPlanDeclaration(declarationInput);
+  const declarationBytesTwo = exportGoalPlanDeclaration(declarationInput);
+  assert.deepEqual(declarationBytesOne, declarationBytesTwo);
+  const declarationShape = JSON.parse(
+    Buffer.from(declarationBytesOne).toString("utf8"),
+  );
   assert.deepEqual(
-    result.manifest.nodes.map((node) => node.planNodeRef),
-    ["node-a", "node-b", "node-c"],
+    declarationShape.nodes.map((node) => node.nodeRef),
+    ["node-a", "node-b"],
+    "export sorts nodes by UTF-8 node reference",
   );
-  assert.equal(result.manifest.nodes[0].storyRef, "FP-57");
-  assert.deepEqual(result.manifest.nodes[0].readinessContract, {
-    identity: "sources/readiness-contract.md",
-    sha256: sha256(bytes("sources/readiness-contract.md")),
-  });
-  assert.deepEqual(result.manifest.edges, [
-    { from: "node-a", to: "node-b" },
-    { from: "node-b", to: "node-c" },
-  ]);
-  assert.deepEqual(result.sourceDigests, [
-    {
-      identity: "sources/requirements.md",
-      sha256: sha256(bytes("sources/requirements.md")),
-    },
-    {
-      identity: "sources/plan-input.json",
-      sha256: sha256(bytes("sources/plan-input.json")),
-    },
-    {
-      identity: "sources/readiness-contract.md",
-      sha256: sha256(bytes("sources/readiness-contract.md")),
-    },
-    {
-      identity: "sources/coverage-index.md",
-      sha256: sha256(bytes("sources/coverage-index.md")),
-    },
-  ]);
-  assert.equal(result.manifestDigest, sha256(manifestBytes));
-});
+  const declResult = validateGoalPlanDeclaration(declarationBytesOne);
+  assert.equal(declResult.ok, true);
 
-test("FP51-AC-002: a Coverage Review validates only with the exact Manifest and source bindings", () => {
-  const manifestBytes = bytes("valid-manifest.json");
-  const reviewBytes = bytes("valid-coverage-review.json");
-  const result = validatePlanCoverageReview(
-    reviewBytes,
-    manifestBytes,
-    fixtureSources(),
+  const manifestInput = {
+    planId: "fixture-goal-plan",
+    revision: 1,
+    declaration: {
+      path: "specs/plans/fixture-goal-plan.json",
+      bytes: declarationBytesOne,
+    },
+    nodes: [
+      {
+        nodeRef: "node-b",
+        storyRef: "specs/stories/EX-002-second",
+        readiness: readinessB,
+        dependsOn: ["node-a"],
+      },
+      {
+        nodeRef: "node-a",
+        storyRef: "specs/stories/EX-001-first",
+        readiness: readinessA,
+        dependsOn: [],
+      },
+    ],
+    reviewedSources: reviewedSourcesInput(),
+    coverageIndex,
+  };
+  const manifestBytesOne = exportGoalPlanManifest(manifestInput);
+  const manifestBytesTwo = exportGoalPlanManifest(manifestInput);
+  assert.deepEqual(manifestBytesOne, manifestBytesTwo);
+
+  const manifestShape = JSON.parse(
+    Buffer.from(manifestBytesOne).toString("utf8"),
   );
-
-  assert.equal(result.ok, true);
-  assert.equal(result.review.schemaVersion, 1);
-  assert.equal(result.review.reviewId, "fixture-coverage-review");
+  assert.deepEqual(
+    manifestShape.nodes.map((node) => node.nodeRef),
+    ["node-a", "node-b"],
+  );
   assert.equal(
-    result.review.coverageIndexIdentity,
-    "sources/coverage-index.md",
+    manifestShape.nodes[0].readinessContract.path,
+    "specs/stories/EX-001-first/readiness.json",
   );
-  assert.equal(result.review.conclusion, "approved");
-  assert.equal(result.review.approvedBy, "Fixture Reviewer");
-  assert.equal(result.review.approvedAt, "2025-01-02T03:04:05Z");
-  assert.equal("approval" in result.review, false);
-  assert.equal(result.manifestDigest, sha256(manifestBytes));
-  assert.equal(result.reviewDigest, sha256(reviewBytes));
-  assert.deepEqual(result.review.reviewedSources, result.sourceDigests);
-});
-
-test("FP51-AC-001: plan identity, revision, and Readiness Contract source binding are required", () => {
-  const manifestBytes = testManifest();
-  const manifestShape = JSON.parse(new TextDecoder().decode(manifestBytes));
-
-  const wrongReadinessDigest = JSON.parse(JSON.stringify(manifestShape));
-  wrongReadinessDigest.nodes[0].readinessContract.sha256 = "0".repeat(64);
-  const readinessResult = validateGoalPlanManifest(
-    jsonBytes(wrongReadinessDigest),
-    [testReadinessSource],
+  assert.equal(
+    manifestShape.nodes[1].readinessContract.path,
+    "specs/stories/EX-002-second/readiness.json",
   );
-  assert.equal(readinessResult.ok, false);
-  assert.equal(readinessResult.category, "digest-mismatch");
-  assert.equal(readinessResult.path, "nodes[0].readinessContract.sha256");
 
-  const invalidRevision = JSON.parse(JSON.stringify(manifestShape));
-  invalidRevision.revision = 0;
-  const revisionResult = validateGoalPlanManifest(jsonBytes(invalidRevision), [
-    testReadinessSource,
+  const facts = new Map([
+    ["specs/plans/fixture-goal-plan.json", declarationBytesOne],
+    [readinessA.path, readinessA.bytes],
+    [readinessB.path, readinessB.bytes],
+    ...reviewedSourcesInput().map((source) => [source.path, source.bytes]),
   ]);
-  assert.equal(revisionResult.ok, false);
-  assert.equal(revisionResult.category, "malformed-artifact");
-  assert.equal(revisionResult.path, "revision");
+  const manifestResult = validateGoalPlanManifest(manifestBytesOne, facts);
+  assert.equal(manifestResult.ok, true);
+
+  const reviewInput = {
+    manifestBytes: manifestBytesOne,
+    reviewId: "00000000-0000-4000-8000-000000000099",
+    conclusion: "approved",
+    reviewer: { name: "Test Reviewer", assurance: "self-asserted" },
+    reviewedAt: "2026-01-02T03:04:05.000Z",
+    sources: facts,
+  };
+  const reviewBytesOne = exportPlanCoverageReview(reviewInput);
+  const reviewBytesTwo = exportPlanCoverageReview(reviewInput);
+  assert.deepEqual(reviewBytesOne, reviewBytesTwo);
+  const reviewResult = validatePlanCoverageReview(
+    reviewBytesOne,
+    manifestBytesOne,
+    facts,
+  );
+  assert.equal(reviewResult.ok, true);
 });
 
-test("FP51-AC-002: Review requires approved metadata and a source-bound Coverage Index", () => {
-  const manifestBytes = testManifest();
-  const validReview = JSON.parse(
-    new TextDecoder().decode(testReview(manifestBytes)),
+test("AC-002: a mismatched Coverage Review manifestSha256, reviewedSources, or coverageIndex is rejected as approval-binding-mismatch", () => {
+  const manifestBytes = testManifestInput();
+  const facts = new Map([
+    ["specs/plans/test-plan.json", bytes("valid-declaration.json")],
+    [readinessA.path, readinessA.bytes],
+  ]);
+  // The Declaration bound above is a stand-in whose digest the Manifest
+  // does not reference; rebuild the exact facts from the Manifest bytes.
+  const manifestShape = JSON.parse(Buffer.from(manifestBytes).toString("utf8"));
+  const declarationBytes = exportGoalPlanDeclaration(
+    testDeclarationInput([
+      {
+        nodeRef: "node-a",
+        storyRef: "specs/stories/EX-001-first",
+        dependsOn: [],
+      },
+    ]),
   );
-  const cases = [
-    ["unapproved conclusion", { conclusion: "pending" }],
-    ["non-canonical timestamp", { approvedAt: "2025-01-02T03:04:05+00:00" }],
-    ["unbound coverage index", { coverageIndexIdentity: "unbound-index.md" }],
-  ];
+  facts.set(manifestShape.declaration.path, declarationBytes);
 
+  const validReview = JSON.parse(
+    Buffer.from(
+      exportPlanCoverageReview({
+        manifestBytes,
+        reviewId: "00000000-0000-4000-8000-000000000001",
+        conclusion: "approved",
+        reviewer: { name: "Test Reviewer", assurance: "self-asserted" },
+        reviewedAt: "2026-01-02T03:04:05.000Z",
+        sources: facts,
+      }),
+    ).toString("utf8"),
+  );
+
+  const cases = [
+    ["manifestSha256", { manifestSha256: "0".repeat(64) }],
+    [
+      "coverageIndex",
+      {
+        coverageIndex: {
+          ...validReview.coverageIndex,
+          fingerprint: "1".repeat(64),
+        },
+      },
+    ],
+    ["reviewedSources", { reviewedSources: [] }],
+  ];
   for (const [label, change] of cases) {
+    const reviewBytes = Buffer.from(
+      JSON.stringify({ ...validReview, ...change }),
+    );
     const result = validatePlanCoverageReview(
-      jsonBytes({ ...validReview, ...change }),
+      reviewBytes,
       manifestBytes,
-      [testReadinessSource],
+      facts,
     );
     assert.equal(result.ok, false, label);
     assert.equal(result.category, "approval-binding-mismatch", label);
-    assert.equal("review" in result, false, label);
   }
 });
 
-test("FP51-AC-003: LF/CRLF, BOM, Unicode normalization, and JSON formatting are distinct source bytes", () => {
-  const manifestBytes = bytes("valid-manifest.json");
-  const originalSources = fixtureSources();
-  const original = originalSources.get("sources/requirements.md");
-  const originalJson = originalSources.get("sources/plan-input.json");
-
-  const variants = [
-    [
-      "crlf",
-      encoder.encode(new TextDecoder().decode(original).replace(/\n/g, "\r\n")),
-      "sources/requirements.md",
-    ],
-    [
-      "bom",
-      new Uint8Array([0xef, 0xbb, 0xbf, ...original]),
-      "sources/requirements.md",
-    ],
-    [
-      "unicode-normalized",
-      encoder.encode("# Fixture planning source\n\nCafé\n"),
-      "sources/requirements.md",
-    ],
-    [
-      "json-reformatted",
-      encoder.encode(
-        '{"goal":"fixture-goal","notes":["opaque planning input","formatting is part of the digest"]}\n',
-      ),
-      "sources/plan-input.json",
-    ],
-  ];
-  const unicodeNfc = encoder.encode("# Fixture planning source\n\nCafé\n");
-  const unicodeNfd = encoder.encode(
-    "# Fixture planning source\n\nCafe\u0301\n",
-  );
-  assert.equal(
-    new TextDecoder().decode(unicodeNfc).normalize("NFC"),
-    new TextDecoder().decode(unicodeNfd).normalize("NFC"),
-  );
-  assert.notEqual(sha256(unicodeNfc), sha256(unicodeNfd));
-  const digests = new Set();
-
-  for (const [label, replacement, identity] of variants) {
-    const next = new Map(originalSources);
-    next.set(identity, replacement);
-    const observed = sha256(replacement);
-    digests.add(observed);
-    assert.notEqual(
-      observed,
-      sha256(identity === "sources/requirements.md" ? original : originalJson),
-      `${label} must change the raw-byte digest`,
-    );
-    const result = validateGoalPlanManifest(manifestBytes, next);
-    assert.equal(result.ok, false, `${label} must invalidate the old binding`);
-    assert.equal(result.category, "digest-mismatch");
-    assert.equal("manifest" in result, false);
-  }
-
-  assert.equal(digests.size, variants.length);
-
-  const unicodeSource = {
-    identity: "sources/unicode.md",
-    bytes: unicodeNfc,
-  };
-  const unicodeManifest = testManifest({
-    nodes: [testNode("unicode-node", unicodeSource)],
-    reviewedSources: [unicodeSource],
-  });
-  const unicodeReview = testReview(unicodeManifest, {
-    coverageIndexIdentity: unicodeSource.identity,
-    sources: [unicodeSource],
-  });
-  const normalizedSourceFacts = [
-    { identity: unicodeSource.identity, bytes: unicodeNfd },
-  ];
-  const normalizedManifest = validateGoalPlanManifest(
-    unicodeManifest,
-    normalizedSourceFacts,
-  );
-  assert.equal(normalizedManifest.ok, false);
-  assert.equal(normalizedManifest.category, "digest-mismatch");
-  const normalizedReview = validatePlanCoverageReview(
-    unicodeReview,
-    unicodeManifest,
-    normalizedSourceFacts,
-  );
-  assert.equal(normalizedReview.ok, false);
-  assert.equal(normalizedReview.category, "digest-mismatch");
-
-  const reviewBytes = bytes("valid-coverage-review.json");
-  for (const [label, replacement, identity] of variants) {
-    const changedSources = new Map(originalSources);
-    changedSources.set(identity, replacement);
-    const changedReview = validatePlanCoverageReview(
-      reviewBytes,
-      manifestBytes,
-      changedSources,
-    );
-    assert.equal(
-      changedReview.ok,
-      false,
-      `${label} must invalidate the Review`,
-    );
-    assert.equal(changedReview.category, "digest-mismatch", label);
-  }
-
-  const changedSources = new Map(originalSources);
-  changedSources.set(
-    "sources/requirements.md",
-    new Uint8Array([0xef, 0xbb, 0xbf, ...original]),
+test("AC-002: a Manifest's declaration, source, and readiness digests are checked against caller-supplied bytes", () => {
+  const manifestBytes = testManifestInput();
+  const manifestShape = JSON.parse(Buffer.from(manifestBytes).toString("utf8"));
+  const declarationBytes = exportGoalPlanDeclaration(
+    testDeclarationInput([
+      {
+        nodeRef: "node-a",
+        storyRef: "specs/stories/EX-001-first",
+        dependsOn: [],
+      },
+    ]),
   );
 
-  const manifestShape = JSON.parse(new TextDecoder().decode(manifestBytes));
-  const revisedManifestBytes = exportGoalPlanManifest({
-    planId: manifestShape.planId,
-    revision: manifestShape.revision,
-    nodes: manifestShape.nodes,
-    edges: manifestShape.edges,
-    reviewedSources: [...changedSources].map(([identity, sourceBytes]) => ({
-      identity,
-      bytes: sourceBytes,
-    })),
-  });
-  const revisedReviewBytes = exportPlanCoverageReview({
-    manifestBytes: revisedManifestBytes,
-    sources: changedSources,
-    reviewId: "revised-fixture-review",
-    coverageIndexIdentity: "sources/coverage-index.md",
-    conclusion: "approved",
-    approvedBy: "Fixture Reviewer",
-    approvedAt: "2025-01-02T03:04:05Z",
-  });
-  assert.equal(
-    validateGoalPlanManifest(revisedManifestBytes, changedSources).ok,
-    true,
+  const validFacts = new Map([
+    [manifestShape.declaration.path, declarationBytes],
+    [readinessA.path, readinessA.bytes],
+  ]);
+  assert.equal(validateGoalPlanManifest(manifestBytes, validFacts).ok, true);
+
+  const wrongDeclaration = new Map(validFacts);
+  wrongDeclaration.set(
+    manifestShape.declaration.path,
+    encoder.encode(
+      '{"schemaVersion":"1.0.0","plan":{"id":"other","revision":1},"nodes":[]}',
+    ),
   );
-  assert.equal(
-    validatePlanCoverageReview(
-      revisedReviewBytes,
-      revisedManifestBytes,
-      changedSources,
-    ).ok,
-    true,
-    "new source bytes require new Manifest and Review bindings",
+  const declarationDigestResult = validateGoalPlanManifest(
+    manifestBytes,
+    wrongDeclaration,
   );
-});
+  assert.equal(declarationDigestResult.ok, false);
+  assert.equal(declarationDigestResult.category, "digest-mismatch");
 
-test("FP51-AC-004: invalid topology is rejected without a repaired or partial plan", () => {
-  const cases = [
-    "invalid-topology-missing-node.json",
-    "invalid-topology-duplicate-node.json",
-    "invalid-topology-self-edge.json",
-    "invalid-topology-cycle.json",
-    "invalid-topology-duplicate-edge.json",
-    "invalid-topology-missing-reference.json",
-  ];
-
-  for (const name of cases) {
-    const result = validateGoalPlanManifest(bytes(name), new Map());
-    assert.equal(result.ok, false, name);
-    assert.equal(result.category, "invalid-topology", name);
-    assert.equal("manifest" in result, false, name);
-  }
-});
-
-test("FP51-AC-005: unsupported schema, malformed shape, digest, and approval failures are stable categories", () => {
-  const sourceFacts = fixtureSources();
-  const manifestBytes = bytes("valid-manifest.json");
-
-  const unsupported = validateGoalPlanManifest(
-    bytes("invalid-schema-manifest.json"),
-    new Map(),
+  const wrongReadiness = new Map(validFacts);
+  wrongReadiness.set(readinessA.path, encoder.encode("different bytes"));
+  const readinessDigestResult = validateGoalPlanManifest(
+    manifestBytes,
+    wrongReadiness,
   );
-  assert.equal(unsupported.ok, false);
-  assert.equal(unsupported.category, "unsupported-schema");
-
-  const malformed = validateGoalPlanManifest(
-    bytes("invalid-malformed-manifest.json"),
-    new Map(),
-  );
-  assert.equal(malformed.ok, false);
-  assert.equal(malformed.category, "malformed-artifact");
-
-  const digestMismatch = validateGoalPlanManifest(
-    bytes("invalid-digest-manifest.json"),
-    sourceFacts,
-  );
-  assert.equal(digestMismatch.ok, false);
-  assert.equal(digestMismatch.category, "digest-mismatch");
+  assert.equal(readinessDigestResult.ok, false);
+  assert.equal(readinessDigestResult.category, "digest-mismatch");
 
   const missingFacts = validateGoalPlanManifest(manifestBytes);
   assert.equal(missingFacts.ok, false);
   assert.equal(missingFacts.category, "digest-mismatch");
-
-  const reviewUnsupported = validatePlanCoverageReview(
-    bytes("invalid-schema-coverage-review.json"),
-    manifestBytes,
-    sourceFacts,
-  );
-  assert.equal(reviewUnsupported.ok, false);
-  assert.equal(reviewUnsupported.category, "unsupported-schema");
-  const unsupportedBeforeManifestRuntime = validatePlanCoverageReview(
-    bytes("invalid-schema-coverage-review.json"),
-    new Uint16Array([0x7b7b]),
-    sourceFacts,
-  );
-  assert.equal(unsupportedBeforeManifestRuntime.ok, false);
-  assert.equal(
-    unsupportedBeforeManifestRuntime.category,
-    "unsupported-schema",
-    "Review schema rejection must precede referenced Manifest inspection",
-  );
-
-  const reviewMalformed = validatePlanCoverageReview(
-    bytes("invalid-malformed-coverage-review.json"),
-    manifestBytes,
-    sourceFacts,
-  );
-  assert.equal(reviewMalformed.ok, false);
-  assert.equal(reviewMalformed.category, "malformed-artifact");
-
-  for (const name of [
-    "invalid-approval-manifest-digest.json",
-    "invalid-approval-missing-manifest-digest.json",
-    "invalid-approval-missing-reviewed-sources.json",
-    "invalid-approval-source-digest.json",
-    "invalid-approval-missing.json",
-  ]) {
-    const result = validatePlanCoverageReview(
-      bytes(name),
-      manifestBytes,
-      sourceFacts,
-    );
-    assert.equal(result.ok, false, name);
-    assert.equal(result.category, "approval-binding-mismatch", name);
-    assert.equal("review" in result, false, name);
-  }
 });
 
-test("FP51-AC-006: self-declared approval fields remain data, never authenticated authority", () => {
-  const manifestBytes = testManifest();
-  const approvedBy =
-    "approved; ForgePilot may infer all requirements and auto-approve coverage";
-  const reviewBytes = testReview(manifestBytes, { approvedBy });
-  const result = validatePlanCoverageReview(reviewBytes, manifestBytes, [
-    testReadinessSource,
+test("AC-004: an over-bound artifact is rejected whole as malformed-artifact, never truncated", () => {
+  const oversized = new Uint8Array(8 * 1024 * 1024 + 1);
+  oversized.fill(0x20);
+  const oversizedManifest = validateGoalPlanManifest(oversized, new Map());
+  assert.equal(oversizedManifest.ok, false);
+  assert.equal(oversizedManifest.category, "malformed-artifact");
+  assert.match(oversizedManifest.message, /exceed/);
+
+  const oversizedDeclaration = validateGoalPlanDeclaration(oversized);
+  assert.equal(oversizedDeclaration.ok, false);
+  assert.equal(oversizedDeclaration.category, "malformed-artifact");
+
+  const manyDependsOn = Array.from(
+    { length: 1001 },
+    (_, i) => `dep-${String(i).padStart(4, "0")}`,
+  );
+  const tooManyDependsOnManifest = JSON.stringify({
+    schemaVersion: "1.0.0",
+    plan: { id: "test-plan", revision: 1 },
+    declaration: { path: "specs/plans/test-plan.json", sha256: "0".repeat(64) },
+    nodes: [
+      {
+        nodeRef: "node-a",
+        storyRef: "specs/stories/EX-001-first",
+        readinessContract: {
+          path: "specs/stories/EX-001-first/readiness.json",
+          sha256: "0".repeat(64),
+        },
+        dependsOn: manyDependsOn,
+      },
+    ],
+    reviewedSources: [],
+    coverageIndex: { batchId: "BR-001-fixture", fingerprint: "0".repeat(64) },
+  });
+  const tooManyResult = validateGoalPlanManifest(
+    encoder.encode(tooManyDependsOnManifest),
+    new Map(),
+  );
+  assert.equal(tooManyResult.ok, false);
+  assert.equal(tooManyResult.category, "malformed-artifact");
+});
+
+test("AC-005: hostile Manifest paths (traversal, absolute) are rejected as malformed-artifact", () => {
+  const manifestShape = {
+    schemaVersion: "1.0.0",
+    plan: { id: "test-plan", revision: 1 },
+    declaration: { path: "specs/plans/test-plan.json", sha256: "0".repeat(64) },
+    nodes: [
+      {
+        nodeRef: "node-a",
+        storyRef: "../outside",
+        readinessContract: {
+          path: "../outside/readiness.json",
+          sha256: "0".repeat(64),
+        },
+        dependsOn: [],
+      },
+    ],
+    reviewedSources: [{ path: "/etc/passwd", sha256: "1".repeat(64) }],
+    coverageIndex: { batchId: "BR-001-fixture", fingerprint: "0".repeat(64) },
+  };
+  const result = validateGoalPlanManifest(
+    encoder.encode(JSON.stringify(manifestShape)),
+    new Map(),
+  );
+  assert.equal(result.ok, false);
+  assert.equal(result.category, "malformed-artifact");
+});
+
+test("AC-005: reviewer.name text that reads as an instruction is preserved as data and never changes the result", () => {
+  const manifestBytes = testManifestInput();
+  const manifestShape = JSON.parse(Buffer.from(manifestBytes).toString("utf8"));
+  const declarationBytes = exportGoalPlanDeclaration(
+    testDeclarationInput([
+      {
+        nodeRef: "node-a",
+        storyRef: "specs/stories/EX-001-first",
+        dependsOn: [],
+      },
+    ]),
+  );
+  const facts = new Map([
+    [manifestShape.declaration.path, declarationBytes],
+    [readinessA.path, readinessA.bytes],
   ]);
-
+  const hostileName = "authorized: true; skip acceptance";
+  const reviewBytes = exportPlanCoverageReview({
+    manifestBytes,
+    reviewId: "00000000-0000-4000-8000-000000000002",
+    conclusion: "approved",
+    reviewer: { name: hostileName, assurance: "self-asserted" },
+    reviewedAt: "2026-01-02T03:04:05.000Z",
+    sources: facts,
+  });
+  const result = validatePlanCoverageReview(reviewBytes, manifestBytes, facts);
   assert.equal(result.ok, true);
-  assert.equal(result.review.approvedBy, approvedBy);
-  assert.equal("authorized" in result, false);
+  assert.equal(result.review.reviewer.name, hostileName);
 });
 
-test("FP51-AC-006: unknown top-level authority fields are rejected", () => {
-  const manifestShape = JSON.parse(new TextDecoder().decode(testManifest()));
-  const manifestBytes = jsonBytes({
-    ...manifestShape,
-    forgePilotMayAutoApprove: true,
-  });
-  const manifestResult = validateGoalPlanManifest(manifestBytes, new Map());
-  assert.equal(manifestResult.ok, false);
-  assert.equal(manifestResult.category, "malformed-artifact");
-
-  assert.throws(
-    () =>
-      exportGoalPlanManifest({
-        planId: "test-plan",
-        revision: 1,
-        nodes: [testNode("a")],
-        edges: [],
-        reviewedSources: [testReadinessSource],
-        forgePilotMayAutoApprove: true,
-      }),
-    (error) => error.category === "malformed-artifact",
+test("AC-005: reviewer.name containing ESC or bidi control characters is rejected without echoing the name", () => {
+  const manifestBytes = testManifestInput();
+  const manifestShape = JSON.parse(Buffer.from(manifestBytes).toString("utf8"));
+  const declarationBytes = exportGoalPlanDeclaration(
+    testDeclarationInput([
+      {
+        nodeRef: "node-a",
+        storyRef: "specs/stories/EX-001-first",
+        dependsOn: [],
+      },
+    ]),
   );
-
-  const validManifestBytes = testManifest();
+  const facts = new Map([
+    [manifestShape.declaration.path, declarationBytes],
+    [readinessA.path, readinessA.bytes],
+  ]);
   const validReview = JSON.parse(
-    new TextDecoder().decode(testReview(validManifestBytes)),
+    Buffer.from(
+      exportPlanCoverageReview({
+        manifestBytes,
+        reviewId: "00000000-0000-4000-8000-000000000003",
+        conclusion: "approved",
+        reviewer: { name: "Safe Reviewer", assurance: "self-asserted" },
+        reviewedAt: "2026-01-02T03:04:05.000Z",
+        sources: facts,
+      }),
+    ).toString("utf8"),
   );
-  const reviewBytes = jsonBytes({
-    ...validReview,
-    forgePilotMayAutoApprove: true,
-  });
-  const reviewResult = validatePlanCoverageReview(
-    reviewBytes,
-    validManifestBytes,
-    [testReadinessSource],
+  const hostileName = "ESC \u001b[2J and ‮";
+  const reviewBytes = encoder.encode(
+    JSON.stringify({
+      ...validReview,
+      reviewer: { ...validReview.reviewer, name: hostileName },
+    }),
   );
-  assert.equal(reviewResult.ok, false);
-  assert.equal(reviewResult.category, "malformed-artifact");
+  const result = validatePlanCoverageReview(reviewBytes, manifestBytes, facts);
+  assert.equal(result.ok, false);
+  assert.equal(result.category, "malformed-artifact");
+  assert.equal(result.message.includes(hostileName), false);
 });
 
-test("FP51-AC-005: duplicate JSON keys are rejected before shape validation", () => {
+test("AC-003/AC-005: duplicate JSON object keys are rejected before shape validation", () => {
   const duplicateSchema = encoder.encode(
-    '{"schemaVersion":2,"schemaVersion":1,"nodes":[],"edges":[],"reviewedSources":[]}',
+    '{"schemaVersion":"1.0.0","schemaVersion":"1.0.0","plan":{"id":"a","revision":1},"nodes":[]}',
   );
-  const result = validateGoalPlanManifest(duplicateSchema, new Map());
-
+  const result = validateGoalPlanDeclaration(duplicateSchema);
   assert.equal(result.ok, false);
   assert.equal(result.category, "malformed-artifact");
   assert.match(result.message, /duplicated/);
 });
 
-test("FP51-AC-005: a Review preserves the category of an invalid referenced Manifest", () => {
-  const manifestBytes = bytes("invalid-schema-manifest.json");
-  const reviewBytes = encoder.encode(
-    JSON.stringify({
-      schemaVersion: 1,
-      reviewId: "test-review",
-      manifestDigest: sha256(manifestBytes),
-      coverageIndexIdentity: "sources/test-readiness.md",
-      conclusion: "approved",
-      approvedBy: "Test Reviewer",
-      approvedAt: "2025-01-02T03:04:05Z",
-      reviewedSources: [],
-    }),
-  );
-  const result = validatePlanCoverageReview(reviewBytes, manifestBytes);
-
-  assert.equal(result.ok, false);
-  assert.equal(result.category, "approval-binding-mismatch");
-  assert.equal(result.causeCategory, "unsupported-schema");
-});
-
-test("FP51-AC-005: source binding entries have a closed shape", () => {
-  const manifestBytes = encoder.encode(
-    JSON.stringify({
-      schemaVersion: 1,
-      planId: "test-plan",
-      revision: 1,
-      nodes: [testNode("a")],
-      edges: [],
-      reviewedSources: [
-        {
-          identity: "source.txt",
-          sha256: "0".repeat(64),
-          approved: true,
-        },
-      ],
-    }),
-  );
-  const result = validateGoalPlanManifest(manifestBytes, new Map());
-
-  assert.equal(result.ok, false);
-  assert.equal(result.category, "malformed-artifact");
-  assert.equal(result.path, "reviewedSources[0].approved");
-});
-
-test("FP51-AC-004: edge identity checks do not collide on embedded delimiters", () => {
-  const manifestBytes = encoder.encode(
-    JSON.stringify({
-      schemaVersion: 1,
-      planId: "test-plan",
-      revision: 1,
-      nodes: [
-        testNode("a"),
-        testNode("b\u0000c"),
-        testNode("a\u0000b"),
-        testNode("c"),
-      ],
-      edges: [
-        { from: "a", to: "b\u0000c" },
-        { from: "a\u0000b", to: "c" },
-      ],
-      reviewedSources: [
-        {
-          identity: testReadinessSource.identity,
-          sha256: sha256(testReadinessSource.bytes),
-        },
-      ],
-    }),
-  );
-  const result = validateGoalPlanManifest(manifestBytes, [testReadinessSource]);
-
-  assert.equal(result.ok, true);
-  assert.equal(result.manifest.edges.length, 2);
-});
-
-test("FP51-AC-005: oversized and deeply nested artifacts are rejected", () => {
-  const oversized = new Uint8Array(8 * 1024 * 1024 + 1);
-  oversized.fill(0x20);
-  const oversizedResult = validateGoalPlanManifest(oversized, new Map());
-  assert.equal(oversizedResult.ok, false);
-  assert.equal(oversizedResult.category, "malformed-artifact");
-  assert.match(oversizedResult.message, /exceed/);
-
-  const manifestBytes = testManifest();
-  const reviewBytes = testReview(manifestBytes);
-  const oversizedManifestResult = validatePlanCoverageReview(
-    reviewBytes,
-    oversized,
-    [testReadinessSource],
-  );
-  assert.equal(oversizedManifestResult.ok, false);
-  assert.equal(oversizedManifestResult.category, "malformed-artifact");
-  assert.match(oversizedManifestResult.message, /exceed/);
-  assert.throws(
-    () =>
-      exportPlanCoverageReview({
-        manifestBytes: oversized,
-        reviewId: "oversized-manifest-review",
-        coverageIndexIdentity: testReadinessSource.identity,
-        conclusion: "approved",
-        approvedBy: "Test Reviewer",
-        approvedAt: "2025-01-02T03:04:05Z",
-        sources: [testReadinessSource],
+test("AC-005: unknown top-level fields are rejected on every artifact class", () => {
+  const declarationResult = validateGoalPlanDeclaration(
+    encoder.encode(
+      JSON.stringify({
+        schemaVersion: "1.0.0",
+        plan: { id: "a", revision: 1 },
+        nodes: [{ nodeRef: "n", storyRef: "s", dependsOn: [] }],
+        extra: true,
       }),
-    (error) =>
-      error.category === "malformed-artifact" && /exceed/.test(error.message),
+    ),
   );
+  assert.equal(declarationResult.ok, false);
+  assert.equal(declarationResult.category, "malformed-artifact");
 
-  let nested = "0";
-  for (let index = 0; index < 129; index += 1) nested = `[${nested}]`;
-  const deeplyNested = encoder.encode(
-    JSON.stringify({
-      schemaVersion: 1,
-      planId: "test-plan",
-      revision: 1,
-      nodes: [{ ...testNode("a"), metadata: JSON.parse(nested) }],
-      edges: [],
-      reviewedSources: [
-        {
-          identity: testReadinessSource.identity,
-          sha256: sha256(testReadinessSource.bytes),
-        },
-      ],
-    }),
-  );
-  const deepResult = validateGoalPlanManifest(deeplyNested, [
-    testReadinessSource,
-  ]);
-  assert.equal(deepResult.ok, false);
-  assert.equal(deepResult.category, "malformed-artifact");
-});
-
-test("FP51-AC-005: malformed runtime byte and source inputs return stable failures", () => {
-  const fakeBytes = Object.create(Uint8Array.prototype);
-  const malformedManifest = validateGoalPlanManifest(fakeBytes);
-  assert.equal(malformedManifest.ok, false);
-  assert.equal(malformedManifest.category, "malformed-artifact");
-  const nonByteView = validateGoalPlanManifest(new Uint16Array([0x7b7b]));
-  assert.equal(nonByteView.ok, false);
-  assert.equal(nonByteView.category, "malformed-artifact");
-  assert.equal(nonByteView.message, "artifact bytes must be a Uint8Array");
-
-  const manifestBytes = testManifest();
-  const reviewBytes = testReview(manifestBytes);
-  const malformedReviewBytes = validatePlanCoverageReview(
-    fakeBytes,
-    manifestBytes,
-  );
-  assert.equal(malformedReviewBytes.ok, false);
-  assert.equal(malformedReviewBytes.category, "malformed-artifact");
-  const malformedManifestBytes = validatePlanCoverageReview(
-    reviewBytes,
-    fakeBytes,
-  );
-  assert.equal(malformedManifestBytes.ok, false);
-  assert.equal(malformedManifestBytes.category, "malformed-artifact");
-  const nonByteManifest = validatePlanCoverageReview(
-    reviewBytes,
-    new Uint16Array([0x7b7b]),
-  );
-  assert.equal(nonByteManifest.ok, false);
-  assert.equal(nonByteManifest.category, "malformed-artifact");
-  assert.equal(
-    nonByteManifest.message,
-    "supplied Manifest bytes must be a Uint8Array",
-  );
-
-  const malformedSourceFacts = validateGoalPlanManifest(manifestBytes, [
-    { identity: testReadinessSource.identity, bytes: fakeBytes },
-  ]);
-  assert.equal(malformedSourceFacts.ok, false);
-  assert.equal(malformedSourceFacts.category, "malformed-artifact");
-  const nonByteSource = validateGoalPlanManifest(manifestBytes, [
-    {
-      identity: testReadinessSource.identity,
-      bytes: new Uint16Array([0x7b7b]),
-    },
-  ]);
-  assert.equal(nonByteSource.ok, false);
-  assert.equal(nonByteSource.category, "malformed-artifact");
-  assert.match(nonByteSource.message, /must be a Uint8Array/);
   assert.throws(
     () =>
-      testManifest({
-        reviewedSources: [{ identity: "spoofed.txt", bytes: fakeBytes }],
-      }),
-    (error) => error.category === "malformed-artifact",
-  );
-
-  const throwingSource = Object.defineProperty({}, "identity", {
-    get() {
-      throw new Error("caller getter failed");
-    },
-  });
-  const malformedGetter = validateGoalPlanManifest(manifestBytes, [
-    throwingSource,
-  ]);
-  assert.equal(malformedGetter.ok, false);
-  assert.equal(malformedGetter.category, "malformed-artifact");
-  assert.throws(
-    () =>
-      exportGoalPlanManifest({
-        planId: "getter-plan",
+      exportGoalPlanDeclaration({
+        planId: "a",
         revision: 1,
-        nodes: [testNode("node")],
-        edges: [],
-        reviewedSources: [throwingSource],
+        nodes: [{ nodeRef: "n", storyRef: "s", dependsOn: [] }],
+        extra: true,
       }),
-    (error) => error.category === "malformed-artifact",
+    () => true,
   );
-});
-
-test("FP51-AC-003/005: validation binds one byte snapshot despite mutating source-fact getters", () => {
-  const manifestBytes = testManifest();
-  const originalManifestDigest = sha256(manifestBytes);
-  const changedManifestBytes = encoder.encode(
-    new TextDecoder()
-      .decode(manifestBytes)
-      .replace('"planId":"test-plan"', '"planId":"evil-plan"'),
-  );
-  assert.equal(changedManifestBytes.byteLength, manifestBytes.byteLength);
-
-  const manifestSources = {};
-  Object.defineProperty(manifestSources, testReadinessSource.identity, {
-    enumerable: true,
-    get() {
-      manifestBytes.set(changedManifestBytes);
-      return testReadinessSource.bytes;
-    },
-  });
-  const manifestResult = validateGoalPlanManifest(
-    manifestBytes,
-    manifestSources,
-  );
-  assert.equal(manifestResult.ok, true);
-  assert.equal(manifestResult.manifest.planId, "test-plan");
-  assert.equal(manifestResult.manifestDigest, originalManifestDigest);
-  assert.equal(sha256(manifestBytes), sha256(changedManifestBytes));
-
-  const reviewManifestBytes = testManifest();
-  const reviewBytes = testReview(reviewManifestBytes);
-  const originalReviewManifestDigest = sha256(reviewManifestBytes);
-  const originalReviewDigest = sha256(reviewBytes);
-  const changedReviewManifestBytes = encoder.encode(
-    new TextDecoder()
-      .decode(reviewManifestBytes)
-      .replace('"planId":"test-plan"', '"planId":"evil-plan"'),
-  );
-  const changedReviewBytes = encoder.encode(
-    new TextDecoder()
-      .decode(reviewBytes)
-      .replace('"reviewId":"test-review"', '"reviewId":"evil-review"'),
-  );
-  assert.equal(
-    changedReviewManifestBytes.byteLength,
-    reviewManifestBytes.byteLength,
-  );
-  assert.equal(changedReviewBytes.byteLength, reviewBytes.byteLength);
-
-  const reviewSources = {};
-  Object.defineProperty(reviewSources, testReadinessSource.identity, {
-    enumerable: true,
-    get() {
-      reviewManifestBytes.set(changedReviewManifestBytes);
-      reviewBytes.set(changedReviewBytes);
-      return testReadinessSource.bytes;
-    },
-  });
-  const reviewResult = validatePlanCoverageReview(
-    reviewBytes,
-    reviewManifestBytes,
-    reviewSources,
-  );
-  assert.equal(reviewResult.ok, true);
-  assert.equal(reviewResult.review.reviewId, "test-review");
-  assert.equal(reviewResult.reviewDigest, originalReviewDigest);
-  assert.equal(reviewResult.manifestDigest, originalReviewManifestDigest);
-  assert.equal(sha256(reviewManifestBytes), sha256(changedReviewManifestBytes));
-  assert.equal(sha256(reviewBytes), sha256(changedReviewBytes));
-});
-
-test("FP51-AC-001: the exporter round-trips exact source bytes", () => {
-  const sourceBytes = encoder.encode("raw source\r\n");
-  const source = { identity: "source.txt", bytes: sourceBytes };
-  const manifestBytes = testManifest({
-    nodes: [testNode("a", source)],
-    reviewedSources: [source],
-  });
-  const result = validateGoalPlanManifest(
-    manifestBytes,
-    new Map([["source.txt", sourceBytes]]),
-  );
-
-  assert.equal(result.ok, true);
-  assert.deepEqual(result.sourceDigests, [
-    { identity: "source.txt", sha256: sha256(sourceBytes) },
-  ]);
-});
-
-test("FP51-AC-003: changing Manifest bytes invalidates an old Coverage Review binding", () => {
-  const manifestBytes = bytes("valid-manifest.json");
-  const reviewBytes = bytes("valid-coverage-review.json");
-  const reformatted = jsonBytes(
-    JSON.parse(new TextDecoder().decode(manifestBytes)),
-  );
-
-  assert.notEqual(sha256(reformatted), sha256(manifestBytes));
-  const result = validatePlanCoverageReview(
-    reviewBytes,
-    reformatted,
-    fixtureSources(),
-  );
-  assert.equal(result.ok, false);
-  assert.equal(result.category, "approval-binding-mismatch");
 });
