@@ -94,9 +94,11 @@ unknown field is `malformed-artifact`. A Declaration's `dependsOn` has no
 sort requirement — only uniqueness and a valid node reference — matching
 both the schema and ForgePilot's own `parseGoalPlanDeclaration`; only a
 Manifest enforces sort order (Story TST-029 review HIGH-2). The total number
-of `dependsOn` entries across every node in one Manifest is bounded at 10000
-(ForgePilot `preflight.go`'s total edge bound); exceeding it is
-`malformed-artifact`. Duplicate node references, dangling `dependsOn`
+of `dependsOn` entries across every node is bounded at 10000, in the
+Declaration as well as the Manifest (ForgePilot's `parseGoalPlanDeclaration`
+and `preflight.go` each enforce their own total edge bound; second code
+review, MEDIUM-1); exceeding it is `malformed-artifact`. Duplicate node
+references, dangling `dependsOn`
 references, self-dependency, a dependency cycle, and a Declaration whose
 identity or node topology does not match its Manifest are `invalid-topology`
 — except a duplicate entry within one node's own `dependsOn` array, which is
@@ -155,10 +157,11 @@ Coverage Review to 8 MiB and 128 JSON nesting levels, a Declaration to a
 stricter 1 MiB and 32 JSON nesting levels (ForgePilot `preflight.go` applies
 that stricter bound to the Declaration alone). Artifacts are also bounded to
 the schema's structural limits (≤ 1000 nodes, ≤ 1000 `dependsOn` entries per
-node, ≤ 10000 total `dependsOn` entries per Manifest, ≤ 4000
-`reviewedSources`, `planId` and `nodeRef` ≤ 128 characters, repository paths
-≤ 1024 UTF-8 bytes, `reviewer.name` ≤ 256 UTF-8 bytes and ≤ 256 code points);
-an over-bound artifact is rejected whole, never truncated.
+node, ≤ 10000 total `dependsOn` entries per Declaration and per Manifest,
+each counted separately, ≤ 4000 `reviewedSources`, `planId` and `nodeRef`
+≤ 128 characters, repository paths ≤ 1024 UTF-8 bytes, `reviewer.name`
+≤ 256 UTF-8 bytes and ≤ 256 code points); an over-bound artifact is rejected
+whole, never truncated.
 
 ## Core API
 

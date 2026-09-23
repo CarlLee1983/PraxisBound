@@ -980,6 +980,7 @@ function readDeclarationShape(
 
   const nodes: GoalPlanDeclarationNode[] = [];
   const seenRefs = new Set<string>();
+  let totalDependsOnEdges = 0;
   for (const [index, entry] of value.nodes.entries()) {
     const nodePath = `nodes[${index}]`;
     if (!isRecord(entry))
@@ -1034,6 +1035,14 @@ function readDeclarationShape(
       false,
     );
     if (!dependsOnResult.ok) return dependsOnResult;
+    totalDependsOnEdges += dependsOnResult.dependsOn.length;
+    if (totalDependsOnEdges > MAX_TOTAL_DEPENDS_ON_EDGES)
+      return failure(
+        artifact,
+        "malformed-artifact",
+        "Declaration exceeds the supported total dependency-edge count",
+        { path: "nodes" },
+      );
     nodes.push({
       nodeRef: entry.nodeRef,
       storyRef: entry.storyRef,

@@ -1164,6 +1164,49 @@ test("Q24: a Manifest's total dependsOn edges are bounded at 10000 across all no
   assert.equal(result.category, "malformed-artifact");
 });
 
+test("MEDIUM-1: a Declaration's total dependsOn edges are bounded at 10000 across all nodes", () => {
+  const nodeCount = 11;
+  const nodes = Array.from({ length: nodeCount }, (_, i) => ({
+    nodeRef: `node-${String(i).padStart(3, "0")}`,
+    storyRef: `s/${i}`,
+    dependsOn: Array.from(
+      { length: 1000 },
+      (_, j) => `dep-${String(j).padStart(4, "0")}`,
+    ),
+  }));
+  const declarationBytes = encoder.encode(
+    JSON.stringify({
+      schemaVersion: "1.0.0",
+      plan: { id: "a", revision: 1 },
+      nodes,
+    }),
+  );
+  const result = validateGoalPlanDeclaration(declarationBytes);
+  assert.equal(result.ok, false);
+  assert.equal(result.category, "malformed-artifact");
+});
+
+test("MEDIUM-1: exportGoalPlanDeclaration rejects a Declaration whose total dependsOn edges exceed 10000", () => {
+  const nodeCount = 11;
+  const nodes = Array.from({ length: nodeCount }, (_, i) => ({
+    nodeRef: `node-${String(i).padStart(3, "0")}`,
+    storyRef: `s/${i}`,
+    dependsOn: Array.from(
+      { length: 1000 },
+      (_, j) => `dep-${String(j).padStart(4, "0")}`,
+    ),
+  }));
+  assert.throws(
+    () =>
+      exportGoalPlanDeclaration({
+        planId: "a",
+        revision: 1,
+        nodes,
+      }),
+    (error) => error.category === "malformed-artifact",
+  );
+});
+
 test("Q24: a Declaration is bounded to 1 MiB, stricter than the Manifest/Review 8 MiB bound", () => {
   const oversizedDeclaration = new Uint8Array(1024 * 1024 + 1);
   oversizedDeclaration.fill(0x20);
