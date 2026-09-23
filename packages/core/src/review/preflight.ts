@@ -100,6 +100,10 @@ const CLASS_BY_CODE: Readonly<Record<string, PreflightOutcomeClass>> = {
   REVIEW_RESPONSE_INVALID: "incomplete",
   REVIEW_SEMANTIC_MISSING: "incomplete",
   REVIEW_RECORD_WRITE_FAILED: "incomplete",
+  // Same class contract §9 gives it in the Semantic Report row (an
+  // over-limit `records/confirmation-*.json` collection never blocks the
+  // outcome outright; review round 2, M3).
+  REVIEW_INPUT_TOO_LARGE: "incomplete",
   // ADVISORY (不影響結果)
   REVIEW_DEPENDENCY_UNDECLARED: "advisory",
   REVIEW_RECORD_INVALID: "advisory",

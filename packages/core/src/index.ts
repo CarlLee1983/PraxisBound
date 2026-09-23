@@ -182,6 +182,7 @@ export type {
 } from "./review/preflight.js";
 export {
   buildPreflightReportRecord,
+  MAX_DIAGNOSTICS,
   preflightReportsEqualExceptCheckedAt,
   validateStoredPreflightReportRecord,
 } from "./review/preflight-report.js";

@@ -432,7 +432,9 @@ test("Security matrix: an untracked sibling path containing ESC is observed exac
     const untrackedName = "untracked-\x1b-sibling.md";
     await writeFile(join(root, untrackedName), "sibling content\n");
 
-    const observation = await nodeReviewGitAdapter.observe(root);
+    const observation = await nodeReviewGitAdapter.observe(root, [
+      untrackedName,
+    ]);
     assert.equal(observation.kind, "observed");
     assert.ok(
       observation.changes.some((change) => change.path === untrackedName),

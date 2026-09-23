@@ -423,3 +423,152 @@ test("AC-007: the batch snapshot allows exactly the one new preflight file and n
     await cleanupWorkspace(root);
   }
 });
+
+test("review round 2 H1: an out-of-range baseline name (21 digits) never wins highest-n, is reported advisory, and allocation is unaffected", async () => {
+  const batchId = "TST-9909-fixture";
+  const { root, manifestPath } = await readyFixtureRepo(batchId);
+  try {
+    const data = await indexData(root, manifestPath);
+    await writeConfirmation(root, batchId, data);
+    const semanticReport = await writeSemanticReportFile(root);
+    const fp12 = data.fingerprint.slice(0, 12);
+
+    const recordsDir = join(root, "specs", "batches", batchId, "records");
+    await mkdir(recordsDir, { recursive: true });
+    // A name that "looks like" a preflight report for the current fp12 but
+    // whose digit run is far outside `Number.isSafeInteger` range — this is
+    // the exact H1 defect fixture (`Number("100000000000000000000")` loses
+    // precision and formats back out as `1e+20`).
+    await writeFile(
+      join(recordsDir, `preflight-${fp12}-100000000000000000000.json`),
+      "not used",
+    );
+
+    const execution = await run(root, [
+      manifestPath,
+      "--semantic-report",
+      semanticReport,
+      "--json",
+    ]);
+    // Allocation must land at -1 (the out-of-range name is excluded from
+    // highest-n, not -100000000000000000001 and not stuck retrying forever).
+    assert.equal(
+      execution.result.data.preflightRecord,
+      `specs/batches/${batchId}/records/preflight-${fp12}-1.json`,
+    );
+    assert.notEqual(execution.result.outcome, "ERROR");
+    assert.ok(
+      execution.result.issues.some(
+        (entry) => entry.code === "REVIEW_RECORD_INVALID",
+      ),
+    );
+  } finally {
+    await cleanupWorkspace(root);
+  }
+});
+
+test("review round 2 L2: a symlinked records/ directory is configuration-error REVIEW_PATH_UNSAFE, and nothing is written", async () => {
+  const batchId = "TST-9910-fixture";
+  const { root, manifestPath } = await readyFixtureRepo(batchId);
+  try {
+    const batchDir = join(root, "specs", "batches", batchId);
+    const outsideTarget = join(root, "..", "outside-records");
+    await mkdir(outsideTarget, { recursive: true });
+    await symlink(outsideTarget, join(batchDir, "records"));
+
+    const execution = await runReviewPreflight([manifestPath, "--json"], root);
+    assert.deepEqual(validateResultEnvelope(execution.result), {
+      ok: true,
+      value: execution.result,
+    });
+    assert.equal(execution.result.outcome, "configuration-error");
+    assert.equal(execution.result.issues[0].code, "REVIEW_PATH_UNSAFE");
+    assert.deepEqual(await readdir(outsideTarget), []);
+  } finally {
+    await cleanupWorkspace(root);
+  }
+});
+
+test("review round 2 L3: a baseline whose content fingerprint does not start with its file name's fp12 is advisory REVIEW_RECORD_INVALID and not used for dedup", async () => {
+  const batchId = "TST-9911-fixture";
+  const { root, manifestPath } = await readyFixtureRepo(batchId);
+  try {
+    const data = await indexData(root, manifestPath);
+    await writeConfirmation(root, batchId, data);
+    const semanticReport = await writeSemanticReportFile(root);
+    const fp12 = data.fingerprint.slice(0, 12);
+
+    const recordsDir = join(root, "specs", "batches", batchId, "records");
+    await mkdir(recordsDir, { recursive: true });
+    const mismatched = {
+      schemaVersion: "1.0.0",
+      batchId,
+      // A syntactically valid but different fingerprint than the file
+      // name's own fp12 prefix promises.
+      fingerprint: "f".repeat(64),
+      outcome: "REVIEW_READY",
+      checkedAt: "2026-09-01T00:00:00Z",
+      confirmation: null,
+      semanticReport: null,
+      mechanical: [],
+      semantic: [],
+      expect: null,
+    };
+    await writeFile(
+      join(recordsDir, `preflight-${fp12}-1.json`),
+      JSON.stringify(mismatched),
+    );
+
+    const execution = await run(root, [
+      manifestPath,
+      "--semantic-report",
+      semanticReport,
+      "--json",
+    ]);
+    assert.equal(
+      execution.result.data.preflightRecord,
+      `specs/batches/${batchId}/records/preflight-${fp12}-2.json`,
+    );
+    assert.ok(
+      execution.result.issues.some(
+        (entry) => entry.code === "REVIEW_RECORD_INVALID",
+      ),
+    );
+  } finally {
+    await cleanupWorkspace(root);
+  }
+});
+
+test("AC-006: a baseline file over the 1 MiB record bound is advisory REVIEW_RECORD_INVALID, not used for deduplication, and a new file is still written", async () => {
+  const batchId = "TST-9912-fixture";
+  const { root, manifestPath } = await readyFixtureRepo(batchId);
+  try {
+    const data = await indexData(root, manifestPath);
+    await writeConfirmation(root, batchId, data);
+    const semanticReport = await writeSemanticReportFile(root);
+    const fp12 = data.fingerprint.slice(0, 12);
+
+    const recordsDir = join(root, "specs", "batches", batchId, "records");
+    await mkdir(recordsDir, { recursive: true });
+    const oversized = "x".repeat(1024 * 1024 + 1);
+    await writeFile(join(recordsDir, `preflight-${fp12}-1.json`), oversized);
+
+    const execution = await run(root, [
+      manifestPath,
+      "--semantic-report",
+      semanticReport,
+      "--json",
+    ]);
+    assert.equal(
+      execution.result.data.preflightRecord,
+      `specs/batches/${batchId}/records/preflight-${fp12}-2.json`,
+    );
+    assert.ok(
+      execution.result.issues.some(
+        (entry) => entry.code === "REVIEW_RECORD_INVALID",
+      ),
+    );
+  } finally {
+    await cleanupWorkspace(root);
+  }
+});

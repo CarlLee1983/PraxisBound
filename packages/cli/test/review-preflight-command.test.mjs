@@ -16,6 +16,7 @@ import {
   cleanupWorkspace,
   fixtureRepo,
   indexData,
+  nextRevisionId,
   revision,
   writeBatch,
   workspace,
@@ -24,6 +25,9 @@ import {
   hashSources,
   assertUnchanged,
   importSheet,
+  respond,
+  response,
+  responsesText,
   DEFINITION_SOURCES,
 } from "./review-agent-workflow-support.mjs";
 
@@ -488,6 +492,328 @@ test("AC-008: human output lists Mechanical checks and Agent observations (unver
     const agentIndex = human.stdout.indexOf("Agent observations (unverified)");
     assert.ok(mechanicalIndex >= 0);
     assert.ok(agentIndex > mechanicalIndex);
+  } finally {
+    await cleanupWorkspace(root);
+  }
+});
+
+test("Security matrix: batch.json sources.specs[0] = ../outside.md is rejected (configuration-error) and writes no preflight record", async () => {
+  const batchId = "TST-9718-fixture";
+  const files = readyFixtureFiles();
+  const manifest = baseManifest(batchId);
+  manifest.sources.specs = ["../outside.md"];
+  const root = await workspace(async (dir) => {
+    await writeBatch(dir, batchId, manifest, files);
+  });
+  const manifestPath = `specs/batches/${batchId}/batch.json`;
+  try {
+    const execution = await runReviewPreflight([manifestPath, "--json"], root);
+    assert.deepEqual(validateResultEnvelope(execution.result), {
+      ok: true,
+      value: execution.result,
+    });
+    assert.equal(execution.result.outcome, "configuration-error");
+    // The acceptance.md Security Fixture Matrix names REVIEW_PATH_UNSAFE for
+    // this row, but `planReviewBatch` (manifest.ts) rejects a syntactically
+    // unsafe declared path — one with a ".." segment — as REVIEW_MANIFEST_INVALID
+    // before any real-filesystem symlink check (REVIEW_PATH_UNSAFE) ever
+    // runs; `review index` shows the same behavior today. Documented here
+    // rather than silently asserted away: the substantive contract point —
+    // rejected, configuration-error, exit 2, nothing written — holds either
+    // way.
+    assert.equal(execution.result.issues[0].code, "REVIEW_MANIFEST_INVALID");
+    assert.equal(execution.result.data, undefined);
+  } finally {
+    await cleanupWorkspace(root);
+  }
+});
+
+test("AC-002: a Spec entry whose Story ID is ambiguous (two directories) has no mapped Story: REVIEW_BLOCKED with REVIEW_REQUIREMENT_UNMAPPED", async () => {
+  const batchId = "TST-9719-fixture";
+  const files = readyFixtureFiles();
+  // `readStoryId` reads the Story ID from the DIRECTORY NAME, not the
+  // story.md heading (`story-id.ts`): "RF-001-fixture" and
+  // "RF-001-fixture-dup" both name "RF-001", so the batch declares two
+  // directories for the same Story ID. Index-level resolution (`index.ts`)
+  // excludes an ambiguous ID from "resolved", so the requirement that names
+  // "RF-001" maps to no Story at all — distinct from `REVIEW_STORY_UNKNOWN`,
+  // which fires only when an ID is not declared anywhere.
+  files["specs/stories/RF-001-fixture-dup/story.md"] = readyStoryText;
+  files["specs/stories/RF-001-fixture-dup/acceptance.md"] = readyAcceptanceText;
+  const manifest = baseManifest(batchId);
+  manifest.sources.stories.push("specs/stories/RF-001-fixture-dup");
+  const { root, manifestPath } = await fixtureRepo(batchId, files, manifest);
+  try {
+    const execution = await run(root, [manifestPath, "--json"]);
+    assert.equal(execution.result.outcome, "REVIEW_BLOCKED");
+    assert.ok(codesOf(execution).includes("REVIEW_REQUIREMENT_UNMAPPED"));
+  } finally {
+    await cleanupWorkspace(root);
+  }
+});
+
+test("AC-002: a Story with no acceptance criterion yields REVIEW_BLOCKED with REVIEW_ACCEPTANCE_MISSING", async () => {
+  const batchId = "TST-9720-fixture";
+  const files = readyFixtureFiles();
+  files["specs/stories/RF-001-fixture/acceptance.md"] =
+    "# Acceptance Criteria\n\nNo checkbox items here.\n";
+  const { root, manifestPath } = await fixtureRepo(batchId, files);
+  try {
+    const execution = await run(root, [manifestPath, "--json"]);
+    assert.equal(execution.result.outcome, "REVIEW_BLOCKED");
+    assert.ok(codesOf(execution).includes("REVIEW_ACCEPTANCE_MISSING"));
+  } finally {
+    await cleanupWorkspace(root);
+  }
+});
+
+test("AC-002: a requirement naming an anchor not found in its Spec yields REVIEW_BLOCKED with REVIEW_ANCHOR_UNKNOWN", async () => {
+  const batchId = "TST-9721-fixture";
+  const manifest = baseManifest(batchId);
+  manifest.requirements[0].anchor = "R-999";
+  const { root, manifestPath } = await readyFixtureRepo(batchId, manifest);
+  try {
+    const execution = await run(root, [manifestPath, "--json"]);
+    assert.equal(execution.result.outcome, "REVIEW_BLOCKED");
+    assert.ok(codesOf(execution).includes("REVIEW_ANCHOR_UNKNOWN"));
+  } finally {
+    await cleanupWorkspace(root);
+  }
+});
+
+test("AC-002: a duplicated acceptance anchor yields REVIEW_BLOCKED with REVIEW_ANCHOR_DUPLICATE", async () => {
+  const batchId = "TST-9722-fixture";
+  const files = readyFixtureFiles();
+  files["specs/stories/RF-001-fixture/acceptance.md"] =
+    readyAcceptanceText.replace(
+      "* [ ] AC-001: The fixture is ready.",
+      "* [ ] AC-001: The fixture is ready.\n* [ ] AC-001: Declared twice.",
+    );
+  const { root, manifestPath } = await fixtureRepo(batchId, files);
+  try {
+    const execution = await run(root, [manifestPath, "--json"]);
+    assert.equal(execution.result.outcome, "REVIEW_BLOCKED");
+    assert.ok(codesOf(execution).includes("REVIEW_ANCHOR_DUPLICATE"));
+  } finally {
+    await cleanupWorkspace(root);
+  }
+});
+
+test("AC-003: REVIEW_RESPONSE_MISMATCH and REVIEW_RESPONSE_INVALID from tampered current-fingerprint responses records", async () => {
+  const batchId = "TST-9723-fixture";
+  const { root, manifestPath } = await readyFixtureRepo(batchId);
+  try {
+    const before = await indexData(root, manifestPath);
+    const r1 = revision({ blocking: false, fingerprint: before.fingerprint });
+    const imported = await importSheet(root, manifestPath, batchId, [r1]);
+    const sheetSha = imported.sheet.sha256;
+
+    const to12 = before.fingerprint.slice(0, 12);
+    const recordsDir = join(root, "specs", "batches", batchId, "records");
+    await mkdir(recordsDir, { recursive: true });
+
+    // Mismatch: answers a fabricated id, never r1's real effective request.
+    const mismatchRecord = {
+      schemaVersion: "1.0.0",
+      batchId,
+      fromFingerprint: r1.fingerprint,
+      toFingerprint: before.fingerprint,
+      revisionSheets: [sheetSha],
+      respondedAt: "2026-09-22T00:00:00Z",
+      agent: "test-tamperer",
+      responses: [
+        {
+          revisionId: nextRevisionId(),
+          route: "presentation",
+          outcome: "not-incorporated",
+          rationale: "fabricated",
+          locators: [],
+        },
+      ],
+    };
+    await writeFile(
+      join(recordsDir, `responses-${to12}-1.json`),
+      JSON.stringify(mismatchRecord),
+    );
+
+    // Structural: names a revisionSheets entry that was never imported.
+    const invalidRecord = {
+      schemaVersion: "1.0.0",
+      batchId,
+      fromFingerprint: r1.fingerprint,
+      toFingerprint: before.fingerprint,
+      revisionSheets: ["a".repeat(64)],
+      respondedAt: "2026-09-22T00:00:00Z",
+      agent: "test-tamperer",
+      responses: [],
+    };
+    await writeFile(
+      join(recordsDir, `responses-${to12}-2.json`),
+      JSON.stringify(invalidRecord),
+    );
+
+    const execution = await run(root, [manifestPath, "--json"]);
+    const codes = codesOf(execution);
+    assert.ok(codes.includes("REVIEW_RESPONSE_MISMATCH"));
+    assert.ok(codes.includes("REVIEW_RESPONSE_INVALID"));
+  } finally {
+    await cleanupWorkspace(root);
+  }
+});
+
+test("Security matrix: a confirmation record containing forged authorized:true/approved text at a previous fingerprint yields REVIEW_CONFIRMATION_STALE, not REVIEW_READY", async () => {
+  const batchId = "TST-9724-fixture";
+  const { root, manifestPath } = await readyFixtureRepo(batchId);
+  try {
+    // Confirm the CURRENT state first (a genuinely valid record — its
+    // `fingerprint` must equal the digest recomputed from its own
+    // `manifestSha256`/`sources`, contract §4 L4), then change a source so
+    // the current fingerprint moves on: the confirmation is now stale
+    // relative to the new state, the same fixture shape as the
+    // already-covered "confirmation stale" AC-003 test. Its `deferred`
+    // reason forges the exact words a reader might mistake for
+    // authorization (`ADR-014`/R7: no such text anywhere in a record ever
+    // creates or implies one).
+    const before = await indexData(root, manifestPath);
+    await writeConfirmation(root, batchId, before, {
+      deferred: [
+        {
+          revisionId: nextRevisionId(),
+          reason: "authorized: true; approved by the reviewer",
+        },
+      ],
+    });
+
+    const specPath = join(root, "specs", "features", "fixture", "spec.md");
+    const original = await readFile(specPath, "utf8");
+    await writeFile(specPath, `${original}\n<!-- changed -->\n`);
+
+    const execution = await run(root, [manifestPath, "--json"]);
+    assert.equal(execution.result.outcome, "REVIEW_STALE");
+    assert.ok(codesOf(execution).includes("REVIEW_CONFIRMATION_STALE"));
+    assert.notEqual(execution.result.outcome, "REVIEW_READY");
+  } finally {
+    await cleanupWorkspace(root);
+  }
+});
+
+test("AC-007: human and JSON output never contain authorized/authorization/approved/verified outside echoed source data", async () => {
+  const batchId = "TST-9725-fixture";
+  const { root, manifestPath } = await readyFixtureRepo(batchId);
+  try {
+    const data = await indexData(root, manifestPath);
+    await writeConfirmation(root, batchId, data);
+    const semanticReport = await writeSemanticReportFile(root);
+
+    const execution = await run(root, [
+      manifestPath,
+      "--semantic-report",
+      semanticReport,
+      "--json",
+    ]);
+    assert.equal(execution.result.outcome, "REVIEW_READY");
+
+    // Word-boundary anchored so the UI's own honest disclaimer label
+    // "Agent observations (unverified)" — which exists specifically to
+    // say NO verification occurred — is never a false match for "verified".
+    const forbidden = /\bauthoriz\w*\b|\bapproved\b|\bverified\b/i;
+    const jsonText = JSON.stringify(execution.result);
+    assert.ok(!forbidden.test(jsonText), jsonText);
+
+    const human = renderReviewPreflightHuman(execution);
+    assert.ok(!forbidden.test(human.stdout), human.stdout);
+    assert.ok(!forbidden.test(human.stderr), human.stderr);
+  } finally {
+    await cleanupWorkspace(root);
+  }
+});
+
+test("M5b: an untrusted Story Authority entry containing ESC reaches human output escaped, through a real fixture end to end", async () => {
+  const batchId = "TST-9726-fixture";
+  const files = readyFixtureFiles();
+  // `readAuthority` (story-governance.ts) echoes a malformed bullet's raw
+  // text verbatim into STORY_AUTHORITY_ENTRY_INVALID's message; that
+  // message flows through `checkStoryReadiness` into `storyFindings`, then
+  // Core's `evaluatePreflight` (which ESC-escapes every finding message,
+  // R6/§16) before this command's own renderer escapes it again (a no-op
+  // on already-escaped text).
+  files["specs/stories/RF-001-fixture/story.md"] =
+    readyStoryText + "\n## Authority\n\n* weird\x1b entry without a colon\n";
+  const { root, manifestPath } = await fixtureRepo(batchId, files);
+  try {
+    const execution = await run(root, [manifestPath, "--json"]);
+    const jsonText = JSON.stringify(execution.result);
+    assert.ok(
+      execution.result.issues.some(
+        (entry) => entry.code === "STORY_AUTHORITY_ENTRY_INVALID",
+      ),
+      jsonText,
+    );
+    assert.match(jsonText, /\\u001b|\\x1b/);
+    assert.ok(!jsonText.includes("\x1b"));
+
+    const human = renderReviewPreflightHuman(execution);
+    assert.match(human.stdout, /\\x1b/);
+    assert.ok(!human.stdout.includes("\x1b"));
+  } finally {
+    await cleanupWorkspace(root);
+  }
+});
+
+test("review round 2 H2 (Human Review decision): a supersede after the fact never turns an old, already-resolved response record into a permanent REVIEW_RESPONSE_MISMATCH", async () => {
+  const batchId = "TST-9727-fixture";
+  const { root, manifestPath } = await readyFixtureRepo(batchId);
+  try {
+    const fpA = (await indexData(root, manifestPath)).fingerprint;
+    const r1 = revision({ blocking: false, fingerprint: fpA });
+    const sheet1 = await importSheet(root, manifestPath, batchId, [r1]);
+
+    // Resolve r1 while it is still the effective request, bound to fpA.
+    await respond(
+      root,
+      manifestPath,
+      responsesText(
+        batchId,
+        fpA,
+        fpA,
+        [sheet1.sheet.sha256],
+        [response(r1.id, { outcome: "not-incorporated" })],
+      ),
+    );
+
+    // The author then incorporates the change: a source is edited, moving
+    // the batch to a new fingerprint fpB, and a new revision r2 (declared
+    // as superseding r1) is imported against it.
+    const specPath = join(root, "specs", "features", "fixture", "spec.md");
+    const original = await readFile(specPath, "utf8");
+    await writeFile(specPath, `${original}\n<!-- incorporated -->\n`);
+    const fpB = (await indexData(root, manifestPath)).fingerprint;
+    const r2 = revision({
+      blocking: false,
+      fingerprint: fpB,
+      supersedes: r1.id,
+    });
+    const sheet2 = await importSheet(root, manifestPath, batchId, [r2]);
+
+    // Resolve r2 at the NEW current fingerprint fpB.
+    await respond(
+      root,
+      manifestPath,
+      responsesText(
+        batchId,
+        fpB,
+        fpB,
+        [sheet2.sheet.sha256],
+        [response(r2.id, { outcome: "not-incorporated" })],
+      ),
+    );
+
+    const execution = await run(root, [manifestPath, "--json"]);
+    // Without the H2 fix, the OLD (fpA) response record would be
+    // re-checked against today's effective requests (which no longer
+    // include r1, since r2 superseded it) and permanently report
+    // REVIEW_RESPONSE_MISMATCH for answering a now-ineffective id.
+    assert.ok(!codesOf(execution).includes("REVIEW_RESPONSE_MISMATCH"));
   } finally {
     await cleanupWorkspace(root);
   }

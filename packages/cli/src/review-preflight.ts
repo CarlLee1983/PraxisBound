@@ -24,6 +24,7 @@ import {
   computeEffectiveRevisions,
   computeUnresolvedRequests,
   evaluatePreflight,
+  MAX_DIAGNOSTICS,
   preflightReportsEqualExceptCheckedAt,
   sha256Hex,
   validateRevisionRecordSet,
@@ -190,11 +191,20 @@ async function resolveSemanticReportState(
   }
 }
 
+/**
+ * Review round 2 M4: the stale differences are `confirmationLoad`'s own
+ * `advisoryIssues` (`review-confirmation-records.ts`), never re-derived
+ * here — a second computation could drift from the first (and had already
+ * dropped `REVIEW_MANIFEST_CHANGED`'s `path: manifestPath`). `severity` is
+ * a filler value: Core's `finalizeDiagnostic` always re-derives it from
+ * `code` and ignores what is supplied here (R6).
+ */
 function buildConfirmationState(
-  applicability: Awaited<
+  confirmationLoad: Awaited<
     ReturnType<typeof loadReviewConfirmationApplicability>
-  >["applicability"],
+  >,
 ): PreflightConfirmationState {
+  const { applicability, advisoryIssues } = confirmationLoad;
   if (applicability === undefined) return { kind: "missing" };
   if (applicability.applies) {
     return {
@@ -205,28 +215,12 @@ function buildConfirmationState(
     };
   }
   if (applicability.latest === undefined) return { kind: "missing" };
-  const differences: ReviewDiagnostic[] = [
-    ...applicability.sourceChanges.map((change): ReviewDiagnostic => ({
-      code:
-        change.kind === "added"
-          ? "REVIEW_SOURCE_ADDED"
-          : change.kind === "removed"
-            ? "REVIEW_SOURCE_REMOVED"
-            : "REVIEW_SOURCE_CHANGED",
-      severity: "advisory",
-      message: `source ${change.kind} since the latest valid confirmation`,
-      path: change.path,
-    })),
-    ...(applicability.manifestChanged
-      ? [
-          {
-            code: "REVIEW_MANIFEST_CHANGED",
-            severity: "advisory" as const,
-            message: "the manifest changed since the latest valid confirmation",
-          },
-        ]
-      : []),
-  ];
+  const differences: ReviewDiagnostic[] = advisoryIssues.map((entry) => ({
+    code: entry.code,
+    severity: "advisory",
+    message: entry.message,
+    ...(entry.path === undefined ? {} : { path: entry.path }),
+  }));
   return { kind: "stale", differences };
 }
 
@@ -275,7 +269,28 @@ interface PreflightBaseline {
     readonly path: string;
     readonly record: PreflightReportRecord;
   };
-  readonly invalidFinding?: PreflightFinding;
+  readonly invalidFindings: readonly PreflightFinding[];
+}
+
+// Review round 2 H1: bounded to at most 15 digits, so every match is well
+// inside `Number.MAX_SAFE_INTEGER` (16 digits) and `Number(...)` can never
+// silently lose precision (`1e20 + 1 === 1e20`) or format back out as
+// `1e+22`. A name whose digit run is longer, or that has a leading zero,
+// still "looks like" a preflight report for this `fp12` — it matches
+// `LOOSE_SUFFIX_PATTERN` — so it is reported as an out-of-range advisory
+// finding rather than silently ignored, but it can never win `highestN`.
+const STRICT_SUFFIX_PATTERN = /^([1-9][0-9]{0,14})\.json$/;
+const LOOSE_SUFFIX_PATTERN = /^([0-9]+)\.json$/;
+
+function invalidBaselineFinding(
+  relativePath: string,
+  message: string,
+): PreflightFinding {
+  return {
+    code: "REVIEW_RECORD_INVALID",
+    message,
+    path: relativePath,
+  };
 }
 
 /**
@@ -284,9 +299,11 @@ interface PreflightBaseline {
  * highest `<n>` is read (bounded, `O_NOFOLLOW`, depth 32) and validated.
  * Only that one file is ever read — never the wider collection — so no
  * aggregate file-count or byte cap is needed (Story R10b). An invalid,
- * over-limit, unreadable, or symlinked file is reported as an advisory
- * finding and is never used for deduplication; `highestN` is still reported
- * so the next write still allocates past it, never reusing its number.
+ * over-limit, out-of-range, unreadable, or symlinked file is reported as an
+ * advisory finding and is never used for deduplication; `highestN` is
+ * still reported so the next write still allocates past it, never reusing
+ * its number (and never a number an out-of-range name merely looked like
+ * it held, review round 2 H1).
  */
 async function loadPreflightBaseline(
   root: string,
@@ -295,34 +312,58 @@ async function loadPreflightBaseline(
   fp12: string,
   names: readonly string[],
 ): Promise<PreflightBaseline> {
-  const pattern = new RegExp(`^preflight-${fp12}-([1-9][0-9]*)\\.json$`);
+  const prefix = `preflight-${fp12}-`;
   let highestN = 0;
   let highestName: string | undefined;
+  const invalidFindings: PreflightFinding[] = [];
   for (const name of names) {
-    const match = pattern.exec(name);
-    if (match === null) continue;
-    const n = Number(match[1]);
-    if (n > highestN) {
-      highestN = n;
-      highestName = name;
+    if (!name.startsWith(prefix)) continue;
+    const suffix = name.slice(prefix.length);
+    const strict = STRICT_SUFFIX_PATTERN.exec(suffix);
+    if (strict !== null) {
+      const n = Number(strict[1]);
+      if (Number.isSafeInteger(n) && n > highestN) {
+        highestN = n;
+        highestName = name;
+      }
+      continue;
+    }
+    if (LOOSE_SUFFIX_PATTERN.test(suffix)) {
+      invalidFindings.push(
+        invalidBaselineFinding(
+          `${recordsDirectory(manifestPath)}/${name}`,
+          "existing preflight report name is out of range",
+        ),
+      );
     }
   }
-  if (highestName === undefined) return { highestN };
+  if (highestName === undefined) return { highestN, invalidFindings };
 
   const relativePath = `${recordsDirectory(manifestPath)}/${highestName}`;
-  const invalid: PreflightFinding = {
-    code: "REVIEW_RECORD_INVALID",
-    message: "existing preflight report is invalid",
-    path: relativePath,
-  };
+  const invalid = (): PreflightBaseline => ({
+    highestN,
+    invalidFindings: [
+      ...invalidFindings,
+      invalidBaselineFinding(
+        relativePath,
+        "existing preflight report is invalid",
+      ),
+    ],
+  });
   const bytes = await readRecordBytes(resolve(root, relativePath));
-  if (bytes === undefined) return { highestN, invalidFinding: invalid };
+  if (bytes === undefined) return invalid();
   const parsed = parseRecordJson(bytes);
-  if (!parsed.ok) return { highestN, invalidFinding: invalid };
+  if (!parsed.ok) return invalid();
   const validated = validateStoredPreflightReportRecord(parsed.data, batchId);
-  if (!validated.ok) return { highestN, invalidFinding: invalid };
+  if (!validated.ok) return invalid();
+  // Review round 2 L3: the file name's own `fp12` must match the content's
+  // `fingerprint` prefix, exactly like every other `records/` reader
+  // (`readRevisionRecords`, `readConfirmationRecords`) already requires —
+  // a baseline whose name and content disagree is never trusted.
+  if (validated.record.fingerprint.slice(0, 12) !== fp12) return invalid();
   return {
     highestN,
+    invalidFindings,
     baseline: { path: relativePath, record: validated.record },
   };
 }
@@ -365,7 +406,11 @@ export async function runReviewPreflight(
     const gitAdapter = options.gitAdapter ?? nodeReviewGitAdapter;
     const gitFindings: PreflightFinding[] = [];
     if (parsed.expectRevision !== undefined) {
-      const observation = await gitAdapter.observe(root);
+      const batchSourcePaths = index.sources.map((source) => source.path);
+      const observation = await gitAdapter.observe(root, [
+        manifestPath,
+        ...batchSourcePaths,
+      ]);
       if (observation.kind === "failed") {
         process.stderr.write(
           "praxisbound review preflight: internal error: git observation failed\n",
@@ -391,7 +436,7 @@ export async function runReviewPreflight(
             observation,
             parsed.expectRevision,
             manifestPath,
-            index.sources.map((source) => source.path),
+            batchSourcePaths,
           ),
         );
       }
@@ -399,13 +444,15 @@ export async function runReviewPreflight(
 
     const listingState = await loadRecordsListingState(root, manifestPath);
     const recordFindings: PreflightFinding[] = [];
-    if (listingState.unsafe) {
-      recordFindings.push({
-        code: "REVIEW_RECORD_INVALID",
-        message: "records path has a symlinked segment",
-        path: recordsDirectory(manifestPath),
-      });
-    } else if (
+    // Review round 2 L2: a symlinked `records/` is never reported here as
+    // an advisory — `createNewRecord`'s own write-time check always turns
+    // it into `configuration-error`/`REVIEW_PATH_UNSAFE` before anything is
+    // written (see below), so an earlier advisory finding for the same
+    // condition was dead code that could never surface in a written
+    // report. An otherwise-unreadable `records/` (not a symlink) is a
+    // different condition with no such later check, so it still reports.
+    if (
+      !listingState.unsafe &&
       !listingState.listing.ok &&
       listingState.listing.reason === "error"
     ) {
@@ -425,8 +472,7 @@ export async function runReviewPreflight(
       fp12,
       names,
     );
-    if (preflightBaseline.invalidFinding !== undefined)
-      recordFindings.push(preflightBaseline.invalidFinding);
+    recordFindings.push(...preflightBaseline.invalidFindings);
 
     const revisionRecords = await readRevisionRecords(
       root,
@@ -491,6 +537,15 @@ export async function runReviewPreflight(
         });
         continue;
       }
+      // Review round 2 H2 (Human Review decision): only a response record
+      // bound to the CURRENT fingerprint gets the full contract §7 coverage
+      // re-check. A later supersede (a new revision replacing one this
+      // record already answered) changes today's effective requests, but
+      // it can never retroactively make a past fingerprint's response
+      // record wrong — that record is historical Evidence, not a claim
+      // about the current batch, so only its structural validity (every
+      // listed sheet was imported, checked above) is re-verified.
+      if (stored.record.toFingerprint !== index.fingerprint) continue;
       const sheets = listedSheets as NonNullable<
         (typeof listedSheets)[number]
       >[];
@@ -522,13 +577,16 @@ export async function runReviewPreflight(
       index,
       listingState,
     );
+    // Review round 2 M3: the loader's own code (`REVIEW_RECORD_INVALID` or
+    // `REVIEW_INPUT_TOO_LARGE`) is passed through unchanged — classifying
+    // an issue code is Core's decision (`CLASS_BY_CODE`), never the CLI's.
     for (const blocking of confirmationLoad.blockingIssues)
       recordFindings.push({
-        code: "REVIEW_RECORD_INVALID",
+        code: blocking.code,
         message: blocking.message,
         ...(blocking.path === undefined ? {} : { path: blocking.path }),
       });
-    const confirmation = buildConfirmationState(confirmationLoad.applicability);
+    const confirmation = buildConfirmationState(confirmationLoad);
 
     const unresolved = computeUnresolvedRequests(
       effective,
@@ -580,13 +638,16 @@ export async function runReviewPreflight(
     // Contract §13: the diagnostics bound should never be reachable within
     // the batch's own limits; over it is `ERROR`, exit 3, not truncation,
     // and nothing is written.
-    if (evaluation.mechanical.length + evaluation.semantic.length > 10000) {
+    if (
+      evaluation.mechanical.length + evaluation.semantic.length >
+      MAX_DIAGNOSTICS
+    ) {
       return {
         mode: parsed.mode,
         result: envelope("error", "ERROR", 3, [
           issue(
             "REVIEW_INTERNAL_ERROR",
-            "the preflight diagnostics count exceeds the limit (10000)",
+            `the preflight diagnostics count exceeds the limit (${MAX_DIAGNOSTICS})`,
           ),
         ]),
       };

@@ -28,7 +28,8 @@ import {
 } from "./revision-limits.js";
 import type { ReviewDiagnostic } from "./types.js";
 
-const MAX_DIAGNOSTICS = 10000;
+/** Contract §13: a Preflight Report's `mechanical` plus `semantic` diagnostics never exceed this bound; over it is `ERROR`, exit 3 (the CLI's own check, review round 2 L4, uses this instead of a literal). */
+export const MAX_DIAGNOSTICS = 10000;
 const ISSUE_CODE_PATTERN = /^[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)*$/;
 const SEVERITIES = ["blocking", "advisory"] as const;
 // Matches the schema's own forbidden-newline-family pattern for

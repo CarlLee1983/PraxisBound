@@ -195,6 +195,25 @@ test("AC-003: a missing Semantic Report yields REVIEW_SEMANTIC_MISSING and REVIE
   );
 });
 
+test("review round 2 M3: REVIEW_INPUT_TOO_LARGE from recordFindings is REVIEW_INCOMPLETE, same class as the Semantic Report row", () => {
+  const result = evaluatePreflight(
+    baseInput({
+      recordFindings: [
+        {
+          code: "REVIEW_INPUT_TOO_LARGE",
+          message: "records/ has too many confirmation- files",
+        },
+      ],
+    }),
+  );
+  assert.equal(result.outcome, "REVIEW_INCOMPLETE");
+  assert.deepEqual(
+    result.mechanical.map((diagnostic) => diagnostic.code),
+    ["REVIEW_INPUT_TOO_LARGE"],
+  );
+  assert.equal(result.mechanical[0].severity, "blocking");
+});
+
 test("AC-004: REVIEW_NOT_A_GIT_REPOSITORY and REVIEW_SOURCES_UNCOMMITTED from gitFindings yield REVIEW_BLOCKED", () => {
   const result = evaluatePreflight(
     baseInput({
