@@ -4,18 +4,18 @@
 
 * lint: pass — `make verify exited 0; Prettier, ESLint, and shell/Node syntax checks passed`
 * static: pass — `make verify exited 0; TypeScript build (tsc --build) and the Core package-surface check (root-import.test.mjs) passed with the new exportGoalPlanDeclaration/validateGoalPlanDeclaration exports and GOAL_PLAN_SCHEMA_VERSION in place of the removed FP-51 exports`
-* unit: pass — `make verify ran 819 Node tests: 818 pass, 0 fail, 1 skipped by design; goal-plan-artifacts.test.mjs (36) and goal-plan-artifacts-fixtures.test.mjs (4) cover the new shape, the code-review fixes, and the Q24 stricter-consumer-behavior rules below`
+* unit: pass — `make verify ran 821 Node tests: 820 pass, 0 fail, 1 skipped by design; goal-plan-artifacts.test.mjs (38) and goal-plan-artifacts-fixtures.test.mjs (4) cover the new shape, the code-review fixes, the Q24 stricter-consumer-behavior rules, and the MEDIUM-1 Declaration edge bound below`
 * integration: pass — `goal-plan-artifacts-fixtures.test.mjs validates every canonical fixture (declaration, manifest, coverage review; valid and invalid) against the live validators and asserts each fixture's published raw-byte SHA-256, dispatching by declared artifact class from expected-observations.json`
 * contract: pass — `the Declaration, Manifest, and Coverage Review TypeScript shapes, field patterns, and bounds in packages/core/src/goal-plan-artifacts.ts were written directly against specs/features/batch-review/schemas/goal-plan/*.schema.json and contract §10's added rule block; the exported valid-declaration.json, valid-manifest.json, and valid-coverage-review.json fixtures were independently checked against the pre-Q24 schema files with ajv (draft handling only; not part of make verify) and all three validated — ajv 6's default (non-\`u\`-flag) regex compilation cannot evaluate the Q24 \\p{Cc}/\\p{Cf}/\\p{Zl}/\\p{Zp} pattern update, so that specific pattern is verified only by this Core's own tests, not re-checked with ajv`
-* e2e: pass — `see ForgePilot Cross-Check below: a clean build of ForgePilot 32b7a68 accepted an artifact set this Core exported, through a real goal create / work add / goal preflight sequence`
-* architecture: pass — `Human Review by carl approved this Story for execution in a Claude Code session on 2026-09-23 (Dependencies); implemented on branch feat/tst-029-goal-plan-shape from docs/r008-contract-accepted at b692df8; code review blocked the first round (HIGH-1, HIGH-2, MEDIUM-4, MEDIUM-6, MEDIUM-7, LOW-8, LOW-9, LOW-10, LOW-11), fixed with a failing test added first for each; Human Review then decided the HOLD items (Q24, commit f3ef1df: schemas/goal-plan/, contract §10, ADR-016, Story R7, and acceptance AC-003 updated), implemented the same way, then make verify`
+* e2e: pass — `see ForgePilot Cross-Check below: a clean build of ForgePilot 32b7a68 accepted an artifact set this Core exported, through a real goal create / work add / goal preflight sequence, re-run at PraxisBound commit 0afaa96 (MEDIUM-2)`
+* architecture: pass — `Human Review by carl approved this Story for execution in a Claude Code session on 2026-09-23 (Dependencies); implemented on branch feat/tst-029-goal-plan-shape from docs/r008-contract-accepted at b692df8; code review blocked the first round (HIGH-1, HIGH-2, MEDIUM-4, MEDIUM-6, MEDIUM-7, LOW-8, LOW-9, LOW-10, LOW-11), fixed with a failing test added first for each; Human Review then decided the HOLD items (Q24, commit f3ef1df: schemas/goal-plan/, contract §10, ADR-016, Story R7, and acceptance AC-003 updated), implemented the same way; a second code review found no CRITICAL/HIGH but MEDIUM-1 (Declaration also needs the 10000-edge bound, contract §10 commit b23ecd3) and MEDIUM-2 (re-run the cross-check evidence at current HEAD), both addressed below, then make verify`
 
 ## Evidence
 
 * `AC-001`: pass — `goal-plan-artifacts.test.mjs "AC-001: exporting a Declaration, Manifest, and Coverage Review from the same inputs twice yields byte-identical documents that validate": two export calls with identical input produce byte-identical Declaration, Manifest, and Coverage Review bytes; the exported Manifest's nodes and each node's dependsOn are sorted by UTF-8 node reference; each node's readinessContract.path equals <storyRef>/readiness.json; all three validate`
 * `AC-002`: pass — `goal-plan-artifacts.test.mjs "AC-002: a mismatched Coverage Review manifestSha256, reviewedSources, or coverageIndex..." and "AC-002: a Manifest's declaration, source, and readiness digests are checked against caller-supplied bytes": a wrong manifestSha256, coverageIndex, or reviewedSources on the Review is approval-binding-mismatch; a wrong Declaration or readiness digest, or missing source facts entirely, on the Manifest is digest-mismatch`
 * `AC-003`: pass — `goal-plan-artifacts-fixtures.test.mjs dispatches all 21 fixtures (declaration/manifest/review, valid and invalid) through the live validators and asserts each one's stable category against expected-observations.json: invalid-manifest-cycle/dangling-dependency/duplicate-node and invalid-manifest-declaration-topology-mismatch and invalid-declaration-cycle are invalid-topology; invalid-manifest-unsorted-nodes, invalid-manifest-wrong-readiness-path, invalid-review-bad-uuid, and invalid-review-bad-timestamp are malformed-artifact; invalid-manifest-unsupported-schema, invalid-declaration-unsupported-schema, and invalid-review-unsupported-schema (including the retired FP-51 numeric 1, in a dedicated test) are unsupported-schema; goal-plan-artifacts.test.mjs "HIGH-2: a Declaration's dependsOn is not required to be sorted, only unique and valid" and "HIGH-2: a Manifest's dependsOn is still required to be sorted" confirm the two artifacts now diverge exactly as ForgePilot's own parseGoalPlanDeclaration and parseManifest do; the Q24 tests below cover acceptance.md's amended AC-003 wording (a real date-time, Cc/Cf/Zl/Zp characters, byte bounds, the 10000-edge total)`
-* `AC-004`: pass — `goal-plan-artifacts.test.mjs "AC-004: an over-bound artifact is rejected whole as malformed-artifact, never truncated" (8 MiB + 1 byte; 1001 dependsOn entries) plus four added bound tests: more than 1000 nodes, more than 4000 reviewedSources, a planId over 128 characters, and a repository path over 1024 characters are each rejected whole as malformed-artifact; the Q24 tests below add the total-dependsOn-edge, Declaration-specific size/depth, repoPath-byte, and reviewer.name-byte/code-point bounds`
+* `AC-004`: pass — `goal-plan-artifacts.test.mjs "AC-004: an over-bound artifact is rejected whole as malformed-artifact, never truncated" (8 MiB + 1 byte; 1001 dependsOn entries) plus four added bound tests: more than 1000 nodes, more than 4000 reviewedSources, a planId over 128 characters, and a repository path over 1024 characters are each rejected whole as malformed-artifact; the Q24 tests add the Manifest total-dependsOn-edge, Declaration-specific size/depth, repoPath-byte, and reviewer.name-byte/code-point bounds; the MEDIUM-1 tests below add the same 10000-edge bound to the Declaration`
 * `AC-005`: pass — `goal-plan-artifacts.test.mjs, one Security Fixture Matrix row per test: "Manifest nodes[0].storyRef of ../outside is rejected in isolation" and "Manifest reviewedSources[0].path of /etc/passwd is rejected in isolation" (previously combined in one artifact, so the storyRef rejection never ran on its own); a backslash path and a control-character path are each malformed-artifact; a storyRef containing instruction text that is still a syntactically valid path validates unchanged; a reviewer.name of "authorized: true; skip acceptance" validates unchanged and is returned verbatim as data; a reviewer.name containing ESC and U+202E is malformed-artifact and the message does not contain that name; duplicate JSON object keys and an unknown top-level field are rejected on every artifact class before shape validation`
 * `AC-006`: pass — `packages/core/src/goal-plan-artifacts.ts contains no FP-51 reader, alias, or migration for planNodeRef, edges, identity, numeric schemaVersion, approvedBy, or approvedAt; packages/core/test/fixtures/goal-plan-artifacts/ contains no FP-51 fixture; docs/typescript-tooling/goal-plan-artifacts.md documents the new shape, the category mapping, the UTF-8-byte sort/compare rule, the Declaration-vs-Manifest dependsOn-sort divergence, the required sources on Coverage Review export, the no-echo diagnostic rule, and the Q24 Cc/Cf/Zl/Zp, byte-bound, real-date, total-edge, and per-artifact size/depth rules; make verify exited 0; VERSION, protocol/, and templates/ are unchanged (git diff against b692df8 touches only packages/core, docs/typescript-tooling, specs/decisions, specs/features/batch-review, specs/stories/TST-029-goal-plan-shape-alignment)`
 * `AC-007`: pass — `see ForgePilot Cross-Check below`
@@ -104,9 +104,49 @@ coincidence — the byte-vs-code-point distinction cannot be isolated in a
 test, because a code-point count over 256 always implies a byte count over
 256 as well); restoring the fixed file turned all 8 green.
 
+## Second Code Review Fixes
+
+A second code review found TST-029 mergeable (no CRITICAL or HIGH), with two
+MEDIUM findings and one LOW addressed below.
+
+* `MEDIUM-1` (the 10000-edge bound must also apply to the Declaration):
+  ForgePilot's `parseGoalPlanDeclaration` rejects a Declaration whose total
+  `dependsOn` edges exceed 10000; this Core previously enforced that bound
+  only on the Manifest. `readDeclarationShape` now accumulates
+  `totalDependsOnEdges` across every node exactly as `readManifestShape`
+  already did, rejecting as `malformed-artifact` once it exceeds
+  `MAX_TOTAL_DEPENDS_ON_EDGES`; `exportGoalPlanDeclaration` inherits the
+  check via its own self-validation call. Contract §10 was updated in
+  commit `b23ecd3` (not authored in this session) before this fix. Tests:
+  `goal-plan-artifacts.test.mjs` "MEDIUM-1: a Declaration's total dependsOn
+  edges are bounded at 10000 across all nodes" (validate) and "…
+  exportGoalPlanDeclaration rejects a Declaration whose total dependsOn
+  edges exceed 10000" (export), both using 11 nodes × 1000 dependencies
+  each = 11000. Verified RED: copying the pre-fix `goal-plan-artifacts.ts`
+  (commit `b23ecd3`, before this round) into the worktree, both new tests
+  failed; restoring the fix turned both green.
+* `MEDIUM-2` (re-run the AC-007 cross-check at current HEAD): the evidence
+  in the ForgePilot Cross-Check section below, and every file under
+  `evidence/log-*`, was regenerated at PraxisBound commit `0afaa96` (the
+  MEDIUM-1 fix), after the prior evidence was found to predate `8d895c7`
+  and Q24 and to have an inconsistent `log-09` timestamp. See ForgePilot
+  Cross-Check below.
+* `LOW` (lone-surrogate paths): see Residual Risks below.
+
 ## ForgePilot Cross-Check
 
-Evidence of ForgePilot commit `32b7a68ebf96d74b55acec8f1cd9408f2ba70dab` only.
+Evidence of ForgePilot commit `32b7a68ebf96d74b55acec8f1cd9408f2ba70dab`
+only, re-run at PraxisBound commit `0afaa96` (the MEDIUM-1 fix; `git log
+--oneline -1` in this repository at the time this evidence was captured).
+The prior evidence in this section predated `8d895c7` and the Q24/MEDIUM-1
+rule changes; this is a full re-run, not an amendment, and every
+`evidence/log-*` file below was regenerated together (no more of the stale
+log-09 timestamp older than logs 04–08 that the second review flagged).
+Every regenerated file is byte-identical to its prior version except
+`log-03-git-init.txt` (a fresh scratch git commit necessarily has a new
+hash): the artifact exports and ForgePilot's own responses are deterministic
+given the same inputs, so unchanged content here is expected, not a sign the
+re-run did not happen.
 This check is not in `make verify`; the in-repository fixtures above carry
 the automated guarantee (Story R6). The two scripts used, and the exact
 command output captured while running them, are saved under
@@ -160,7 +200,7 @@ git -c user.email=test@example.com -c user.name=Test commit -q -m "fixture repo"
 git log --oneline -1
 ```
 
-Output (`evidence/log-03-git-init.txt`): `b4c5ae6 fixture repo`.
+Output (`evidence/log-03-git-init.txt`): `4f9199d fixture repo`.
 
 ```
 <scratch>/fp/forgepilot init
@@ -258,3 +298,4 @@ Core exported.
 * `A duplicate entry within one Manifest node's dependsOn array is invalid-topology in ForgePilot's preflight.go (it folds the uniqueness and sort checks into one "must be sorted" comparison, which a duplicate also fails) but malformed-artifact in this Core (duplicate-dependency and sort-order are two separate, explicit checks here). Duplicate node references themselves — a different rule — are invalid-topology in both. None of ForgePilot's 5 named invalid fixtures exercise a duplicate dependsOn entry, so this difference does not appear in the fixture-agreement check above.`
 * `The scratch fixture repository's Goal Plan artifacts are a small two-node, single-Story plan built for this cross-check; they are not the real R-008 review goal-plan projection, which is a later Story.`
 * `JS's Unicode tables (the \p{Cc}, \p{Cf}, \p{Zl}, \p{Zp} property escapes this Core's REPO_PATH_PATTERN and REVIEWER_NAME_PATTERN now use) and Go's unicode package tables both track the Unicode Character Database but are generated from whatever Unicode version each language runtime ships; a character newly assigned to one of these categories in a Unicode revision one runtime has and the other does not would be accepted by one and rejected by the other. Not exercised by any test, since it depends on the two runtimes' installed Unicode versions at run time, not on this code.`
+* `A path containing a lone (unpaired) UTF-16 surrogate, e.g. "a\ud800b", is accepted by both sides today: this Core's repoPath pattern and byte-length check operate on the JS string as given (WTF-16-tolerant), and Go's UTF-8 encoder replaces an unpaired surrogate with U+FFFD (the replacement character) rather than rejecting it, so ForgePilot's own repoPath validation also lets it through. The two sides then disagree on the actual bytes: this Core's TextEncoder-based utf8ByteLength and source-facts lookup key keep the lone surrogate as WTF-8 (an encoding neither valid UTF-8 nor rejected outright by encodeURIComponent-style APIs), while Go's os.ReadFile and any UTF-8-based tooling see the U+FFFD-substituted name. A caller could bind a source under a lone-surrogate identity that this Core resolves as one file and ForgePilot resolves as a different (U+FFFD-named) one. Not exercised by any test; second code review LOW finding, not fixed in this round.`
