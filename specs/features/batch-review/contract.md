@@ -464,7 +464,7 @@ ForgePilot 輸出是觀察而非輸入：每個 stdout／stderr 保存前 1 MiB�
 
 | Source field | Payload | Expected result | Persisted locations | Verification |
 | --- | --- | --- | --- | --- |
-| `batch.json sources.specs[0]` | `../outside.md` | `reject` | `envelope issues REVIEW_PATH_UNSAFE; no records/ file` | `tests/batch-review-index.sh` |
+| `batch.json sources.specs[0]` | `../outside.md` | `reject` | `envelope issues REVIEW_MANIFEST_INVALID（修訂性澄清，R-007：`..` 在 manifest 解析時即被拒絕）; no records/ file` | `tests/batch-review-index.sh` |
 | `batch.json sources.stories[0]` | `symlink specs/stories/X-1 -> /tmp/outside` | `reject` | `envelope issues REVIEW_PATH_UNSAFE; no records/ file` | `tests/batch-review-index.sh` |
 | `batch.json sources.specs[0]` | `"specs/a[2Jb.md"` | `reject` | `envelope issues REVIEW_MANIFEST_INVALID` | `tests/batch-review-index.sh` |
 | `--output` | `specs/stories/X-1/story.md` | `reject` | `envelope issues REVIEW_OUTPUT_CONFLICT; story.md bytes unchanged` | `tests/batch-review-render.sh` |

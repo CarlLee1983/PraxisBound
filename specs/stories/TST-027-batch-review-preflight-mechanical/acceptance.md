@@ -82,7 +82,7 @@ adapter injected as a default parameter.
 
 | Source field | Payload | Expected result | Persisted locations | Verification |
 | --- | --- | --- | --- | --- |
-| `batch.json sources.specs[0]` | `../outside.md` | reject | `REVIEW_PATH_UNSAFE; no preflight record` | `packages/cli/test/review-preflight-command.test.mjs` |
+| `batch.json sources.specs[0]` | `../outside.md` | reject | `configuration-error REVIEW_MANIFEST_INVALID; no preflight record` | `packages/cli/test/review-preflight-command.test.mjs` |
 | `batch.json dependencies` | `A dependsOn B, B dependsOn A` | reject | `preflight record issue REVIEW_DEPENDENCY_CYCLE` | `packages/core/test/review-dependency-graph.test.mjs` |
 | `confirmation record` | `authorized: true; approved` with the fingerprint of previous content | reject | `preflight record issue REVIEW_CONFIRMATION_STALE` | `packages/cli/test/review-preflight-command.test.mjs` |
 | `records directory` | `records/preflight-000000000000-1.json` malformed | reject | `REVIEW_RECORD_INVALID; not a deduplication baseline` | `packages/cli/test/review-preflight-command.test.mjs` |

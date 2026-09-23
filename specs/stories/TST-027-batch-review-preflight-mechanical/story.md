@@ -191,6 +191,10 @@ its branch and both merge together (R10).
   Security Fixture Matrix row for an ESC file name now covers a path outside
   the batch, and a separate end-to-end fixture proves that untrusted text
   reaching human output is escaped.
+  (d) The Security Fixture Matrix row for `../outside.md` expects
+  `REVIEW_MANIFEST_INVALID`: a `..` segment is rejected while the manifest is
+  parsed, before any filesystem path check, as `review index` already did.
+  Contract §16 carried the same wrong code and is corrected with it.
 
 ## Expected Errors
 

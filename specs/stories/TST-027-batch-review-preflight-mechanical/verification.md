@@ -8,7 +8,7 @@
 * integration: pass — `review-preflight-command, review-preflight-record, review-preflight-git, and review-git tests drive review preflight and the git adapter against temporary repositories, including real temporary git repositories, asserting envelopes, records/ contents, and git state`
 * contract: pass — `contract §2, §9, and §13 carry the 修訂性澄清（R-007） lines the tests assert; cli-contract.md documents review preflight, its checks, outcomes, record rules, and git behavior; result-envelope-v1.schema.json accepts the four outcomes only with their §12 status and exit`
 * e2e: pass — `a manual scratch run, not committed, of the built binary in a scratch git repository holding ADR-014, ADR-015, the R-007 section of the spec, and this Story; see Preflight Rehearsal below`
-* architecture: blocked — `awaiting Human Review of feat/tst-027-preflight-mechanical; one independent code and security review round ran and its findings were fixed in 16a75c4, and that fix round was checked by make verify and the rehearsal, not by a second review`
+* architecture: pass — `Human Review: carl accepted TST-027 in a Claude Code session on 2026-09-23, reviewing feat/tst-027-preflight-mechanical at 53d08ee after one independent code and security review round whose findings were fixed in 16a75c4 and checked by make verify and the rehearsal, not by a second review`
 
 ## Evidence
 
@@ -46,7 +46,6 @@ pseudo-terminal, not by a human.
 ## Residual Risks
 
 * `TST-027 must not merge to main without TST-028 (Story R10a): until then any existing --semantic-report file lets the outcome reach REVIEW_READY.`
-* `The Security Fixture Matrix row for batch.json sources.specs[0] = ../outside.md expects REVIEW_PATH_UNSAFE, but the command reports REVIEW_MANIFEST_INVALID, as review index already did before this branch; the test asserts the real code, and the row awaits Human Review.`
 * `REVIEW_REVISION_STALE_TARGET is classified advisory in Core but never produced by preflight; the only producer is review import.`
 * `--semantic-report accepts any path and only checks that a regular file exists at it, following parent symlinks; TST-028 must bound the path before reading the file.`
 * `Any git exit 128 is reported as REVIEW_NOT_A_GIT_REPOSITORY, including dubious ownership and a corrupt repository; the result is still BLOCKED, but the message can mislead.`
