@@ -49,7 +49,7 @@ function cleanEnvironment(): NodeJS.ProcessEnv {
   };
 }
 
-async function git(
+export async function git(
   cwd: string,
   args: readonly string[],
 ): Promise<
