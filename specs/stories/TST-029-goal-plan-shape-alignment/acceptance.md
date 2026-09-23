@@ -25,7 +25,10 @@ recorded evidence.
 * [ ] AC-003: Cycles, duplicate nodes, dangling `dependsOn`, and Declaration
   and Manifest node sets that differ return `invalid-topology`; unsorted
   nodes, a wrong readiness path, a non-UUIDv4 `reviewId`, a `reviewedAt`
-  without `.000Z`, and unknown fields return `malformed-artifact`; a
+  that is not a real UTC date-time with three fractional digits (修訂性澄清,
+  Human Review 2026-09-23: ForgePilot accepts any three digits), a path or
+  reviewer name with Unicode Cc, Cf, Zl, or Zp characters or over its UTF-8
+  byte bound, more than 10000 total `dependsOn` edges, and unknown fields return `malformed-artifact`; a
   `schemaVersion` other than `"1.0.0"`, including the 0.3.0 numeric `1`,
   returns `unsupported-schema`. (R-008/AC-003)
 * [ ] AC-004: Artifacts over the schema bounds are rejected whole as

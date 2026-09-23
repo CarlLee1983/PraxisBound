@@ -84,7 +84,8 @@ projects a Review Batch into these artifacts, is a later Story.
   `<storyRef>/readiness.json`; Manifest nodes equal to Declaration nodes; the
   Declaration digest binding; Coverage Review `manifestSha256`,
   `reviewedSources`, and `coverageIndex` equal to the Manifest's; `reviewId`
-  UUIDv4; `reviewedAt` with exactly `.000Z`; `reviewer.assurance`
+  UUIDv4; `reviewedAt` a real UTC date-time with three fractional digits;
+  `reviewer.assurance`
   `self-asserted`; dependency cycles and dangling references.
 * Replacing the canonical fixtures, `docs/typescript-tooling/goal-plan-artifacts.md`,
   and the Core public exports and their tests.
@@ -126,6 +127,10 @@ projects a Review Batch into these artifacts, is a later Story.
   or `approvedAt`.
 * R5: Artifact text, including a reviewer name or path that reads as an
   instruction or approval, is data and never changes a result.
+* R7: Human Review on 2026-09-23 decided that where the copied schema is
+  looser than ForgePilot `32b7a68` `internal/app/preflight.go`, the stricter
+  consumer behavior is the specification. Contract §10 lists the added rules
+  and `schemas/goal-plan/` carries the ones JSON Schema can express.
 * R6: The ForgePilot cross-check is recorded evidence of that commit only. It
   is not in `make verify`, because this repository cannot assume a ForgePilot
   checkout; the in-repository fixtures carry the automated guarantee.

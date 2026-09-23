@@ -94,4 +94,6 @@ blocked.
 `specs/features/batch-review/schemas/goal-plan/`, or `run --goal`
 no longer requires an execution authorization, or `work add` loses
 `--external-ref` idempotency, or ForgePilot stops requiring
-`readinessContract.path` to be `<storyRef>/readiness.json`.
+`readinessContract.path` to be `<storyRef>/readiness.json`, or ForgePilot's
+`internal/app/preflight.go` loosens or tightens the artifact rules contract §10
+mirrors — then the schemas and those rules are re-compared.
