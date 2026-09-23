@@ -279,10 +279,25 @@ async function findOversizedSourcePath(
   return undefined;
 }
 
+/** `true` only for "the path does not exist" (ENOENT); every other failure (EACCES and similar) is a distinct, present-but-unreadable condition. */
+function isNotFoundError(error: unknown): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    (error as NodeJS.ErrnoException).code === "ENOENT"
+  );
+}
+
 /**
  * Reads one source without ever following a symlink swapped in after the
  * safety pre-check: the handle is opened with `O_NOFOLLOW` and revalidated
- * before the read, exactly like Story's `readSafeSource`.
+ * before the read, exactly like Story's `readSafeSource`. MEDIUM (Story
+ * TST-030): a path that exists but cannot be read (permission denied, a
+ * directory in a file's place, or a lost race) is `unreadable`, distinct
+ * from a genuinely absent (`missing`, ENOENT) one — every declared source
+ * already treats the two identically (`REVIEW_SOURCE_MISSING`), but a
+ * Readiness Sidecar must not count an `unreadable` one as absent (contract
+ * §21 R1).
  */
 async function readSourceObservation(
   root: string,
@@ -292,11 +307,13 @@ async function readSourceObservation(
   let pathStats;
   try {
     pathStats = await lstat(absolute);
-  } catch {
-    return { kind: "missing" };
+  } catch (error) {
+    return isNotFoundError(error)
+      ? { kind: "missing" }
+      : { kind: "unreadable" };
   }
   if (pathStats.isSymbolicLink()) return { kind: "unsafe" };
-  if (!pathStats.isFile()) return { kind: "missing" };
+  if (!pathStats.isFile()) return { kind: "unreadable" };
 
   let handle;
   try {
@@ -304,17 +321,19 @@ async function readSourceObservation(
       absolute,
       constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK,
     );
-  } catch {
-    return { kind: "missing" };
+  } catch (error) {
+    return isNotFoundError(error)
+      ? { kind: "missing" }
+      : { kind: "unreadable" };
   }
 
   try {
     const openedStats = await handle.stat();
-    if (!openedStats.isFile()) return { kind: "missing" };
+    if (!openedStats.isFile()) return { kind: "unreadable" };
     const bytes = await handle.readFile();
     return { kind: "file", bytes };
   } catch {
-    return { kind: "missing" };
+    return { kind: "unreadable" };
   } finally {
     await handle.close().catch(() => undefined);
   }
@@ -554,10 +573,12 @@ export async function runReviewIndexUnsafe(
     };
   }
 
-  const oversizedPath = await findOversizedSourcePath(root, [
-    ...plan.plan.sources,
-    ...readinessPaths,
-  ]);
+  // HIGH-3: a Readiness Sidecar is exempt from this generic per-source cap.
+  // Contract §13/§21's own, tighter 1 MiB bound is Core's own check on its
+  // bytes (`parseReadinessSidecar`), applied only where the Sidecar's
+  // content is actually evaluated (`review preflight`/`review
+  // readiness-digests`) — never an `index`/`render`-time hard failure.
+  const oversizedPath = await findOversizedSourcePath(root, plan.plan.sources);
   if (oversizedPath !== undefined) {
     return {
       mode: parsed.mode,

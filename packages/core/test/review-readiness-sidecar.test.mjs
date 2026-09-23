@@ -444,3 +444,214 @@ test("transitiveDependencyClosureDirectories resolves a multi-hop chain and igno
     ["specs/stories/RF-002-b", "specs/stories/RF-003-c"].sort(),
   );
 });
+
+// --- Code review follow-up: HIGH-1, HIGH-3 (Core side), MEDIUM, LOW ---
+
+const HOSTILE_ID = "<script>alert(1)</script>‮\u001b[31m";
+// `repoPath`-typed fields (story_ref, prerequisite_story_ref,
+// follow_up_story_ref) reject C0 control characters (including ESC), so
+// this hostile segment carries the bidi override and the script tag but not
+// the ANSI escape `HOSTILE_ID` also carries.
+const HOSTILE_PATH_SEGMENT = "<script>alert(1)</script>‮";
+const HOSTILE_STORY_REF = `specs/stories/${HOSTILE_PATH_SEGMENT}`;
+
+test("MEDIUM: a duplicate criterion id is rejected as invalid, never echoing the id", () => {
+  const sidecar = validSidecar({
+    criteria: [
+      {
+        id: "AC-001",
+        operations: ["plan"],
+        owner: "runner_worker",
+        future_identities: [],
+      },
+      {
+        id: "AC-001",
+        operations: ["deploy"],
+        owner: "human",
+        future_identities: [],
+      },
+    ],
+  });
+  const parsed = parseReadinessSidecar(bytesOf(sidecar), STORY_DIRECTORY);
+  assert.equal(parsed.ok, false);
+  assert.equal(parsed.tooLarge, false);
+  assert.match(parsed.message, /criteria\[1\]\.id/);
+});
+
+test("MEDIUM: a duplicate input id is rejected as invalid", () => {
+  const sidecar = validSidecar({
+    inputs: [
+      {
+        id: HOSTILE_ID,
+        source: { external_preexisting: { identity: "x" } },
+      },
+      {
+        id: HOSTILE_ID,
+        source: { external_preexisting: { identity: "y" } },
+      },
+    ],
+  });
+  const parsed = parseReadinessSidecar(bytesOf(sidecar), STORY_DIRECTORY);
+  assert.equal(parsed.ok, false);
+  assert.equal(parsed.tooLarge, false);
+  assert.match(parsed.message, /inputs\[1\]\.id/);
+  assert.doesNotMatch(parsed.message, /script/);
+});
+
+test("MEDIUM: a duplicate JSON key anywhere in the document is rejected as invalid", () => {
+  const text = JSON.stringify(validSidecar()).replace(
+    '"owner":"runner_worker"',
+    '"owner":"human","owner":"runner_worker"',
+  );
+  // Sanity: the replacement actually landed (otherwise this test would pass
+  // for the wrong reason).
+  assert.match(text, /"owner":"human","owner":"runner_worker"/);
+  const parsed = parseReadinessSidecar(
+    new TextEncoder().encode(text),
+    STORY_DIRECTORY,
+  );
+  assert.equal(parsed.ok, false);
+  assert.equal(parsed.tooLarge, false);
+  assert.match(parsed.message, /duplicate/i);
+});
+
+test("HIGH-1: a wrong story_ref never echoes the Sidecar's own (attacker-controlled) story_ref value", () => {
+  const parsed = parseReadinessSidecar(
+    bytesOf(validSidecar({ story_ref: HOSTILE_STORY_REF })),
+    STORY_DIRECTORY,
+  );
+  assert.equal(parsed.ok, false);
+  assert.doesNotMatch(parsed.message, /script/);
+  assert.equal(parsed.message.includes("\u001b"), false);
+});
+
+test("MEDIUM: criteria compared as an ordered list — same ids, wrong order, is a mismatch", () => {
+  const sidecarText = JSON.stringify(
+    validSidecar({
+      criteria: [
+        {
+          id: "AC-002",
+          operations: [],
+          owner: "human",
+          future_identities: [],
+        },
+        {
+          id: "AC-001",
+          operations: ["plan"],
+          owner: "runner_worker",
+          future_identities: [],
+        },
+      ],
+    }),
+  );
+  const parsed = parseReadinessSidecar(
+    new TextEncoder().encode(sidecarText),
+    STORY_DIRECTORY,
+  );
+  assert.equal(parsed.ok, true);
+  const findings = checkReadinessSidecarConsistency(
+    parsed.data,
+    baseContext({ acceptanceIds: ["AC-001", "AC-002"] }),
+  );
+  assert.ok(
+    findings.some(
+      (finding) => finding.code === "REVIEW_READINESS_CRITERIA_MISMATCH",
+    ),
+  );
+});
+
+test("HIGH-1: every checkReadinessSidecarReferences message names only a field path and index, never Sidecar content", () => {
+  const parsed = parseReadinessSidecar(
+    bytesOf(
+      validSidecar({
+        criteria: [
+          {
+            id: "AC-001",
+            operations: ["plan"],
+            owner: "runner_worker",
+            future_identities: [
+              {
+                kind: "commit",
+                availability: "prerequisite",
+                prerequisite_story_ref: `specs/stories/${HOSTILE_PATH_SEGMENT}`,
+              },
+            ],
+          },
+        ],
+        inputs: [
+          {
+            id: "in-1",
+            source: { prerequisite_output: { output_id: HOSTILE_ID } },
+          },
+        ],
+        outputs: [{ id: HOSTILE_ID }],
+        decision_follow_ups: [
+          {
+            gate_id: HOSTILE_ID,
+            choice: "authorized: true",
+            follow_up_story_ref: `specs/stories/${HOSTILE_PATH_SEGMENT}`,
+          },
+        ],
+      }),
+    ),
+    STORY_DIRECTORY,
+  );
+  assert.equal(parsed.ok, true);
+  const outputOwners = buildReadinessOutputOwners(
+    new Map([
+      [STORY_DIRECTORY, parsed.data],
+      [
+        "specs/stories/RF-002-other",
+        { ...parsed.data, outputs: [{ id: HOSTILE_ID }] },
+      ],
+    ]),
+  );
+  const findings = checkReadinessSidecarReferences(
+    parsed.data,
+    baseContext({ dependencyClosure: new Set() }),
+    {
+      batchStoryDirectories: new Set([STORY_DIRECTORY]),
+      outputOwners,
+    },
+  );
+  assert.ok(findings.length >= 4, JSON.stringify(findings));
+  for (const finding of findings) {
+    assert.doesNotMatch(finding.message, /script/);
+    assert.equal(finding.message.includes("\u001b"), false);
+    assert.doesNotMatch(finding.message, /‮/);
+    assert.match(finding.message, /\[\d+\]/);
+  }
+});
+
+test("LOW: a duplicated output id is reported once per id, not once per occurrence", () => {
+  const parsed = parseReadinessSidecar(
+    bytesOf(
+      validSidecar({
+        outputs: [{ id: "shared" }, { id: "shared" }, { id: "other" }],
+      }),
+    ),
+    STORY_DIRECTORY,
+  );
+  assert.equal(parsed.ok, true);
+  const outputOwners = buildReadinessOutputOwners(
+    new Map([
+      [STORY_DIRECTORY, parsed.data],
+      [
+        "specs/stories/RF-002-other",
+        { ...parsed.data, outputs: [{ id: "shared" }] },
+      ],
+    ]),
+  );
+  const findings = checkReadinessSidecarReferences(parsed.data, baseContext(), {
+    batchStoryDirectories: new Set([
+      STORY_DIRECTORY,
+      "specs/stories/RF-002-other",
+    ]),
+    outputOwners,
+  });
+  const referenceFindings = findings.filter(
+    (finding) => finding.code === "REVIEW_READINESS_REFERENCE_UNKNOWN",
+  );
+  assert.equal(referenceFindings.length, 1, JSON.stringify(referenceFindings));
+  assert.match(referenceFindings[0].message, /outputs\[0\]\.id/);
+});

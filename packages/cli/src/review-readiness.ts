@@ -23,37 +23,48 @@ import {
 
 export interface ReadinessSidecarEntry {
   readonly storyDirectory: string;
-  readonly bytes: Uint8Array;
   readonly parse: ReadinessSidecarParseResult;
 }
 
-/** Every batch Story with a present Sidecar (contract §21 R1: absence is never diagnosed here). */
+const UNREADABLE_MESSAGE =
+  "readiness.json exists but could not be read (permission denied or similar)";
+
+/**
+ * Every batch Story with a present Sidecar (contract §21 R1: absence is
+ * never diagnosed here). A Sidecar that exists but could not be read
+ * (`kind: "unreadable"` — MEDIUM: distinct from a genuinely absent one) is
+ * reported as a synthetic `REVIEW_READINESS_INVALID` parse failure rather
+ * than silently skipped, since there is no content to parse but the Story
+ * still declares a Sidecar that must resolve to a definite outcome.
+ */
 export function loadBatchReadinessSidecars(
   index: ReviewIndex,
   observations: ReviewObservations,
 ): readonly ReadinessSidecarEntry[] {
   const entries: ReadinessSidecarEntry[] = [];
   for (const story of index.stories) {
-    if (!story.readinessPresent) continue;
+    if (!story.readinessPresent || story.readinessPath === undefined) continue;
     const observation = observations.get(story.readinessPath);
-    if (observation === undefined || observation.kind !== "file") continue;
+    if (observation?.kind === "file") {
+      entries.push({
+        storyDirectory: story.path,
+        parse: parseReadinessSidecar(observation.bytes, story.path),
+      });
+      continue;
+    }
+    // `unreadable` (or any other non-`file` state reachable while
+    // `readinessPresent` is true): no bytes to parse, so it never reaches
+    // `REVIEW_READY` and `readiness-digests` never treats it as writable.
     entries.push({
       storyDirectory: story.path,
-      bytes: observation.bytes,
-      parse: parseReadinessSidecar(observation.bytes, story.path),
+      parse: { ok: false, tooLarge: false, message: UNREADABLE_MESSAGE },
     });
   }
   return entries;
 }
 
 export interface ReadinessPreflightFinding {
-  readonly code:
-    | "REVIEW_READINESS_INVALID"
-    | "REVIEW_INPUT_TOO_LARGE"
-    | "REVIEW_READINESS_STALE"
-    | "REVIEW_READINESS_CRITERIA_MISMATCH"
-    | "REVIEW_READINESS_OPERATION_UNGRANTED"
-    | "REVIEW_READINESS_REFERENCE_UNKNOWN";
+  readonly code: string;
   readonly message: string;
   readonly path: string;
 }
@@ -65,7 +76,11 @@ export interface ReadinessPreflightFinding {
  * consistency. A Story whose `story.md`/`acceptance.md` could not be read is
  * skipped for the consistency/reference checks (a missing source already
  * reports `REVIEW_SOURCE_MISSING` elsewhere); its schema/size finding, if
- * any, still reports.
+ * any, still reports. LOW: `readAuthority`/`readTaskMode`'s own governance
+ * issues (a malformed `## Authority`/`## Classification`) are surfaced
+ * here, as their own `STORY_*` findings, rather than silently discarded —
+ * `evaluatePreflight` already classifies any `STORY_`-prefixed code as
+ * BLOCKED.
  */
 export function computeReadinessPreflightFindings(
   index: ReviewIndex,
@@ -88,7 +103,6 @@ export function computeReadinessPreflightFindings(
     }
     parsedByDirectory.set(entry.storyDirectory, entry.parse.data);
   }
-  if (parsedByDirectory.size === 0) return findings;
 
   const directoryByStoryId = new Map<string, string>();
   for (const story of index.stories) {
@@ -113,16 +127,20 @@ export function computeReadinessPreflightFindings(
     )
       continue;
 
-    const issues: { readonly code: string; readonly message: string }[] = [];
-    const taskMode = readTaskMode(
-      new TextDecoder("utf-8").decode(storyMdObservation.bytes),
-      issues,
-    );
-    const authority = readAuthority(
-      new TextDecoder("utf-8").decode(storyMdObservation.bytes),
-      taskMode,
-      issues,
-    );
+    const governanceIssues: {
+      readonly code: string;
+      readonly message: string;
+    }[] = [];
+    const storyText = new TextDecoder("utf-8").decode(storyMdObservation.bytes);
+    const taskMode = readTaskMode(storyText, governanceIssues);
+    const authority = readAuthority(storyText, taskMode, governanceIssues);
+    for (const issue of governanceIssues)
+      findings.push({
+        code: issue.code,
+        message: issue.message,
+        path: story.path,
+      });
+
     const grantedOperations = new Set(
       Object.entries(authority)
         .filter(([, granted]) => granted)

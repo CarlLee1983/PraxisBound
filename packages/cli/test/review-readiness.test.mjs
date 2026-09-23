@@ -1,12 +1,24 @@
 import assert from "node:assert/strict";
-import { mkdir, readFile, symlink, writeFile } from "node:fs/promises";
+import {
+  chmod,
+  mkdir,
+  readdir,
+  readFile,
+  rename as nodeRename,
+  stat,
+  symlink,
+  writeFile,
+} from "node:fs/promises";
 import { join } from "node:path";
 import test from "node:test";
 
 import { validateResultEnvelope } from "@praxisbound/core";
 
 import { runReviewIndex, runReviewRender } from "../dist/review.js";
-import { runReviewPreflight } from "../dist/review-preflight.js";
+import {
+  renderReviewPreflightHuman,
+  runReviewPreflight,
+} from "../dist/review-preflight.js";
 import { runReviewReadinessDigests } from "../dist/review-readiness-digests.js";
 
 import {
@@ -99,6 +111,36 @@ async function readyFixtureRepoWithReadiness(batchId, readiness) {
     );
   }
   return fixtureRepo(batchId, files, baseManifest(batchId));
+}
+
+function twoStoryFiles(readinessA, readinessB) {
+  const files = { ...readyFixtureFiles() };
+  files["specs/stories/RF-002-fixture/story.md"] = READY_STORY_TEXT;
+  files["specs/stories/RF-002-fixture/acceptance.md"] = READY_ACCEPTANCE_TEXT;
+  if (readinessA !== undefined)
+    files["specs/stories/RF-001-fixture/readiness.json"] = JSON.stringify(
+      readinessA,
+      null,
+      2,
+    );
+  if (readinessB !== undefined)
+    files["specs/stories/RF-002-fixture/readiness.json"] = JSON.stringify(
+      readinessB,
+      null,
+      2,
+    );
+  return files;
+}
+
+function twoStoryManifest(batchId) {
+  const base = baseManifest(batchId);
+  return {
+    ...base,
+    sources: {
+      ...base.sources,
+      stories: [...base.sources.stories, "specs/stories/RF-002-fixture"],
+    },
+  };
 }
 
 async function writeConfirmation(root, batchId, data) {
@@ -501,7 +543,7 @@ test("AC-006: hostile Sidecar text is preserved and escaped, never changes the o
   }
 });
 
-test("AC-006/R7: a symlinked readiness.json is REVIEW_PATH_UNSAFE", async () => {
+test("AC-006/R7: a symlinked readiness.json is REVIEW_PATH_UNSAFE and writes no records/ file", async () => {
   const batchId = "TST-9911-readiness";
   const root = await workspace(async (dir) => {
     const files = readyFixtureFiles();
@@ -517,6 +559,399 @@ test("AC-006/R7: a symlinked readiness.json is REVIEW_PATH_UNSAFE", async () => 
     const execution = await runReviewIndex([manifestPath, "--json"], root);
     assert.equal(execution.result.outcome, "configuration-error");
     assert.ok(codesOf(execution).includes("REVIEW_PATH_UNSAFE"));
+
+    const preflight = await runReviewPreflight([manifestPath, "--json"], root);
+    assert.equal(preflight.result.outcome, "configuration-error");
+    assert.ok(codesOf(preflight).includes("REVIEW_PATH_UNSAFE"));
+
+    const recordsDir = join(root, "specs/batches", batchId, "records");
+    const names = await readdir(recordsDir).catch(() => []);
+    assert.deepEqual(
+      names.filter((name) => name.startsWith("preflight-")),
+      [],
+    );
+  } finally {
+    await cleanupWorkspace(root);
+  }
+});
+
+test("AC-006: a hostile, duplicated output id blocks preflight without leaking into issues, human output, or records", async () => {
+  const batchId = "TST-9912-readiness";
+  const hostileId = "<script>alert(1)</script>‮\u001b[31m";
+  const readinessA = validReadiness({ outputs: [{ id: hostileId }] });
+  const readinessB = validReadiness({
+    story_ref: "specs/stories/RF-002-fixture",
+    outputs: [{ id: hostileId }],
+  });
+  const { root, manifestPath } = await fixtureRepo(
+    batchId,
+    twoStoryFiles(readinessA, readinessB),
+    twoStoryManifest(batchId),
+  );
+  try {
+    const execution = await run(root, [manifestPath, "--json"]);
+    assert.equal(execution.result.outcome, "REVIEW_BLOCKED");
+    assert.ok(
+      codesOf(execution).includes("REVIEW_READINESS_REFERENCE_UNKNOWN"),
+    );
+
+    const rawEnvelope = JSON.stringify(execution.result);
+    assert.doesNotMatch(rawEnvelope, /script/);
+    assert.equal(rawEnvelope.includes("\u001b"), false);
+    assert.doesNotMatch(rawEnvelope, /‮/);
+
+    const human = renderReviewPreflightHuman(execution);
+    assert.doesNotMatch(human.stdout, /script/);
+    assert.doesNotMatch(human.stderr, /script/);
+
+    const recordPath = execution.result.data.preflightRecord;
+    const recordText = await readFile(join(root, recordPath), "utf8");
+    assert.doesNotMatch(recordText, /script/);
+    assert.equal(recordText.includes("\u001b"), false);
+    assert.doesNotMatch(recordText, /‮/);
+  } finally {
+    await cleanupWorkspace(root);
+  }
+});
+
+test("AC-006: a hostile story_ref never appears in the invalid-Sidecar issue message, human output, or records", async () => {
+  const batchId = "TST-9913-readiness";
+  // `repoPath` rejects C0 control characters, so this hostile segment omits
+  // ESC but keeps the script tag and the bidi override.
+  const hostileSegment = "<script>alert(1)</script>‮";
+  const hostile = validReadiness({
+    story_ref: `specs/stories/${hostileSegment}`,
+  });
+  const { root, manifestPath } = await readyFixtureRepoWithReadiness(
+    batchId,
+    hostile,
+  );
+  try {
+    const execution = await run(root, [manifestPath, "--json"]);
+    assert.equal(execution.result.outcome, "REVIEW_BLOCKED");
+    assert.ok(codesOf(execution).includes("REVIEW_READINESS_INVALID"));
+
+    const rawEnvelope = JSON.stringify(execution.result);
+    assert.doesNotMatch(rawEnvelope, /script/);
+    assert.doesNotMatch(rawEnvelope, /‮/);
+
+    const human = renderReviewPreflightHuman(execution);
+    assert.doesNotMatch(human.stdout, /script/);
+
+    const recordPath = execution.result.data.preflightRecord;
+    const recordText = await readFile(join(root, recordPath), "utf8");
+    assert.doesNotMatch(recordText, /script/);
+    assert.doesNotMatch(recordText, /‮/);
+  } finally {
+    await cleanupWorkspace(root);
+  }
+});
+
+test("HIGH-3: a Sidecar well over 4 MiB still leaves review index/render success; preflight is REVIEW_INCOMPLETE, exit 1, never configuration-error", async () => {
+  const batchId = "TST-9914-readiness";
+  const big = validReadiness({
+    decision_follow_ups: [
+      {
+        gate_id: "gate",
+        choice: "x",
+        follow_up_story_ref: "specs/stories/RF-001-fixture",
+      },
+    ],
+  });
+  const bigText = `${JSON.stringify(big)}${" ".repeat(5 * 1024 * 1024)}`;
+  const { root, manifestPath } = await readyFixtureRepoWithReadiness(
+    batchId,
+    validReadiness(),
+  );
+  try {
+    await writeFile(
+      join(root, "specs/stories/RF-001-fixture/readiness.json"),
+      bigText,
+    );
+
+    const indexExecution = await runReviewIndex([manifestPath, "--json"], root);
+    assert.equal(indexExecution.result.outcome, "success");
+    const readinessSource = indexExecution.result.data.sources.find((source) =>
+      source.path.endsWith("readiness.json"),
+    );
+    assert.notEqual(readinessSource, undefined);
+    assert.match(readinessSource.sha256, /^[a-f0-9]{64}$/);
+
+    const renderExecution = await runReviewRender(
+      [manifestPath, "--output", "review.html", "--json"],
+      root,
+    );
+    assert.equal(renderExecution.result.outcome, "success");
+
+    const preflight = await runReviewPreflight([manifestPath, "--json"], root);
+    assert.equal(preflight.result.outcome, "REVIEW_INCOMPLETE");
+    assert.equal(preflight.result.exit, 1);
+    assert.ok(codesOf(preflight).includes("REVIEW_INPUT_TOO_LARGE"));
+
+    const digests = await runReviewReadinessDigests(
+      [manifestPath, "--json"],
+      root,
+    );
+    assert.equal(digests.result.outcome, "failure");
+    assert.ok(codesOf(digests).includes("REVIEW_INPUT_TOO_LARGE"));
+  } finally {
+    await cleanupWorkspace(root);
+  }
+});
+
+test("MEDIUM: a present but unreadable readiness.json is not absent — it joins sources with sha256:null and blocks preflight with REVIEW_READINESS_INVALID", async () => {
+  const batchId = "TST-9915-readiness";
+  const { root, manifestPath } = await readyFixtureRepoWithReadiness(
+    batchId,
+    validReadiness(),
+  );
+  const readinessPath = join(
+    root,
+    "specs/stories/RF-001-fixture/readiness.json",
+  );
+  try {
+    await chmod(readinessPath, 0o000);
+
+    const indexExecution = await runReviewIndex([manifestPath, "--json"], root);
+    assert.equal(indexExecution.result.outcome, "success");
+    const readinessSource = indexExecution.result.data.sources.find((source) =>
+      source.path.endsWith("readiness.json"),
+    );
+    assert.notEqual(
+      readinessSource,
+      undefined,
+      "an unreadable Sidecar must not count as absent",
+    );
+    assert.equal(readinessSource.sha256, null);
+    assert.ok(
+      indexExecution.result.data.diagnostics.some(
+        (entry) => entry.code === "REVIEW_SOURCE_MISSING",
+      ),
+    );
+
+    const preflight = await runReviewPreflight([manifestPath, "--json"], root);
+    assert.equal(preflight.result.outcome, "REVIEW_BLOCKED");
+    assert.ok(codesOf(preflight).includes("REVIEW_READINESS_INVALID"));
+
+    const digests = await runReviewReadinessDigests(
+      [manifestPath, "--json"],
+      root,
+    );
+    assert.equal(digests.result.outcome, "failure");
+    assert.ok(codesOf(digests).includes("REVIEW_READINESS_INVALID"));
+  } finally {
+    await chmod(readinessPath, 0o644).catch(() => undefined);
+    await cleanupWorkspace(root);
+  }
+});
+
+test("MEDIUM: duplicate criterion ids and duplicate input ids are rejected end to end as REVIEW_READINESS_INVALID", async () => {
+  const batchId = "TST-9916-readiness";
+  const dup = validReadiness({
+    criteria: [
+      {
+        id: "AC-001",
+        operations: ["plan"],
+        owner: "runner_worker",
+        future_identities: [],
+      },
+      {
+        id: "AC-001",
+        operations: ["modify"],
+        owner: "human",
+        future_identities: [],
+      },
+    ],
+  });
+  const { root, manifestPath } = await readyFixtureRepoWithReadiness(
+    batchId,
+    dup,
+  );
+  try {
+    const execution = await run(root, [manifestPath, "--json"]);
+    assert.equal(execution.result.outcome, "REVIEW_BLOCKED");
+    assert.ok(codesOf(execution).includes("REVIEW_READINESS_INVALID"));
+  } finally {
+    await cleanupWorkspace(root);
+  }
+});
+
+test("MEDIUM: readiness-digests writes nothing when a rename fails partway through, and reports exactly the files already renamed", async () => {
+  const batchId = "TST-9917-readiness";
+  const staleA = validReadiness({
+    story_md_digest: `sha256:${"0".repeat(64)}`,
+  });
+  const staleB = validReadiness({
+    story_ref: "specs/stories/RF-002-fixture",
+    story_md_digest: `sha256:${"0".repeat(64)}`,
+  });
+  const { root, manifestPath } = await fixtureRepo(
+    batchId,
+    twoStoryFiles(staleA, staleB),
+    twoStoryManifest(batchId),
+  );
+  try {
+    const beforeA = await readFile(
+      join(root, "specs/stories/RF-001-fixture/readiness.json"),
+      "utf8",
+    );
+    const beforeB = await readFile(
+      join(root, "specs/stories/RF-002-fixture/readiness.json"),
+      "utf8",
+    );
+
+    let call = 0;
+    const filesystem = {
+      rename: async (...renameArgs) => {
+        call += 1;
+        if (call === 2) throw new Error("simulated rename failure");
+        return nodeRename(...renameArgs);
+      },
+    };
+
+    const execution = await runReviewReadinessDigests(
+      [manifestPath, "--json"],
+      root,
+      filesystem,
+    );
+    assert.equal(execution.result.outcome, "failure");
+    // Exactly one of the two files was actually renamed before the
+    // simulated failure; that is honestly reported, never rounded down to
+    // "nothing written" when something really was written.
+    assert.equal(execution.result.data.updated.length, 1);
+
+    const afterA = await readFile(
+      join(root, "specs/stories/RF-001-fixture/readiness.json"),
+      "utf8",
+    );
+    const afterB = await readFile(
+      join(root, "specs/stories/RF-002-fixture/readiness.json"),
+      "utf8",
+    );
+    const changedCount = [afterA !== beforeA, afterB !== beforeB].filter(
+      Boolean,
+    ).length;
+    assert.equal(changedCount, 1);
+    assert.equal(
+      execution.result.data.updated[0].endsWith(
+        afterA !== beforeA
+          ? "RF-001-fixture/readiness.json"
+          : "RF-002-fixture/readiness.json",
+      ),
+      true,
+    );
+  } finally {
+    await cleanupWorkspace(root);
+  }
+});
+
+test("MEDIUM: readiness-digests preserves the original file mode instead of leaving it at 0600", async () => {
+  const batchId = "TST-9918-readiness";
+  const stale = validReadiness({
+    story_md_digest: `sha256:${"0".repeat(64)}`,
+  });
+  const { root, manifestPath } = await readyFixtureRepoWithReadiness(
+    batchId,
+    stale,
+  );
+  const readinessPath = join(
+    root,
+    "specs/stories/RF-001-fixture/readiness.json",
+  );
+  try {
+    await chmod(readinessPath, 0o640);
+    const execution = await runReviewReadinessDigests(
+      [manifestPath, "--json"],
+      root,
+    );
+    assert.equal(execution.result.outcome, "success");
+    const mode = (await stat(readinessPath)).mode & 0o777;
+    assert.equal(mode, 0o640);
+  } finally {
+    await cleanupWorkspace(root);
+  }
+});
+
+test("MEDIUM: after a successful rewrite, data.fingerprint and sources reflect the post-rewrite state", async () => {
+  const batchId = "TST-9919-readiness";
+  const stale = validReadiness({
+    story_md_digest: `sha256:${"0".repeat(64)}`,
+  });
+  const { root, manifestPath } = await readyFixtureRepoWithReadiness(
+    batchId,
+    stale,
+  );
+  try {
+    const before = await indexData(root, manifestPath);
+    const execution = await runReviewReadinessDigests(
+      [manifestPath, "--json"],
+      root,
+    );
+    assert.equal(execution.result.outcome, "success");
+    assert.notEqual(execution.result.data.fingerprint, before.fingerprint);
+
+    const after = await indexData(root, manifestPath);
+    assert.equal(execution.result.data.fingerprint, after.fingerprint);
+    assert.deepEqual(execution.result.data.sources, after.sources);
+  } finally {
+    await cleanupWorkspace(root);
+  }
+});
+
+test("AC-005: a batch without any Sidecar produces byte-identical review index JSON to before this Story (no readiness keys anywhere)", async () => {
+  const batchId = "TST-9920-nosidecar";
+  const { root, manifestPath } = await readyFixtureRepoWithReadiness(
+    batchId,
+    undefined,
+  );
+  try {
+    const data = await indexData(root, manifestPath);
+    for (const story of data.stories) {
+      assert.ok(!("readinessPath" in story));
+      assert.ok(!("readinessPresent" in story));
+    }
+    // A full-output sweep: no trace of the new field names anywhere in the
+    // serialized index, not just on the one story object checked above.
+    assert.doesNotMatch(JSON.stringify(data), /readiness/i);
+  } finally {
+    await cleanupWorkspace(root);
+  }
+});
+
+test("LOW: readAuthority/readTaskMode governance issues are surfaced as their own STORY_* preflight findings, not discarded", async () => {
+  const batchId = "TST-9921-readiness";
+  const malformedAuthorityStory = READY_STORY_TEXT.replace(
+    "* plan: yes\n",
+    "* plan: yes\n* plan: yes\n",
+  );
+  const files = {
+    ...readyFixtureFiles(),
+    "specs/stories/RF-001-fixture/story.md": malformedAuthorityStory,
+  };
+  const { root, manifestPath } = await fixtureRepo(
+    batchId,
+    files,
+    baseManifest(batchId),
+  );
+  try {
+    // Write a readiness.json matching the malformed story.md's own bytes, so
+    // the digest check does not mask the governance finding under test.
+    await writeFile(
+      join(root, "specs/stories/RF-001-fixture/readiness.json"),
+      JSON.stringify(
+        validReadiness({
+          story_md_digest: `sha256:${sha256Hex(malformedAuthorityStory)}`,
+        }),
+        null,
+        2,
+      ),
+    );
+    const execution = await run(root, [manifestPath, "--json"]);
+    assert.equal(execution.result.outcome, "REVIEW_BLOCKED");
+    assert.ok(
+      codesOf(execution).includes("STORY_AUTHORITY_REPEATED"),
+      JSON.stringify(codesOf(execution)),
+    );
   } finally {
     await cleanupWorkspace(root);
   }

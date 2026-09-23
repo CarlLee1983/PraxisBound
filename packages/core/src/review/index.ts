@@ -95,18 +95,22 @@ export function indexReviewBatch(
   observations: ReviewObservations,
 ): IndexReviewBatchResult {
   // A Readiness Sidecar (Story TST-030, contract §21) is not a manifest-
-  // declared source, so it is never `REVIEW_SOURCE_MISSING` when absent; but
-  // a symlinked one is exactly as unsafe as any other batch path (R7), and
-  // an oversized one is capped by the same generic per-source bound as any
-  // other source (the Sidecar's own, tighter §13 1&nbsp;MiB bound is a
-  // preflight-time consistency check, not an index-time hard failure).
+  // declared source, so it is never `REVIEW_SOURCE_MISSING` when genuinely
+  // absent (R1); but a symlinked one is exactly as unsafe as any other batch
+  // path (R7). Unlike every other source, it is exempt from the generic
+  // per-source size cap (HIGH-3): §13/§21's 1 MiB Sidecar bound is a
+  // preflight-time/`readiness-digests`-time check on its own bytes, made by
+  // Core once they are read — never an index/render-time hard failure — so
+  // `review index`/`review render` stay `success` for a batch whose
+  // manifest is otherwise valid (contract §12) regardless of a Sidecar's
+  // size, and simply hash whatever bytes were read.
   const readinessPaths = plan.stories.map((story) => story.readinessPath);
 
   for (const path of [...plan.sources, ...readinessPaths]) {
     const observation = observationOf(observations, path);
     if (observation.kind === "unsafe") return { kind: "unsafe", path };
   }
-  for (const path of [...plan.sources, ...readinessPaths]) {
+  for (const path of plan.sources) {
     const observation = observationOf(observations, path);
     if (
       observation.kind === "file" &&
@@ -118,10 +122,17 @@ export function indexReviewBatch(
 
   const diagnostics: ReviewDiagnostic[] = [...plan.diagnostics];
 
-  const presentReadinessPaths = readinessPaths.filter(
-    (path) => observationOf(observations, path).kind === "file",
-  );
-  const allSourcePaths = [...plan.sources, ...presentReadinessPaths].sort(
+  // A Sidecar that is present but unreadable (EACCES and similar — distinct
+  // from a genuinely absent one, `missing`/ENOENT) must not count as absent:
+  // it still joins `sources` with `sha256: null` and a diagnostic, mirroring
+  // contract §4's missing-source handling, so a stale/tampered Sidecar can
+  // never silently drop out of the fingerprint and block `confirm`/
+  // `goal-plan` the same way a missing declared source does.
+  const includedReadinessPaths = readinessPaths.filter((path) => {
+    const kind = observationOf(observations, path).kind;
+    return kind === "file" || kind === "unreadable";
+  });
+  const allSourcePaths = [...plan.sources, ...includedReadinessPaths].sort(
     compareUtf8,
   );
 
@@ -261,13 +272,24 @@ export function indexReviewBatch(
       }
     }
 
+    // AC-005: `readinessPath`/`readinessPresent` are omitted entirely — not
+    // set to `undefined`/`false` — when there is no Sidecar, so a batch with
+    // none produces byte-identical `review index` output to before this
+    // Story (Human Review 2026-09-23).
+    const readinessKind = observationOf(observations, story.readinessPath).kind;
+    const readinessPresent =
+      readinessKind === "file" || readinessKind === "unreadable";
+
     return {
       id: story.storyId,
       path: story.directory,
       acceptanceIds,
-      readinessPath: story.readinessPath,
-      readinessPresent:
-        observationOf(observations, story.readinessPath).kind === "file",
+      ...(readinessPresent
+        ? {
+            readinessPath: story.readinessPath,
+            readinessPresent: true as const,
+          }
+        : {}),
       locators: {
         story: storyLocators,
         acceptance: acceptanceLocators,

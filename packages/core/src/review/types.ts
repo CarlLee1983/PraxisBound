@@ -80,7 +80,19 @@ export type PlanReviewBatchResult =
 export type SourceObservation =
   | { readonly kind: "file"; readonly bytes: Uint8Array }
   | { readonly kind: "missing" }
-  | { readonly kind: "unsafe" };
+  | { readonly kind: "unsafe" }
+  /**
+   * The path exists (unlike `missing`, which is ENOENT/never-existed) but
+   * its bytes could not be read — permission denied, a directory in a
+   * file's place, or a race between the safety check and the read. Contract
+   * §4's missing-source handling: a *declared* source in this state already
+   * gets `sha256: null` plus `REVIEW_SOURCE_MISSING`, same as `missing`. A
+   * Readiness Sidecar (Story TST-030, contract §21) in this state is
+   * distinct from *absent*: it must not count as absent (R1), so it still
+   * joins `sources` with `sha256: null` and that same diagnostic, and
+   * preflight reports `REVIEW_READINESS_INVALID` for it.
+   */
+  | { readonly kind: "unreadable" };
 
 export type ReviewObservations = ReadonlyMap<string, SourceObservation>;
 
@@ -123,10 +135,17 @@ export interface StoryIndex {
   readonly id: string | undefined;
   readonly path: string;
   readonly acceptanceIds: readonly string[];
-  /** `<path>/readiness.json` (Story TST-030): always the deterministic path, whether or not the file exists. */
-  readonly readinessPath: string;
-  /** `true` when a Readiness Sidecar exists at `readinessPath` (a source in `sources`/the fingerprint); `false` never means missing (contract §21 R1). */
-  readonly readinessPresent: boolean;
+  /**
+   * `<path>/readiness.json` (Story TST-030): present only when a Readiness
+   * Sidecar joins `sources`/the fingerprint (a present-but-unreadable one
+   * counts, contract §21 R1; a genuinely absent one does not). Omitted
+   * entirely, not merely falsy, when there is none, so a batch with no
+   * Sidecar produces byte-identical `review index` output to before this
+   * Story (AC-005).
+   */
+  readonly readinessPath?: string;
+  /** `true` when present (contract §21 R1); omitted, never `false`, when there is none — see `readinessPath`. */
+  readonly readinessPresent?: true;
   readonly locators: {
     /** One locator per un-fenced heading in `story.md`: a fixed field name when recognized, else its heading path. */
     readonly story: readonly Locator[];

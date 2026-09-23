@@ -13,6 +13,7 @@
 
 import { sha256Hex } from "./fingerprint.js";
 import { escapeHtml } from "./html.js";
+import { escapeEvidenceField, escapeEvidenceProse } from "./render-evidence.js";
 import { elementId } from "./render-locators.js";
 import { adrExplicitId, STORY_FIXED_FIELDS } from "./vocabulary.js";
 import {
@@ -419,10 +420,16 @@ export function renderReadinessSidecarHtml(
   const text = new TextDecoder("utf-8").decode(bytes);
   const blockSha256 = sha256Hex(bytes);
   const id = elementId(path, `#document ${blockSha256}`);
+  // HIGH-2: HTML-escaping alone leaves a raw bidi/hidden code point in the
+  // text node; `escapeEvidenceProse` (shared with the evidence area,
+  // `render-evidence.ts`) also visibly escapes every code point
+  // `isHiddenOrReorderingCodePoint` names, while keeping literal newlines so
+  // the pretty-printed JSON still reads as JSON. `escapeEvidenceField` gives
+  // the same protection for the one-line path label.
   return (
-    `<section class="readiness-sidecar" id="${id}" data-path="${escapeHtml(path)}" data-anchor="#document" data-block-sha256="${blockSha256}">` +
-    `<h4>Readiness Sidecar <span class="doc-path">${escapeHtml(path)}</span></h4>` +
-    `<pre class="raw-source"><code>${escapeHtml(text)}</code></pre>` +
+    `<section class="readiness-sidecar" id="${id}" data-path="${escapeEvidenceField(path)}" data-anchor="#document" data-block-sha256="${blockSha256}">` +
+    `<h4>Readiness Sidecar <span class="doc-path">${escapeEvidenceField(path)}</span></h4>` +
+    `<pre class="raw-source"><code>${escapeEvidenceProse(text)}</code></pre>` +
     `</section>`
   );
 }

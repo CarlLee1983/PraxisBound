@@ -549,17 +549,21 @@ export function renderReviewProjection(
     // data, never markup or an outcome); `#document` targets it (contract
     // §5 rule 3) via the whole-file digest `review index` already put in
     // `index.sources`, so no extra Locator plumbing is needed here.
-    const readinessBytes = story.readinessPresent
-      ? documentsByPath.get(story.readinessPath)?.bytes
+    const readinessPath = story.readinessPresent
+      ? story.readinessPath
       : undefined;
+    const readinessBytes =
+      readinessPath === undefined
+        ? undefined
+        : documentsByPath.get(readinessPath)?.bytes;
     storyDocuments.set(story.path, {
       title: storyBytes === undefined ? undefined : firstH1Text(storyBytes),
       story: storyContent,
       acceptance: acceptanceContent,
       readinessHtml:
-        readinessBytes === undefined
+        readinessPath === undefined || readinessBytes === undefined
           ? undefined
-          : renderReadinessSidecarHtml(story.readinessPath, readinessBytes),
+          : renderReadinessSidecarHtml(readinessPath, readinessBytes),
     });
   }
 
