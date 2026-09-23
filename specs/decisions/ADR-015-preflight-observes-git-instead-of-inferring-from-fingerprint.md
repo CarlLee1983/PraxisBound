@@ -3,7 +3,7 @@
 * Status: accepted
 * Date: 2026-09-23
 * Accepted: 2026-09-23
-* Amended by: ADR-016 (proposed) — the handoff no longer binds a commit, so this ADR's premise holds only for callers that pass `--expect-revision`; the mechanism is unchanged
+* Amended by: ADR-016 — the handoff no longer binds a commit, so this ADR's premise holds only for callers that pass `--expect-revision`; the mechanism is unchanged
 
 ## Context
 

@@ -3,7 +3,7 @@
 Contract ID：`SPEC-BATCH-REVIEW/R-001`。狀態：已接受（accepted，人類審閱並合併 #94）。日期：2026-09-17。
 修訂：2026-09-18，Review Projection 以需求為主軸的呈現（§18）、manifest `preface`（§3）與 Spec 章節詞彙（§5）；已接受（人類審閱 #100）。
 修訂：2026-09-18，Review Projection 的審閱層（§19，R-004）；已接受（人類審閱 #103）。
-修訂：2026-09-23，R-008 交接改以 ForgePilot `32b7a68` 公開 CLI 與 Goal Plan 產物為準（§10、§11、§21、§22，ADR-016）；待人類審閱。
+修訂：2026-09-23，R-008 交接改以 ForgePilot `32b7a68` 公開 CLI 與 Goal Plan 產物為準（§10、§11、§21、§22，ADR-016）；已接受（人類審閱並合併 #111）。
 
 本文件定稿 [spec.md](spec.md) R-001 要求的產物格式、指紋、定位、命令結果與授權邊界。
 取捨與不可靜默推翻的邊界記錄於
@@ -554,7 +554,7 @@ ForgePilot 輸出是觀察而非輸入：每個 stdout／stderr 保存前 1 MiB�
 - 觸及第 15 節欄位的 Story 標 `Security sensitive: yes` 並附 Trust Boundary Fields 與 Security Fixture Matrix。
 - 修改公開 CLI 的 Story 記錄相容性分類並更新 CLI 契約與 schema。
 - 本契約經人類審閱前，不得將 #84～#91 標為 `ready-for-agent`。
-- （修訂，R-008）R-008 依序拆成：Goal Plan 格式對齊與 Readiness Sidecar（兩者互不依賴）、`review goal-plan`、`review observe` 與真實演練、tooling 發布；本修訂經人類審閱前不建立這些 Story。
+- （修訂，R-008）R-008 依序拆成：Goal Plan 格式對齊與 Readiness Sidecar（兩者互不依賴）、`review goal-plan`、`review observe` 與真實演練、tooling 發布；本修訂已於 #111 接受，可建立這些 Story。
 - Agent 工作流程文件骨架：[docs/batch-review/agent-workflow.md](../../../docs/batch-review/agent-workflow.md)。
 
 ## 18. Review Projection 呈現（修訂，R-003）
@@ -706,11 +706,12 @@ Story 的 `inputs`、`outputs`、`future_identities` 與 `decision_follow_ups`�
   為 `sha256:` 加當前原始位元組的小寫 hex，再以 2 空白縮排、結尾一個換行、保留各物件原有鍵順序的格式寫回；撰寫者原本的排版可能因此改變，內容不變。
   不建立 Sidecar、不碰其他欄位。它修改定義來源，所以與任何來源修改一樣需要 Execution Authorization，並應在 `confirm` 前執行；
   執行後指紋改變，既有確認依 §8 不再適用。outcome：`success`，或 `failure`（Sidecar 不合 schema，`REVIEW_READINESS_INVALID`，不寫任何檔案）。
-- 預檢（§9）對存在的 Sidecar 檢查，全部為 BLOCKED：
+- （修訂性澄清，TST-030）Sidecar 超過 §13 上限時為 `REVIEW_INPUT_TOO_LARGE`，沿用該 code 既有的 INCOMPLETE 分類（「無法完成檢查」，同 Semantic Report 超限）；每個 issue code 只對應一種結果類別（§9）。
+- 預檢（§9）對存在且未超限的 Sidecar 檢查，下列全部為 BLOCKED：
 
 | 檢查 | issue code |
 | --- | --- |
-| 大小與 schema 合法；`story_ref` 等於該 Story 目錄路徑 | `REVIEW_READINESS_INVALID`（超限為 `REVIEW_INPUT_TOO_LARGE`） |
+| 大小與 schema 合法；`story_ref` 等於該 Story 目錄路徑 | `REVIEW_READINESS_INVALID` |
 | 兩個 digest 等於當前 `story.md`、`acceptance.md` 原始位元組 | `REVIEW_READINESS_STALE` |
 | `criteria[].id` 與 acceptance.md 的 AC ID 集合完全相同 | `REVIEW_READINESS_CRITERIA_MISMATCH` |
 | `owner` 為 `runner_worker`、`canonical_verification` 或 `integration_final` 的 AC，`operations` 都在 Story `## Authority` 標為 `yes` 的項目內；`runner_worker` 只可有 `plan`、`modify` | `REVIEW_READINESS_OPERATION_UNGRANTED` |
