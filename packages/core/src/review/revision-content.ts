@@ -195,6 +195,29 @@ export function supersedesConflicts(
   return conflicts;
 }
 
+/**
+ * Every valid imported request across the whole batch, minus any request
+ * another valid imported request `supersedes` (contract §6: "採計全部已匯入
+ * 修訂單中未被 supersedes 取代的意見"). `supersedes` is resolved against the
+ * combined set of every sheet passed in, never against a caller-chosen
+ * subset, so a request superseded by a revision imported in a different
+ * sheet is still excluded (`review-respond.ts`'s R10 note). Order follows
+ * first occurrence across `sheets` in the order given.
+ */
+export function computeEffectiveRevisions(
+  sheets: readonly (readonly RevisionRecord[])[],
+): readonly RevisionRecord[] {
+  const byId = new Map<string, RevisionRecord>();
+  for (const revisions of sheets)
+    for (const revision of revisions)
+      if (!byId.has(revision.id)) byId.set(revision.id, revision);
+  const superseded = new Set<string>();
+  for (const revision of byId.values())
+    if (typeof revision.supersedes === "string")
+      superseded.add(revision.supersedes);
+  return [...byId.values()].filter((revision) => !superseded.has(revision.id));
+}
+
 export interface RecordSetConflict {
   readonly id: string;
   /** Every record file (repo-relative path, as the caller named it) that carries this id. */

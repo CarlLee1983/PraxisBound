@@ -517,8 +517,13 @@ test("TST025-AC-008: an invalid record's path is listed without its content, and
 // `withoutEvidenceExplicit` identically — comparing the two to each other
 // alone would still pass in that case, since neither ever supplies
 // `evidence` in the first place.
+// Story TST-026 review round 1 (H1) added a visible `.doc-path` label (and,
+// where applicable, a 「需複審」 badge) to every requirement-card source
+// block — the batch Goal/Non-goals doc-group, appendix summaries, and now
+// also 需求驗收/需求細節/執行驗收/Story 重點 — so this fixture's §18-only
+// page changed bytes; the pin below is the new, deliberately updated value.
 const NO_EVIDENCE_SHA256 =
-  "933d7ec26993640e2088718d2f677cd1b492cc7837add0db99d1e9b131552749";
+  "0a897e6786cfdb4e30a29e20dec6887aa2e9d00da4013ac4e9691c5fc159fd96";
 
 test("TST025-AC-008/AC-010: no matching record file leaves the page byte-identical to §18's own output (no evidence CSS leaks in either), and each §5 judgement kind renders its own raw value", () => {
   const withoutEvidence = render(undefined);

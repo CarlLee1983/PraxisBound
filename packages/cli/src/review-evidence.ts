@@ -29,11 +29,10 @@ import {
 import {
   countLooseRecordFileNames,
   filterLooseRecordFileNames,
-  isRecordsPathUnsafe,
-  listRecordsDirectory,
   readResponseRecords,
   readRevisionRecords,
   recordsDirectory,
+  type RecordsListingState,
 } from "./review-records.js";
 
 export const MAX_EVIDENCE_RECORD_FILES = 200;
@@ -146,50 +145,21 @@ function overLimitLoad(
  * `revisions-*.json`/`responses-*.json` file at all (or cannot be read at
  * all), so the page omits the evidence section entirely and §18 output
  * stays unchanged. Never touches `review index`, which does not read
- * `records/`.
+ * `records/`. Takes the one shared `records/` safety check and listing
+ * (`loadRecordsListingState`) the caller already computed — a symlinked or
+ * unlistable `records/` is the caller's diagnostic to raise once, not this
+ * function's (Story TST-026 review round 1: previously each reader raised
+ * its own copy of the same issue).
  */
 export async function loadReviewEvidence(
   root: string,
   manifestPath: string,
   batchId: string,
+  state: RecordsListingState,
 ): Promise<ReviewEvidenceLoad> {
-  const recordsPath = recordsDirectory(manifestPath);
-
-  if (await isRecordsPathUnsafe(root, manifestPath))
-    return {
-      evidence: undefined,
-      extraIssues: [
-        buildIssue(
-          "REVIEW_PATH_UNSAFE",
-          "records path has a symlinked segment",
-          recordsPath,
-        ),
-      ],
-    };
-
-  // One `readdir` for the whole evidence load: the same listing serves the
-  // file-name count and the two readers below, so `records/` is never
-  // listed twice and there is no window for its contents to change between
-  // a count and a read (TOCTOU).
-  const listing = await listRecordsDirectory(root, manifestPath);
-  if (!listing.ok) {
-    if (listing.reason === "not-found")
-      return { evidence: undefined, extraIssues: [] };
-    // A listing failure that is not "the directory does not exist" (e.g.
-    // permission denied, or `records/` replaced by a plain file) is a
-    // defect of `records/` itself — the same code an individually invalid
-    // record file gets, naming the directory instead of one file.
-    return {
-      evidence: undefined,
-      extraIssues: [
-        buildIssue(
-          "REVIEW_RECORD_INVALID",
-          "unable to read the records directory",
-          recordsPath,
-        ),
-      ],
-    };
-  }
+  if (state.unsafe) return { evidence: undefined, extraIssues: [] };
+  const listing = state.listing;
+  if (!listing.ok) return { evidence: undefined, extraIssues: [] };
 
   const nameCounts = countLooseRecordFileNames(listing.names);
   const totalNames = nameCounts.revisionsNames + nameCounts.responsesNames;

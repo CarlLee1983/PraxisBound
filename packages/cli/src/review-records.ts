@@ -96,7 +96,8 @@ export async function readBounded(
   return buffer.subarray(0, total);
 }
 
-async function readRecordBytes(
+/** Exported so `review-confirmation-records.ts` reads a `records/confirmation-*.json` file the exact same bounded, `O_NOFOLLOW` way. */
+export async function readRecordBytes(
   absolute: string,
 ): Promise<Uint8Array | undefined> {
   let handle;
@@ -138,7 +139,8 @@ export interface RevisionRecordsRead {
   readonly records: readonly ValidRevisionRecord[];
 }
 
-function parseRecordJson(
+/** Exported so `review-confirmation-records.ts` parses a `records/confirmation-*.json` file the exact same bounded way (UTF-8 decode, then §13 depth check, before `JSON.parse`). */
+export function parseRecordJson(
   bytes: Uint8Array,
 ): { readonly ok: true; readonly data: unknown } | { readonly ok: false } {
   let text: string;
@@ -341,6 +343,32 @@ export async function listRecordsDirectory(
     const code = (error as NodeJS.ErrnoException).code;
     return { ok: false, reason: code === "ENOENT" ? "not-found" : "error" };
   }
+}
+
+export interface RecordsListingState {
+  /** `true` when `records/` (or a parent segment) is a symlink; `listing` is then meaningless and never read. */
+  readonly unsafe: boolean;
+  readonly listing: RecordsDirectoryListing;
+}
+
+/**
+ * The one `isRecordsPathUnsafe` check and the one `records/` listing a
+ * `render` invocation needs, computed once and shared by every reader that
+ * needs it (the evidence area, the confirmation applicability loader, and
+ * `review confirm`'s own informational staleness peek) — so `records/` is
+ * never listed twice, and a symlinked/unlistable `records/` produces one
+ * diagnostic, not one per reader (Story TST-026 review round 1).
+ */
+export async function loadRecordsListingState(
+  root: string,
+  manifestPath: string,
+): Promise<RecordsListingState> {
+  if (await isRecordsPathUnsafe(root, manifestPath))
+    return { unsafe: true, listing: { ok: false, reason: "error" } };
+  return {
+    unsafe: false,
+    listing: await listRecordsDirectory(root, manifestPath),
+  };
 }
 
 /** The filesystem primitives a create-new write uses; injectable so a test can force the "temp created, then the write itself fails" branch (security M7). */

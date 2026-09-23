@@ -33,8 +33,10 @@ import {
   type SourceObservation,
 } from "@praxisbound/core";
 
+import { loadReviewConfirmationApplicability } from "./review-confirmation-records.js";
 import { loadReviewEvidence } from "./review-evidence.js";
 import { findUnsafeSourcePath } from "./review-paths.js";
+import { loadRecordsListingState, recordsDirectory } from "./review-records.js";
 
 export type ReviewOutputMode = "human" | "json";
 
@@ -776,10 +778,16 @@ async function publishProjection(
   }
 }
 
+export interface ExtraRenderIssue {
+  readonly issue: ResultIssue;
+  /** An invalid/over-limit record is always blocking; a confirmation staleness diagnostic (contract §8 修訂，R-006) is advisory — it never blocks a `render`. */
+  readonly severity: "blocking" | "advisory";
+}
+
 function buildRenderSuccessEnvelope(
   index: ReviewIndex,
   output: string,
-  extraIssues: readonly ResultIssue[] = [],
+  extraIssues: readonly ExtraRenderIssue[] = [],
 ): ResultEnvelope {
   const issues = index.diagnostics.map((entry) =>
     issue(entry.code, entry.message, entry.path),
@@ -791,23 +799,27 @@ function buildRenderSuccessEnvelope(
       ? {}
       : { locator: toDataValue(entry.locator) }),
   }));
-  // Evidence-area diagnostics (contract §20 修訂，R-005) are appended after
+  // Evidence-area and confirmation-staleness diagnostics are appended after
   // the index's own, in the same relative order in `issues[]` and
   // `data.diagnostics[]` (matching how `review import`'s extra diagnostics
-  // are appended, `buildImportSuccessEnvelope`). Every one of them is
-  // blocking: an invalid or over-limit record is always a defect, never
-  // merely advisory.
+  // are appended, `buildImportSuccessEnvelope`).
   const extraDiagnostics = extraIssues.map((entry) => ({
-    code: entry.code,
-    severity: "blocking" as const,
+    code: entry.issue.code,
+    severity: entry.severity,
   }));
-  return envelope("pass", "success", 0, [...issues, ...extraIssues], {
-    batchId: index.batchId,
-    fingerprint: index.fingerprint,
-    sources: toDataValue(index.sources),
-    diagnostics: toDataValue([...diagnostics, ...extraDiagnostics]),
-    output,
-  });
+  return envelope(
+    "pass",
+    "success",
+    0,
+    [...issues, ...extraIssues.map((entry) => entry.issue)],
+    {
+      batchId: index.batchId,
+      fingerprint: index.fingerprint,
+      sources: toDataValue(index.sources),
+      diagnostics: toDataValue([...diagnostics, ...extraDiagnostics]),
+      output,
+    },
+  );
 }
 
 /** Runs `praxisbound review render <manifest> --output <file>`. */
@@ -885,18 +897,60 @@ export async function runReviewRender(
         bytes: observation?.kind === "file" ? observation.bytes : undefined,
       };
     });
+    // One shared `records/` safety check and listing for every reader below
+    // (contract §20, §8 修訂，R-006): `index` never reads `records/` at all,
+    // and a symlinked or unlistable `records/` must produce exactly one
+    // diagnostic, not one per reader (Story TST-026 review round 1).
+    const listingState = await loadRecordsListingState(
+      root,
+      loaded.loaded.manifestPath,
+    );
+    const listingStateIssues: ExtraRenderIssue[] = [];
+    if (listingState.unsafe) {
+      listingStateIssues.push({
+        issue: issue(
+          "REVIEW_PATH_UNSAFE",
+          "records path has a symlinked segment",
+          recordsDirectory(loaded.loaded.manifestPath),
+        ),
+        severity: "blocking",
+      });
+    } else if (
+      !listingState.listing.ok &&
+      listingState.listing.reason === "error"
+    ) {
+      listingStateIssues.push({
+        issue: issue(
+          "REVIEW_RECORD_INVALID",
+          "unable to read the records directory",
+          recordsDirectory(loaded.loaded.manifestPath),
+        ),
+        severity: "blocking",
+      });
+    }
     // `index` never reads `records/` (contract §20); only `render` builds
     // the evidence area, from validated revision/response records alone.
     const { evidence, extraIssues } = await loadReviewEvidence(
       root,
       loaded.loaded.manifestPath,
       loaded.loaded.index.batchId,
+      listingState,
+    );
+    // Confirmation applicability/staleness (contract §8 修訂，R-006) uses its
+    // own separate 200-file/16 MiB bound and is `render`-only, like the
+    // evidence area; `review index` never reads `records/`.
+    const confirmationLoad = await loadReviewConfirmationApplicability(
+      root,
+      loaded.loaded.manifestPath,
+      loaded.loaded.index,
+      listingState,
     );
     const html = renderReviewProjection(
       loaded.loaded.index,
       documents,
       loaded.loaded.manifestPath,
       evidence,
+      confirmationLoad.applicability,
     );
     const publication = await publishProjection(
       root,
@@ -948,7 +1002,21 @@ export async function runReviewRender(
       result: buildRenderSuccessEnvelope(
         loaded.loaded.index,
         output.relativePath,
-        extraIssues,
+        [
+          ...listingStateIssues,
+          ...extraIssues.map((entry) => ({
+            issue: entry,
+            severity: "blocking" as const,
+          })),
+          ...confirmationLoad.blockingIssues.map((entry) => ({
+            issue: entry,
+            severity: "blocking" as const,
+          })),
+          ...confirmationLoad.advisoryIssues.map((entry) => ({
+            issue: entry,
+            severity: "advisory" as const,
+          })),
+        ],
       ),
     };
   } catch (error) {
