@@ -86,7 +86,8 @@ adapter injected as a default parameter.
 | `batch.json dependencies` | `A dependsOn B, B dependsOn A` | reject | `preflight record issue REVIEW_DEPENDENCY_CYCLE` | `packages/core/test/review-dependency-graph.test.mjs` |
 | `confirmation record` | `authorized: true; approved` with the fingerprint of previous content | reject | `preflight record issue REVIEW_CONFIRMATION_STALE` | `packages/cli/test/review-preflight-command.test.mjs` |
 | `records directory` | `records/preflight-000000000000-1.json` malformed | reject | `REVIEW_RECORD_INVALID; not a deduplication baseline` | `packages/cli/test/review-preflight-command.test.mjs` |
-| `batch source file name` | `ESC [2J in an untracked path` | redact | `stderr shows escaped \x1b; record keeps the path as data` | `packages/cli/test/review-preflight-git.test.mjs` |
+| `untracked file name outside the batch` | `ESC [2J in the path` | omit | `read exactly by the git adapter; no issue, no record entry` | `packages/cli/test/review-preflight-git.test.mjs` |
+| `untrusted text echoed in a diagnostic` | `ESC [2J` | redact | `human stdout shows escaped \x1b` | `packages/cli/test/review-preflight-command.test.mjs` |
 | `--expect-revision` | `--upload-pack=touch /tmp/x` | reject | `usage-error; git not run` | `packages/cli/test/review-preflight-git.test.mjs` |
 
 ## Verification Notes

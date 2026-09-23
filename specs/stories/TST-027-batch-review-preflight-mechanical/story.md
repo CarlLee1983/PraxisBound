@@ -120,11 +120,12 @@ its branch and both merge together (R10).
 
 ## Outputs
 
-* One result envelope on stdout with `data.preflightRecord` and
-  `data.diagnostics[]` aligned with `issues[]`.
+* With `--json`, exactly one result envelope on stdout with
+  `data.preflightRecord` and `data.diagnostics[]` aligned with `issues[]`.
 * At most one create-new `records/preflight-<fp12>-<n>.json`.
-* Human-readable output on stderr in two sections, mechanical results and
-  Agent observations, with the fixed READY disclaimer.
+* Without `--json`, human-readable output on stdout, as `review confirm`
+  does, in two sections, mechanical results and Agent observations, with the
+  fixed READY disclaimer.
 
 ## Rules
 
@@ -177,6 +178,19 @@ its branch and both merge together (R10).
   accepted before `story check --ready` passes.
   (d) The Additive classification is recorded in this Story, following
   TST-025 and TST-026; `protocol/versioning.md` is not edited.
+* R11: Human Review on 2026-09-23 accepted these corrections after code
+  review:
+  (a) Only a stored Revision Response record whose `toFingerprint` equals the
+  current fingerprint gets the full contract §7 re-check; a record for any
+  other fingerprint is history and gets only the structural check that its
+  listed Revision Sheets were imported. Otherwise one supersede would leave
+  an append-only record permanently mismatched.
+  (b) Human-readable output goes to stdout, matching `review confirm`; this
+  corrects the earlier stderr wording.
+  (c) A declared batch path cannot contain a control character, so the
+  Security Fixture Matrix row for an ESC file name now covers a path outside
+  the batch, and a separate end-to-end fixture proves that untrusted text
+  reaching human output is escaped.
 
 ## Expected Errors
 

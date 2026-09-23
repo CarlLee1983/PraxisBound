@@ -319,6 +319,9 @@ Semantic Report 由 Agent 產生：綁定 `fingerprint`；批次內每張 Story 
 - 預檢不執行 `make verify`、不要求尚未實作的測試通過，也不寫來源。
 - （修訂性澄清，R-007）預檢不檢查 Execution Authorization：唯讀評估不產生需要授權的效果，授權由 §10 在每個效果發生當下解析。
   因此 R-007 AC-001 的「授權不足」不對應本表任何一列，而由 `review packet` 與 Agent 工作流程處理。
+- （修訂性澄清，R-007）「回應紀錄完整、合法」只對 `toFingerprint` 等於當前指紋的回應紀錄重跑 §7 全部檢查；
+  其他指紋的回應紀錄是歷史，只檢查所列修訂單皆已匯入（`REVIEW_RESPONSE_INVALID`），不重算涵蓋，
+  否則一次 supersede 就會讓只新增的舊紀錄永遠 `REVIEW_RESPONSE_MISMATCH`。
 - （修訂性澄清，R-007）診斷的 `severity` 由所在列機械推導：影響結果的列為 `blocking`，標「不影響結果」的列為 `advisory`。
 - （修訂性澄清，R-007）Preflight Report 寫入失敗時，結果降為 `REVIEW_INCOMPLETE` 並附 `REVIEW_RECORD_WRITE_FAILED`，不留部分檔案；
   不視為 `ERROR`，因為評估本身已完成。
