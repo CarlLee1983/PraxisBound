@@ -3,7 +3,7 @@
 Contract ID：`SPEC-BATCH-REVIEW/R-001`。狀態：已接受（accepted，人類審閱並合併 #94）。日期：2026-09-17。
 修訂：2026-09-18，Review Projection 以需求為主軸的呈現（§18）、manifest `preface`（§3）與 Spec 章節詞彙（§5）；已接受（人類審閱 #100）。
 修訂：2026-09-18，Review Projection 的審閱層（§19，R-004）；已接受（人類審閱 #103）。
-修訂：2026-09-23，R-008 交接改以 ForgePilot `32b7a68` 公開 CLI 與 Goal Plan 產物為準（§10、§11、§21、§22，ADR-016）；待人類審閱。
+修訂：2026-09-23，R-008 交接改以 ForgePilot `32b7a68` 公開 CLI 與 Goal Plan 產物為準（§10、§11、§21、§22，ADR-016）；已接受（人類審閱並合併 #111）。
 
 本文件定稿 [spec.md](spec.md) R-001 要求的產物格式、指紋、定位、命令結果與授權邊界。
 取捨與不可靜默推翻的邊界記錄於
@@ -554,7 +554,7 @@ ForgePilot 輸出是觀察而非輸入：每個 stdout／stderr 保存前 1 MiB�
 - 觸及第 15 節欄位的 Story 標 `Security sensitive: yes` 並附 Trust Boundary Fields 與 Security Fixture Matrix。
 - 修改公開 CLI 的 Story 記錄相容性分類並更新 CLI 契約與 schema。
 - 本契約經人類審閱前，不得將 #84～#91 標為 `ready-for-agent`。
-- （修訂，R-008）R-008 依序拆成：Goal Plan 格式對齊與 Readiness Sidecar（兩者互不依賴）、`review goal-plan`、`review observe` 與真實演練、tooling 發布；本修訂經人類審閱前不建立這些 Story。
+- （修訂，R-008）R-008 依序拆成：Goal Plan 格式對齊與 Readiness Sidecar（兩者互不依賴）、`review goal-plan`、`review observe` 與真實演練、tooling 發布；本修訂已於 #111 接受，可建立這些 Story。
 - Agent 工作流程文件骨架：[docs/batch-review/agent-workflow.md](../../../docs/batch-review/agent-workflow.md)。
 
 ## 18. Review Projection 呈現（修訂，R-003）

@@ -1,7 +1,8 @@
 # ADR-016: Batch handoff emits Goal Plan artifacts and leaves the run to the control plane
 
-* Status: proposed
+* Status: accepted
 * Date: 2026-09-23
+* Accepted: 2026-09-23 (human review, merged #111)
 
 ## Context
 
