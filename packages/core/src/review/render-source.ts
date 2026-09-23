@@ -11,7 +11,9 @@
  * Pure: no I/O, only the bytes and index facts the caller already holds.
  */
 
+import { sha256Hex } from "./fingerprint.js";
 import { escapeHtml } from "./html.js";
+import { elementId } from "./render-locators.js";
 import { adrExplicitId, STORY_FIXED_FIELDS } from "./vocabulary.js";
 import {
   renderMarkdownHtml,
@@ -399,6 +401,30 @@ export function partitionAcceptanceDocument(
   }
 
   return { acceptanceGroupsHtml, appendixSections };
+}
+
+/**
+ * A present Readiness Sidecar's block (Story TST-030, contract §21): its raw
+ * bytes decoded and HTML-escaped as plain text, never parsed as Markdown or
+ * re-serialized — the projection shows exactly the bytes the fingerprint
+ * covers. `id`/`data-*` use the same `#document` anchor and whole-file
+ * digest contract §5 rule 3 and `matchRevisionTarget` already recognize for
+ * any batch source, so a Revision Request can target this block without any
+ * extra Locator bookkeeping.
+ */
+export function renderReadinessSidecarHtml(
+  path: string,
+  bytes: Uint8Array,
+): string {
+  const text = new TextDecoder("utf-8").decode(bytes);
+  const blockSha256 = sha256Hex(bytes);
+  const id = elementId(path, `#document ${blockSha256}`);
+  return (
+    `<section class="readiness-sidecar" id="${id}" data-path="${escapeHtml(path)}" data-anchor="#document" data-block-sha256="${blockSha256}">` +
+    `<h4>Readiness Sidecar <span class="doc-path">${escapeHtml(path)}</span></h4>` +
+    `<pre class="raw-source"><code>${escapeHtml(text)}</code></pre>` +
+    `</section>`
+  );
 }
 
 /**

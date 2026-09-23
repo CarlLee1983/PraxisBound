@@ -43,6 +43,7 @@ import {
   partitionAcceptanceDocument,
   partitionStoryDocument,
   renderAdrAppendix,
+  renderReadinessSidecarHtml,
   requirementLabelHtml,
   storyTitleWithoutId,
   type AcceptanceContent,
@@ -79,6 +80,8 @@ interface StoryDocuments {
   readonly title: string | undefined;
   readonly story: StoryContent | undefined;
   readonly acceptance: AcceptanceContent | undefined;
+  /** A present Readiness Sidecar's rendered block (Story TST-030), or `undefined` when absent. */
+  readonly readinessHtml: string | undefined;
 }
 
 interface MatrixEntry {
@@ -273,9 +276,13 @@ function renderRequirementCard(
             const home = homeOf.get(storyId);
             if (home !== targetId)
               return `<p><a href="#${home}">${escapeHtml(storyId)} 已在其他卡片顯示</a></p>`;
-            const focus = storyDocuments.get(story.path)?.story;
+            const documents = storyDocuments.get(story.path);
+            const focus = documents?.story;
             const storyPath = `${story.path}/story.md`;
-            return `<section><h4>${escapeHtml(storyId)}${docPathLabel(storyPath, needsReviewPaths)}</h4>${focus?.focusHtml ?? missing}</section>`;
+            return (
+              `<section><h4>${escapeHtml(storyId)}${docPathLabel(storyPath, needsReviewPaths)}</h4>${focus?.focusHtml ?? missing}</section>` +
+              (documents?.readinessHtml ?? "")
+            );
           })
           .join("");
 
@@ -312,6 +319,7 @@ function renderOrphanStories(
         `<section class="orphan-story"><h3>${heading}${displayTitle === undefined ? "" : ` ${escapeHtml(displayTitle)}`}</h3>` +
         `<section><h4>執行驗收${docPathLabel(acceptancePath, needsReviewPaths)}</h4>${documents?.acceptance?.acceptanceGroupsHtml ?? `<p class="muted">${MISSING_SECTION_TEXT}</p>`}</section>` +
         `<section><h4>Story 重點${docPathLabel(storyPath, needsReviewPaths)}</h4>${documents?.story?.focusHtml ?? `<p class="muted">${MISSING_SECTION_TEXT}</p>`}</section>` +
+        (documents?.readinessHtml ?? "") +
         `</section>`
       );
     })
@@ -536,10 +544,22 @@ export function renderReviewProjection(
     if (acceptanceContent !== undefined)
       for (const section of acceptanceContent.appendixSections)
         storyAppendix.push(section);
+    // A present Readiness Sidecar (Story TST-030, contract §21) is shown
+    // verbatim with its Story, escaped as text (Story R6: its content is
+    // data, never markup or an outcome); `#document` targets it (contract
+    // §5 rule 3) via the whole-file digest `review index` already put in
+    // `index.sources`, so no extra Locator plumbing is needed here.
+    const readinessBytes = story.readinessPresent
+      ? documentsByPath.get(story.readinessPath)?.bytes
+      : undefined;
     storyDocuments.set(story.path, {
       title: storyBytes === undefined ? undefined : firstH1Text(storyBytes),
       story: storyContent,
       acceptance: acceptanceContent,
+      readinessHtml:
+        readinessBytes === undefined
+          ? undefined
+          : renderReadinessSidecarHtml(story.readinessPath, readinessBytes),
     });
   }
 

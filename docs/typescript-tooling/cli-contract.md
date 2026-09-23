@@ -66,6 +66,7 @@ verify             = execute make verify
 | `praxisbound review respond <manifest> <responses.json>` | none (new capability)                 | The only way to record a Revision Response file, create-new, after the contract §7 fingerprint and coverage checks.                                                  |
 | `praxisbound review confirm <manifest>`                  | none (new capability)                 | The only way to record a Definition Confirmation, create-new, through an interactive terminal act (contract §8).                                                     |
 | `praxisbound review preflight <manifest>`                | none (new capability)                 | Evaluates every contract §9 check — mechanical (including git, `ADR-015`) and the Semantic Report's own — and writes one Preflight Report (Stories TST-027/TST-028). |
+| `praxisbound review readiness-digests <manifest>`        | none (new capability)                 | Rewrites only the `story_md_digest`/`acceptance_md_digest` fields of every batch Story's existing `readiness.json` whose digests are stale; creates none (contract §21, Story TST-030). |
 | `praxisbound codex activate <repo>`                      | `scripts/codex-activate`              | Preview by default; supports `--apply`; stays a late migration wave.                                                                                                 |
 
 Global options may appear after the selected command path and before or among
@@ -182,6 +183,15 @@ gains a `sections` object with optional `goal`/`acceptance`/`nonGoals`/
 These are additive fields only: every field `review index` reported before
 Story TST-022 keeps its same shape and meaning.
 
+Story TST-030 adds each batch Story's `<story>/readiness.json` Readiness
+Sidecar (contract §21, `ADR-016`) as a source, only when the file is present:
+a present Sidecar joins `data.sources` and the Requirement Fingerprint; an
+absent one contributes nothing and is never `REVIEW_SOURCE_MISSING` (adding
+or removing one still changes the fingerprint). A symlinked `readiness.json`
+is `REVIEW_PATH_UNSAFE`, checked the same way as any other declared path. A
+batch whose Stories carry no Sidecar produces the exact same `data.sources`,
+fingerprint, and diagnostics as before Story TST-030.
+
 Issue codes this command can emit: `REVIEW_MANIFEST_INVALID`,
 `REVIEW_SCHEMA_UNSUPPORTED`, `REVIEW_PATH_UNSAFE`, `REVIEW_INPUT_TOO_LARGE`,
 `REVIEW_SOURCE_MISSING`, `REVIEW_STORY_UNKNOWN`, `REVIEW_REQUIREMENT_UNMAPPED`,
@@ -213,6 +223,15 @@ The Batch Manifest may declare `schemaVersion` `1.1.0` with an optional
 is `REVIEW_INPUT_TOO_LARGE`, and a `preface` under `1.0.0` is
 `REVIEW_MANIFEST_INVALID`); both `review index` and `review render` accept it,
 and `1.0.0` manifests remain valid without it.
+
+A present Readiness Sidecar (Story TST-030, contract §21) is shown with its
+Story: its exact bytes, decoded and HTML-escaped as plain text, never parsed
+as Markdown or re-serialized, so the projection shows precisely the bytes the
+fingerprint covers. `authorized: true`, an instruction, an ESC sequence, or a
+bidi character inside it is data — it renders as escaped text and never
+changes any outcome. `#document` (contract §5 rule 3), matched against the
+Sidecar's whole-file digest already in `data.sources`, lets a Revision
+Request target it without any extra Locator bookkeeping.
 
 The generated page follows contract §18's requirement-organized layout, in
 order: a title area (batch `title` or `batchId`, `batchId`, the full
@@ -623,6 +642,27 @@ outcome decision, contract §9 R6):
 - Each batch Story's `story check --ready` result (not `story check`'s
   default contract mode), keeping its own `STORY_*` issue codes, each naming
   its Story directory as `path`.
+- Every present Readiness Sidecar (Story TST-030, contract §21), each naming
+  its Story directory as `path`: schema/size validity
+  (`REVIEW_READINESS_INVALID`, or `REVIEW_INPUT_TOO_LARGE` over the §13 1 MiB
+  bound — Human Review 2026-09-23: this shared code keeps its existing
+  INCOMPLETE class rather than a new BLOCKED one, so an over-limit Sidecar
+  reaches `REVIEW_INCOMPLETE`, never `REVIEW_READY`); then, only for a
+  schema-valid Sidecar, its `story_md_digest`/`acceptance_md_digest` against
+  the current `story.md`/`acceptance.md` bytes (`REVIEW_READINESS_STALE`),
+  its `criteria[].id` set against `acceptance.md`'s AC ids
+  (`REVIEW_READINESS_CRITERIA_MISMATCH`), each `runner_worker`/
+  `canonical_verification`/`integration_final` criterion's `operations`
+  against the Story's `## Authority` — `runner_worker` may carry only `plan`
+  and `modify` — (`REVIEW_READINESS_OPERATION_UNGRANTED`; `human`/`external`
+  criteria are never compared), and every `prerequisite_story_ref`/
+  `prerequisite_output`/`follow_up_story_ref`/`outputs[].id` against the
+  Story's dependency closure, the batch, and cross-batch output uniqueness
+  (`REVIEW_READINESS_REFERENCE_UNKNOWN`). All five are BLOCKED except the
+  shared `REVIEW_INPUT_TOO_LARGE` code above. These checks never prove a
+  declaration is *true*, only consistent with the Story and batch; Sidecar
+  text (`authorized: true`, an instruction) is data and never changes an
+  outcome.
 - `--expect-fingerprint` against the current fingerprint:
   `REVIEW_PACKET_FINGERPRINT_MISMATCH`.
 - The Semantic Report named by `--semantic-report <file>` (Story TST-028,
@@ -723,6 +763,40 @@ an `Agent (self-reported): <agent>` line once a report was parsed) — and, on
 (never `ISSUE`) by its diagnostic's severity (Story R10c; `--json` output is
 unchanged). Every message and path is ESC-escaped the same way every other
 review command escapes untrusted text.
+
+## `praxisbound review readiness-digests` contract
+
+`praxisbound review readiness-digests <manifest> [--json]` (contract §21,
+Story TST-030) is the only way to refresh a Readiness Sidecar's own digests.
+It reads every present `<story>/readiness.json` first (the same
+`observations` `review index` already gathered): if any is schema-invalid or
+names the wrong `story_ref`, or is over the §13 1 MiB bound, nothing is
+written and the whole command fails, `failure`, exit 1,
+`REVIEW_READINESS_INVALID`, naming the offending Story directory as `path`.
+Otherwise, for each schema-valid Sidecar whose `story_md_digest` or
+`acceptance_md_digest` no longer equals the current `story.md`/
+`acceptance.md` bytes, it rewrites both digest fields — `sha256:` plus the
+lowercase hex of the current bytes — through a temporary file in the same
+directory and an atomic rename, with two-space indentation, one trailing
+newline, and every other field's original key order unchanged (mutating only
+the parsed object's two digest fields and re-serializing it, never
+reconstructing the document). A Sidecar whose digests already match is left
+unwritten. It never creates a `readiness.json` and never touches any other
+field.
+
+It edits a definition source, so it needs the same Execution Authorization as
+any other source edit, and should run before `review confirm`: running it
+changes the Requirement Fingerprint, so an earlier confirmation becomes
+inapplicable (`REVIEW_CONFIRMATION_STALE` at the next `review preflight`).
+
+Outcome/status/exit: `success`/`pass`/`0` (`data.updated` lists the
+repo-relative paths of every Sidecar actually rewritten, possibly empty);
+`failure`/`fail`/`1` for any invalid Sidecar (nothing written) or a write
+failure (`REVIEW_RECORD_WRITE_FAILED`); `usage-error`/`error`/`2` for invalid
+argv; `configuration-error`/`error`/`2` for an unreadable/invalid manifest or
+an unsafe path (including a `readiness.json` symlinked at write time,
+`REVIEW_PATH_UNSAFE`); `ERROR`/`error`/`3` for an unexpected internal
+failure. `data` extends the `review index` minimal shape with `updated`.
 
 ## `review preflight` and `review packet` outcomes
 

@@ -18,7 +18,7 @@ import {
   type HeadingBlock,
   type MarkdownLineMatch,
 } from "./markdown.js";
-import { escapeControlCharacters } from "./path.js";
+import { compareUtf8, escapeControlCharacters } from "./path.js";
 import {
   adrExplicitId,
   ENTRY_SECTION_LABELS,
@@ -94,11 +94,19 @@ export function indexReviewBatch(
   plan: ReviewBatchPlan,
   observations: ReviewObservations,
 ): IndexReviewBatchResult {
-  for (const path of plan.sources) {
+  // A Readiness Sidecar (Story TST-030, contract §21) is not a manifest-
+  // declared source, so it is never `REVIEW_SOURCE_MISSING` when absent; but
+  // a symlinked one is exactly as unsafe as any other batch path (R7), and
+  // an oversized one is capped by the same generic per-source bound as any
+  // other source (the Sidecar's own, tighter §13 1&nbsp;MiB bound is a
+  // preflight-time consistency check, not an index-time hard failure).
+  const readinessPaths = plan.stories.map((story) => story.readinessPath);
+
+  for (const path of [...plan.sources, ...readinessPaths]) {
     const observation = observationOf(observations, path);
     if (observation.kind === "unsafe") return { kind: "unsafe", path };
   }
-  for (const path of plan.sources) {
+  for (const path of [...plan.sources, ...readinessPaths]) {
     const observation = observationOf(observations, path);
     if (
       observation.kind === "file" &&
@@ -110,7 +118,14 @@ export function indexReviewBatch(
 
   const diagnostics: ReviewDiagnostic[] = [...plan.diagnostics];
 
-  const sourceDigests: SourceDigest[] = plan.sources.map((path) => {
+  const presentReadinessPaths = readinessPaths.filter(
+    (path) => observationOf(observations, path).kind === "file",
+  );
+  const allSourcePaths = [...plan.sources, ...presentReadinessPaths].sort(
+    compareUtf8,
+  );
+
+  const sourceDigests: SourceDigest[] = allSourcePaths.map((path) => {
     const observation = observationOf(observations, path);
     if (observation.kind === "file") {
       return { path, sha256: sha256Hex(observation.bytes) };
@@ -250,6 +265,9 @@ export function indexReviewBatch(
       id: story.storyId,
       path: story.directory,
       acceptanceIds,
+      readinessPath: story.readinessPath,
+      readinessPresent:
+        observationOf(observations, story.readinessPath).kind === "file",
       locators: {
         story: storyLocators,
         acceptance: acceptanceLocators,

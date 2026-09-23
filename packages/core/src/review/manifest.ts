@@ -468,6 +468,7 @@ export function planReviewBatch(
     storyId: readStoryId(directory),
     storyPath: `${directory}/story.md`,
     acceptancePath: `${directory}/acceptance.md`,
+    readinessPath: `${directory}/readiness.json`,
   }));
 
   for (const story of stories) {

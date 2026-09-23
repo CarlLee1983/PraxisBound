@@ -43,6 +43,8 @@ export interface ReviewBatchStoryPlan {
   readonly storyId: string | undefined;
   readonly storyPath: string;
   readonly acceptancePath: string;
+  /** `<directory>/readiness.json` (Story TST-030, contract §21): a Readiness Sidecar is optional, so its presence is decided by `indexReviewBatch` from `observations`, never by this pure plan. */
+  readonly readinessPath: string;
 }
 
 /** The pure, validated plan a manifest declares. */
@@ -121,6 +123,10 @@ export interface StoryIndex {
   readonly id: string | undefined;
   readonly path: string;
   readonly acceptanceIds: readonly string[];
+  /** `<path>/readiness.json` (Story TST-030): always the deterministic path, whether or not the file exists. */
+  readonly readinessPath: string;
+  /** `true` when a Readiness Sidecar exists at `readinessPath` (a source in `sources`/the fingerprint); `false` never means missing (contract §21 R1). */
+  readonly readinessPresent: boolean;
   readonly locators: {
     /** One locator per un-fenced heading in `story.md`: a fixed field name when recognized, else its heading path. */
     readonly story: readonly Locator[];

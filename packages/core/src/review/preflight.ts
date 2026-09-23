@@ -80,6 +80,16 @@ export interface PreflightInput {
    * by `CLASS_BY_CODE` and counted toward the outcome (R6).
    */
   readonly semanticFindings: readonly PreflightFinding[];
+  /**
+   * Every present Readiness Sidecar's own findings (Story TST-030, contract
+   * §21): `REVIEW_READINESS_INVALID` (schema/`story_ref`), `_STALE`,
+   * `_CRITERIA_MISMATCH`, `_OPERATION_UNGRANTED`, `_REFERENCE_UNKNOWN`, each
+   * naming its Story directory as `path`; an over-limit Sidecar's own
+   * `REVIEW_INPUT_TOO_LARGE` (kept in its existing INCOMPLETE class, Human
+   * Review 2026-09-23: one issue code, one outcome class). Placed into
+   * `mechanical[]`, same as every other check here.
+   */
+  readonly readinessFindings: readonly PreflightFinding[];
 }
 
 export interface PreflightEvaluation {
@@ -111,6 +121,15 @@ const CLASS_BY_CODE: Readonly<Record<string, PreflightOutcomeClass>> = {
   REVIEW_ANCHOR_DUPLICATE: "blocked",
   REVIEW_UNRESOLVED_BLOCKING: "blocked",
   REVIEW_MANIFEST_INVALID: "blocked",
+  // Readiness Sidecar rows (contract §21, Story TST-030): all BLOCKED except
+  // the shared `REVIEW_INPUT_TOO_LARGE` code, which keeps its single
+  // existing INCOMPLETE class (Human Review 2026-09-23, one code = one
+  // class).
+  REVIEW_READINESS_INVALID: "blocked",
+  REVIEW_READINESS_STALE: "blocked",
+  REVIEW_READINESS_CRITERIA_MISMATCH: "blocked",
+  REVIEW_READINESS_OPERATION_UNGRANTED: "blocked",
+  REVIEW_READINESS_REFERENCE_UNKNOWN: "blocked",
   // INCOMPLETE
   REVIEW_CONFIRMATION_MISSING: "incomplete",
   REVIEW_REVISION_UNADDRESSED: "incomplete",
@@ -353,6 +372,7 @@ export function evaluatePreflight(input: PreflightInput): PreflightEvaluation {
       input.expectFingerprint,
     ),
     ...input.gitFindings.map(finalizeFinding),
+    ...input.readinessFindings.map(finalizeFinding),
     ...input.semanticGateFindings.map(finalizeFinding),
   ];
   const semanticRaw: ReviewDiagnostic[] =

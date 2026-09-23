@@ -529,7 +529,18 @@ export async function runReviewIndexUnsafe(
     };
   }
 
-  const unsafePath = await findUnsafeSourcePath(root, plan.plan.sources);
+  // A Readiness Sidecar (Story TST-030, contract §21) is not a manifest-
+  // declared source, so its path is gathered separately from `plan.sources`;
+  // its presence is decided later, from `observations`, by `indexReviewBatch`
+  // itself (R1: absent is not missing). Its path segments (including the
+  // Story directory) are checked for a symlink the same way every other
+  // declared path is (R7).
+  const readinessPaths = plan.plan.stories.map((story) => story.readinessPath);
+
+  const unsafePath = await findUnsafeSourcePath(root, [
+    ...plan.plan.sources,
+    ...readinessPaths,
+  ]);
   if (unsafePath !== undefined) {
     return {
       mode: parsed.mode,
@@ -543,7 +554,10 @@ export async function runReviewIndexUnsafe(
     };
   }
 
-  const oversizedPath = await findOversizedSourcePath(root, plan.plan.sources);
+  const oversizedPath = await findOversizedSourcePath(root, [
+    ...plan.plan.sources,
+    ...readinessPaths,
+  ]);
   if (oversizedPath !== undefined) {
     return {
       mode: parsed.mode,
@@ -561,7 +575,7 @@ export async function runReviewIndexUnsafe(
   // capped at a few hundred small Markdown files, so throughput is not a
   // concern, and sequential reads keep this adapter simple to reason about.
   const observations = new Map<string, SourceObservation>();
-  for (const path of plan.plan.sources) {
+  for (const path of [...plan.plan.sources, ...readinessPaths]) {
     observations.set(path, await readSourceObservation(root, path));
   }
 
