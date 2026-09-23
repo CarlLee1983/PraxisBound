@@ -31,6 +31,10 @@ const canonicalResults = [
   },
   { status: "fail", outcome: "ACTIVATION_RECOVERY_INCOMPLETE", exit: 1 },
   { status: "fail", outcome: "ACTIVATION_CLEANUP_INCOMPLETE", exit: 1 },
+  { status: "pass", outcome: "REVIEW_READY", exit: 0 },
+  { status: "fail", outcome: "REVIEW_BLOCKED", exit: 1 },
+  { status: "fail", outcome: "REVIEW_INCOMPLETE", exit: 1 },
+  { status: "fail", outcome: "REVIEW_STALE", exit: 1 },
   { status: "error", outcome: "ERROR", exit: 2 },
   { status: "error", outcome: "ERROR", exit: 3 },
 ];
@@ -196,6 +200,18 @@ const invalidEnvelopes = [
   [
     "inconsistent result combination",
     { ...validEnvelope, status: "fail", outcome: "failure", exit: 0 },
+    "INVALID_RESULT_COMBINATION",
+    "$",
+  ],
+  [
+    "REVIEW_READY with fail status and exit 1",
+    { ...validEnvelope, status: "fail", outcome: "REVIEW_READY", exit: 1 },
+    "INVALID_RESULT_COMBINATION",
+    "$",
+  ],
+  [
+    "REVIEW_STALE with pass status and exit 0",
+    { ...validEnvelope, status: "pass", outcome: "REVIEW_STALE", exit: 0 },
     "INVALID_RESULT_COMBINATION",
     "$",
   ],

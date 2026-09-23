@@ -515,3 +515,40 @@ test("TST022 Security Fixture Matrix: an internal error naming the root's realpa
     );
   });
 });
+
+test("C1 security: --output as an absolute path through a symlinked directory plus a `..` segment (<root>/link/../evil.html, link -> ../outside) never writes outside the repository — the normalized path is always what both the safety checks and the actual write use, so `link` is never traversed at write time", async () => {
+  await fixture(async (root, manifest) => {
+    const outsideDir = join(root, "..", "outside");
+    await mkdir(outsideDir, { recursive: true });
+    const before = await readdir(outsideDir);
+    await symlink("../outside", join(root, "link"));
+
+    // Built by plain string concatenation, never through `path.join`/
+    // `path.resolve` (which would themselves lexically collapse `link/..`
+    // away before the CLI ever saw it) — the literal argv value an
+    // attacker or a misconfigured caller would pass. Before the fix, the
+    // safety checks judged the collapsed `<root>/evil.html` while the
+    // actual write target stayed the un-normalized literal, so the kernel
+    // wrote through `link` to `<root>/../outside/evil.html`. The fix makes
+    // both agree on the same, single, normalized path — so this now lands
+    // safely at the literal `<root>/evil.html`, exactly like a plain
+    // `--output evil.html` would, never touching `outside/` at all.
+    const absoluteArgument = `${root}/link/../evil.html`;
+
+    const execution = await runReviewRender(
+      [manifest, "--output", absoluteArgument, "--json"],
+      root,
+    );
+    assertEnvelope(execution);
+    assert.equal(execution.result.outcome, "success");
+    assert.equal(execution.result.data.output, "evil.html");
+
+    const after = await readdir(outsideDir);
+    assert.deepEqual(
+      after,
+      before,
+      "nothing was written outside the repository",
+    );
+    await readFile(join(root, "evil.html"), "utf8");
+  });
+});

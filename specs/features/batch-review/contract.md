@@ -41,13 +41,15 @@ index → render → （HTML 審閱，可匯出／還原修訂單）
 | Revision Response 紀錄 | `records/responses-<to12>-<n>.json` | Agent 工作流程經 `review respond` 寫入（修訂，R-005） | 歷史 Evidence | 只新增 |
 | Definition Confirmation | `records/confirmation-<fp12>.json` | `review confirm` | 人類聲明（非身份驗證） | 只新增；同指紋只一份 |
 | Semantic Report | 使用者自選，交給 `--semantic-report` | Agent 工作流程 | Agent 觀察 | 輸入；以 sha256 記入預檢紀錄 |
-| Preflight Report | `records/preflight-<fp12>-<n>.json` | `review preflight`／`review packet` | 歷史 Evidence | 只新增 |
+| Preflight Report | `records/preflight-<fp12>-<n>.json` | `review preflight`／`review packet` | 歷史 Evidence | 只新增；與同 `<fp12>` 下 `<n>` 最大者除 `checkedAt` 外全同時不寫（修訂性澄清，R-007） |
 | Execution Packet | `records/packet-<fp12>-<n>.json` 及 `--output` | `review packet` | 開工輸入；記錄觀察到的授權來源 | 只新增 |
 | 外部整合觀察 | `records/forgepilot-<fp12>-<n>.json` | Agent 工作流程 | 當次觀察；現況以 ForgePilot 為準 | 只新增 |
 
 - `records/` 位於 `specs/batches/<BATCH-ID>/records/`。`<fp12>` 是 Requirement Fingerprint 前 12 個十六進位字元；
   `<to12>` 是回應紀錄 `toFingerprint` 的前 12 碼；`<sheet12>` 是已匯入 JSON 內容 sha256 的前 12 碼；
   `<n>` 從 1 起，同名已存在時遞增。
+- （修訂性澄清，R-007）Preflight Report 的 `<n>` 從同 `<fp12>` 下現有最大值加一開始配置，只為並行寫入保留少量重試，
+  因此累積的報告數量永遠不會阻擋寫入。比較基準檔不合法、超限或為 symlink 時回報 advisory `REVIEW_RECORD_INVALID`，不去重、照常寫入新的一份。
 - 寫入一律排他建立（create-new）；任何既有檔案都不被改寫。`records/` 與其上層目錄任一段為 symlink 即拒絕寫入。
 - 讀取紀錄時，檔名前綴必須等於內容中完整值的前 12 碼且內容通過 schema；否則該檔不被採計，並產生 `REVIEW_RECORD_INVALID` 診斷，不讓它默默生效。
 - `specs/batches/` 是 batch review 的 Reference Tooling 慣例，不是 Protocol 目錄；未使用本功能的 Adoption 不需要它。
@@ -293,7 +295,8 @@ Semantic Report 由 Agent 產生：綁定 `fingerprint`；批次內每張 Story 
 | `--expect-fingerprint` 等於當前指紋 | `REVIEW_PACKET_FINGERPRINT_MISMATCH` | STALE |
 | `--expect-revision` 等於 HEAD | `REVIEW_PACKET_REVISION_MISMATCH` | STALE |
 | 提供 `--expect-revision` 時：位於 git repository，批次來源與 manifest 無未提交／未追蹤修改 | `REVIEW_NOT_A_GIT_REPOSITORY`、`REVIEW_SOURCES_UNCOMMITTED` | BLOCKED |
-| 確認適用於當前指紋 | `REVIEW_CONFIRMATION_STALE`（附 §8 差異）、`REVIEW_CONFIRMATION_MISSING` | STALE／INCOMPLETE |
+| 確認適用於當前指紋：有有效確認但不適用（修訂性澄清，R-007） | `REVIEW_CONFIRMATION_STALE`（附 §8 差異） | STALE |
+| 確認適用於當前指紋：沒有任何有效確認（修訂性澄清，R-007） | `REVIEW_CONFIRMATION_MISSING` | INCOMPLETE |
 | 各 Story 通過既有 `story check` | 沿用其 issue code | BLOCKED |
 | 依賴無循環 | `REVIEW_DEPENDENCY_CYCLE` | BLOCKED |
 | 依賴與對應只引用批次內 Story | `REVIEW_STORY_UNKNOWN` | BLOCKED |
@@ -304,6 +307,8 @@ Semantic Report 由 Agent 產生：綁定 `fingerprint`；批次內每張 Story 
 | 非阻擋意見都已解決或在適用的確認中 defer | `REVIEW_REVISION_UNADDRESSED` | INCOMPLETE |
 | 回應紀錄完整、合法 | `REVIEW_RESPONSE_MISMATCH`、`REVIEW_RESPONSE_INVALID` | INCOMPLETE |
 | Semantic Report 已提供、大小合法、schema 合法、涵蓋每張 Story 與類別 | `REVIEW_SEMANTIC_MISSING`、`REVIEW_INPUT_TOO_LARGE`、`REVIEW_SEMANTIC_INVALID`、`REVIEW_SEMANTIC_COVERAGE` | INCOMPLETE |
+| Semantic Report 只提及批次內 Story（修訂性澄清，R-007） | `REVIEW_SEMANTIC_INVALID` | INCOMPLETE |
+| Preflight Report 寫入成功（修訂性澄清，R-007） | `REVIEW_RECORD_WRITE_FAILED` | INCOMPLETE |
 | Semantic Report 指紋相符 | `REVIEW_SEMANTIC_STALE` | STALE |
 | Semantic Report 含阻擋 issue | `REVIEW_SEMANTIC_BLOCKING` | BLOCKED |
 | Semantic Report 含非阻擋 issue | `REVIEW_SEMANTIC_OBSERVATION` | 不影響結果 |
@@ -312,6 +317,14 @@ Semantic Report 由 Agent 產生：綁定 `fingerprint`；批次內每張 Story 
 - 優先序：`ERROR`／`*-error` > `REVIEW_STALE` > `REVIEW_BLOCKED` > `REVIEW_INCOMPLETE` > `REVIEW_READY`；全部 issues 仍列出。
 - `--expect-fingerprint`／`--expect-revision` 由 `review packet` 與 Agent 工作流程在 ForgePilot 寫入前使用（§10、§11）。
 - 預檢不執行 `make verify`、不要求尚未實作的測試通過，也不寫來源。
+- （修訂性澄清，R-007）預檢不檢查 Execution Authorization：唯讀評估不產生需要授權的效果，授權由 §10 在每個效果發生當下解析。
+  因此 R-007 AC-001 的「授權不足」不對應本表任何一列，而由 `review packet` 與 Agent 工作流程處理。
+- （修訂性澄清，R-007）「回應紀錄完整、合法」只對 `toFingerprint` 等於當前指紋的回應紀錄重跑 §7 全部檢查；
+  其他指紋的回應紀錄是歷史，只檢查所列修訂單皆已匯入（`REVIEW_RESPONSE_INVALID`），不重算涵蓋，
+  否則一次 supersede 就會讓只新增的舊紀錄永遠 `REVIEW_RESPONSE_MISMATCH`。
+- （修訂性澄清，R-007）診斷的 `severity` 由所在列機械推導：影響結果的列為 `blocking`，標「不影響結果」的列為 `advisory`。
+- （修訂性澄清，R-007）Preflight Report 寫入失敗時，結果降為 `REVIEW_INCOMPLETE` 並附 `REVIEW_RECORD_WRITE_FAILED`，不留部分檔案；
+  不視為 `ERROR`，因為評估本身已完成。
 - manifest 合法時，每次執行都寫一份 Preflight Report；機械與語義診斷分列。`REVIEW_READY` 只表示未發現阻擋，不宣稱沒有缺陷。
 
 ## 10. Execution Packet 與 `review packet`
@@ -402,6 +415,9 @@ Work Item ID 由 ForgePilot 指派、無冪等鍵、依賴只能在建立時宣�
 - 批次 ≤ 200 張 Story、≤ 200 份 ADR 與 ≤ 200 份 Spec；單一來源 Markdown ≤ 4 MiB。
 - manifest `preface`：UTF-8 ≤ 4 KiB（§3）。
 - Preflight Report 的診斷總數 ≤ 10000；超過判 `ERROR`（exit 3）而非截斷，因為批次上限內不應發生。
+- （修訂性澄清，R-007）Preflight Report：每次執行最多讀取一份既有報告（去重比較基準，單檔上限同上），因此不設檔案數或總量上限；
+  數量上限會讓工具被自己產生的歷史紀錄鎖死（§2）。
+- （修訂性澄清，R-007，回填 R-006）Definition Confirmation：`confirmation-` 檔案 ≤ 200 份、合計 ≤ 16 MiB，於讀取內容前檢查（§8）。
 - （修訂，R-005）Review Projection 的修訂紀錄證據（§20）：`records/` 內檔名以 `revisions-` 或 `responses-` 開頭、以 `.json` 結尾的檔案（含不合法者）合計 ≤ 200 份；
   這些檔案的大小合計 ≤ 16 MiB；所有有效紀錄的意見與回應合計 ≤ 10000 則。超過任一項時整個證據區不呈現任何紀錄內容，不截斷、不部分呈現（§20）。
 
@@ -448,7 +464,7 @@ ForgePilot 輸出是觀察而非輸入：每個 stdout／stderr 保存前 1 MiB�
 
 | Source field | Payload | Expected result | Persisted locations | Verification |
 | --- | --- | --- | --- | --- |
-| `batch.json sources.specs[0]` | `../outside.md` | `reject` | `envelope issues REVIEW_PATH_UNSAFE; no records/ file` | `tests/batch-review-index.sh` |
+| `batch.json sources.specs[0]` | `../outside.md` | `reject` | `envelope issues REVIEW_MANIFEST_INVALID（修訂性澄清，R-007：`..` 在 manifest 解析時即被拒絕）; no records/ file` | `tests/batch-review-index.sh` |
 | `batch.json sources.stories[0]` | `symlink specs/stories/X-1 -> /tmp/outside` | `reject` | `envelope issues REVIEW_PATH_UNSAFE; no records/ file` | `tests/batch-review-index.sh` |
 | `batch.json sources.specs[0]` | `"specs/a[2Jb.md"` | `reject` | `envelope issues REVIEW_MANIFEST_INVALID` | `tests/batch-review-index.sh` |
 | `--output` | `specs/stories/X-1/story.md` | `reject` | `envelope issues REVIEW_OUTPUT_CONFLICT; story.md bytes unchanged` | `tests/batch-review-render.sh` |

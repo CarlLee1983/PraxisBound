@@ -29,6 +29,7 @@ Commands:
   review import      Record an exported Revision Sheet
   review respond     Record a Revision Response file
   review confirm     Record an explicit terminal Definition Confirmation
+  review preflight   Evaluate every mechanical batch review check
   verification check Resolve plans and check recorded results
   help, --help       Show this help
   version, --version Print the CLI version

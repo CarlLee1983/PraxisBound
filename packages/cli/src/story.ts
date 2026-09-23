@@ -258,6 +258,19 @@ function parseArguments(args: readonly string[]): {
   };
 }
 
+/**
+ * A narrow wrapper over `checkStory` for `review preflight` (Story TST-027,
+ * contract §9 "各 Story 通過既有 `story check`"): always runs `--ready` mode,
+ * never `story check`'s default contract mode, and keeps its issue codes
+ * unchanged. `story check` itself is untouched.
+ */
+export async function checkStoryReadiness(
+  reader: StoryReader,
+  directory: string,
+): Promise<StoryEntry> {
+  return checkStory(reader, directory, true);
+}
+
 async function checkStory(
   reader: StoryReader,
   label: string,

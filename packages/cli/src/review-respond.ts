@@ -15,6 +15,7 @@ import {
 } from "@praxisbound/core";
 
 import {
+  computeResponseCoverage,
   parseManifestAndFileArguments,
   readInputFile,
   recordSetInvalidIssues,
@@ -304,25 +305,13 @@ export async function runReviewRespond(
         [...revisionRecords.bySha256.values()].map((sheet) => sheet.revisions),
       ).map((revision) => revision.id),
     );
-    const listedIds = new Set<string>();
-    for (const sheet of listedSheets)
-      for (const revision of sheet.revisions) listedIds.add(revision.id);
-    const effectiveIds = [...listedIds].filter((id) =>
-      effectiveAcrossBatch.has(id),
-    );
-
     const responseIds = responses.responses.map(
       (response) => response.revisionId,
     );
-    const responseIdCounts = new Map<string, number>();
-    for (const id of responseIds)
-      responseIdCounts.set(id, (responseIdCounts.get(id) ?? 0) + 1);
-    const effectiveSet = new Set(effectiveIds);
-    const missingIds = effectiveIds.filter(
-      (id) => (responseIdCounts.get(id) ?? 0) !== 1,
-    );
-    const extraIds = [...responseIdCounts.keys()].filter(
-      (id) => !effectiveSet.has(id),
+    const { missingIds, extraIds } = computeResponseCoverage(
+      listedSheets,
+      effectiveAcrossBatch,
+      responseIds,
     );
     if (missingIds.length > 0 || extraIds.length > 0) {
       return {

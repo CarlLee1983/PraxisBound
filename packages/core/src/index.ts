@@ -170,6 +170,39 @@ export { indexReviewBatch } from "./review/index.js";
 export { planReviewBatch } from "./review/manifest.js";
 export { renderReviewProjection } from "./review/render.js";
 export { computeFingerprint, sha256Hex } from "./review/fingerprint.js";
+export { findDependencyCycles } from "./review/dependency-graph.js";
+export { evaluatePreflight } from "./review/preflight.js";
+export type {
+  PreflightConfirmationState,
+  PreflightEvaluation,
+  PreflightFinding,
+  PreflightInput,
+  PreflightOutcome,
+  PreflightUnresolvedRequests,
+} from "./review/preflight.js";
+export {
+  buildPreflightReportRecord,
+  MAX_DIAGNOSTICS,
+  preflightReportsEqualExceptCheckedAt,
+  validateStoredPreflightReportRecord,
+} from "./review/preflight-report.js";
+export type {
+  PreflightReportExpect,
+  PreflightReportRecord,
+  PreflightReportRecordRef,
+  PreflightReportSemanticReportRef,
+  PreflightReportValidationResult,
+} from "./review/preflight-report.js";
+export {
+  evaluateSemanticReport,
+  MAX_TOTAL_ISSUES,
+} from "./review/semantic-report.js";
+export type {
+  SemanticDiagnostic,
+  SemanticDiagnosticCode,
+  SemanticReportContext,
+  SemanticReportEvaluation,
+} from "./review/semantic-report.js";
 export type {
   AdrIndex,
   IndexReviewBatchResult,
