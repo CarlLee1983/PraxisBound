@@ -16,6 +16,7 @@ praxisbound review render <manifest> --output <file>
 praxisbound review import <manifest> <sheet>
 praxisbound review respond <manifest> <responses.json>
 praxisbound review confirm <manifest>
+praxisbound review preflight <manifest>
 
 praxisbound codex activate <repository>
 ```
@@ -64,6 +65,7 @@ verify             = execute make verify
 | `praxisbound review import <manifest> <sheet>`           | none (new capability)                 | Reads a Markdown Revision Sheet and records new requests, create-new, under the batch's `records/`; never changes a source. |
 | `praxisbound review respond <manifest> <responses.json>` | none (new capability)                 | The only way to record a Revision Response file, create-new, after the contract §7 fingerprint and coverage checks.         |
 | `praxisbound review confirm <manifest>`                  | none (new capability)                 | The only way to record a Definition Confirmation, create-new, through an interactive terminal act (contract §8).            |
+| `praxisbound review preflight <manifest>`                | none (new capability)                 | Read-only evaluation of every mechanical contract §9 check; this version writes no Preflight Report (Story TST-027).        |
 | `praxisbound codex activate <repo>`                      | `scripts/codex-activate`              | Preview by default; supports `--apply`; stays a late migration wave.                                                        |
 
 Global options may appear after the selected command path and before or among
@@ -569,6 +571,86 @@ Gate, review, DONE, or Work Item state (`ADR-014`, Story R7); a forged
 `authorized: true`, `approved`, or `confirmed` string anywhere in a source or
 existing record never creates or implies a confirmation, and never appears
 in this command's own output as a claim of authorization or completion.
+
+## `praxisbound review preflight` contract
+
+`praxisbound review preflight <manifest> [--semantic-report <file>]
+[--expect-fingerprint <sha256> --expect-revision <commit>] [--json]` (Story
+TST-027, Additive) evaluates every mechanical contract §9 check and reports
+one result envelope; it never writes a source. **This version** (Story
+TST-027's mechanical slice) covers contract §9 minus the Semantic Report
+parsing/fingerprint/coverage/blocking rows (TST-028), the git-backed
+uncommitted-change and HEAD-revision checks (`gitFindings` is always `[]`
+here — `--expect-revision` is parsed and format-validated but not yet acted
+on), and Preflight Report writing (`data.preflightRecord` is not produced by
+this version; every run currently writes nothing). All three land together
+in a later Story before `review preflight` reaches contract §9 in full.
+
+Argv: `--expect-fingerprint`/`--expect-revision` must both be given or both
+omitted (`usage-error`); `--expect-fingerprint` must match
+`^[a-f0-9]{64}$` and `--expect-revision` must match `^[a-f0-9]{40}$`, checked
+before either value is used for anything (`usage-error`, exit 2). An unknown
+flag, a repeated flag, a missing flag value, or a missing/extra positional is
+the same `REVIEW_USAGE` `usage-error`, exit 2, every other review command
+uses. An invalid or unreadable manifest, an unsafe path, or an unsupported
+`schemaVersion` is `configuration-error`, exit 2, exactly as `review index`
+reports it.
+
+It gathers, without acting on any of these decisions itself (Core's
+`evaluatePreflight` owns every classification, severity, precedence, and
+outcome decision, contract §9 R6):
+
+- The current `review index` diagnostics and declared `dependencies`
+  (missing source, unknown Story, unmapped requirement, missing acceptance,
+  unknown/duplicate anchor, and `REVIEW_DEPENDENCY_UNDECLARED` all surface
+  through this path already).
+- `REVIEW_DEPENDENCY_CYCLE`, detected over `dependencies` by the pure Core
+  module `packages/core/src/review/dependency-graph.ts`.
+- Confirmation applicability against the current fingerprint (contract §8);
+  an applicable confirmation's `deferred` list exempts its revision ids from
+  `REVIEW_REVISION_UNADDRESSED`; a stale one reports `REVIEW_CONFIRMATION_STALE`
+  plus its §8 source differences; none at all reports
+  `REVIEW_CONFIRMATION_MISSING`.
+- Every effective request's resolution (§6/§7): an unresolved `blocking`
+  request is `REVIEW_UNRESOLVED_BLOCKING`; an unresolved non-blocking one
+  (not deferred in an applicable confirmation) is `REVIEW_REVISION_UNADDRESSED`.
+- Every existing `records/revisions-*.json` and `records/responses-*.json`,
+  validated the same way `review respond` validates them; an invalid record
+  or a cross-record §6 security M2 conflict is `REVIEW_RECORD_INVALID`
+  (advisory). Every already-stored responses record is re-checked against
+  its listed sheets' effective requests using the same coverage function
+  `review respond` uses (`computeResponseCoverage`, `review-input.ts`), so
+  the two commands can never disagree: an unimported listed sheet is
+  `REVIEW_RESPONSE_INVALID`; a missing or extra answered id is
+  `REVIEW_RESPONSE_MISMATCH`.
+- Each batch Story's `story check --ready` result (not `story check`'s
+  default contract mode), keeping its own `STORY_*` issue codes, each naming
+  its Story directory as `path`.
+- `--expect-fingerprint` against the current fingerprint:
+  `REVIEW_PACKET_FINGERPRINT_MISMATCH`.
+- Whether `--semantic-report <file>` resolves (relative to the repository
+  root) to an existing, non-symlinked regular file — checked for existence
+  only, never read: `REVIEW_SEMANTIC_MISSING` when absent.
+
+| Outcome               | Status  | Exit | Meaning                                                                                              |
+| --------------------- | ------- | ---- | ---------------------------------------------------------------------------------------------------- |
+| `REVIEW_READY`        | `pass`  | `0`  | No blocking mechanical check failed. Grants no execution authority and claims no absence of defects. |
+| `REVIEW_BLOCKED`      | `fail`  | `1`  | A blocking mechanical check failed.                                                                  |
+| `REVIEW_INCOMPLETE`   | `fail`  | `1`  | A required confirmation, response, or Semantic Report is missing or does not cover the batch.        |
+| `REVIEW_STALE`        | `fail`  | `1`  | A supplied fingerprint or the current confirmation no longer matches the current working tree.       |
+| `usage-error`         | `error` | `2`  | Invalid or missing argv.                                                                             |
+| `configuration-error` | `error` | `2`  | The manifest is invalid, unreadable, or its path is unsafe.                                          |
+| `ERROR`               | `error` | `3`  | An unexpected internal failure.                                                                      |
+
+`data` extends the `review index` minimal shape (`batchId`, `fingerprint`,
+`sources`, `diagnostics`) with no additional field in this version;
+`data.preflightRecord` is added when Preflight Report writing lands. Human
+output (stderr not used; stdout in `--json` mode, stdout otherwise) lists two
+labelled sections — "Mechanical checks" and "Agent observations (unverified)"
+(always "none" in this version, since Semantic Report parsing is TST-028) —
+and, on `REVIEW_READY`, the fixed line 「只表示未發現阻擋，不宣稱沒有缺陷」
+(contract §9, Story R8). Every message and path is ESC-escaped the same way
+every other review command escapes untrusted text.
 
 ## `review preflight` and `review packet` outcomes
 

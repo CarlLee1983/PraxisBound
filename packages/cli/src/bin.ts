@@ -40,6 +40,11 @@ import {
   reviewRespondHelp,
   runReviewRespond,
 } from "./review-respond.js";
+import {
+  renderReviewPreflightHuman,
+  reviewPreflightHelp,
+  runReviewPreflight,
+} from "./review-preflight.js";
 import { renderStoryHuman, runStoryCheck, storyHelp } from "./story.js";
 import {
   renderVerifyHuman,
@@ -80,6 +85,7 @@ Commands:
   review import      Record an exported Revision Sheet
   review respond     Record a Revision Response file
   review confirm     Record an explicit terminal Definition Confirmation
+  review preflight   Evaluate every mechanical batch review check
   verification check Resolve plans and check recorded results
   help, --help       Show this help
   version, --version Print the CLI version
@@ -341,6 +347,23 @@ if (
     process.stdout.write(serializeResultEnvelope(execution.result));
   } else {
     const rendered = renderReviewConfirmHuman(execution);
+    process.stdout.write(rendered.stdout);
+    process.stderr.write(rendered.stderr);
+  }
+  process.exitCode = execution.result.exit;
+} else if (
+  args.length === 3 &&
+  args[0] === "review" &&
+  args[1] === "preflight" &&
+  args[2] === "--help"
+) {
+  process.stdout.write(reviewPreflightHelp);
+} else if (args[0] === "review" && args[1] === "preflight") {
+  const execution = await runReviewPreflight(args.slice(2));
+  if (execution.mode === "json") {
+    process.stdout.write(serializeResultEnvelope(execution.result));
+  } else {
+    const rendered = renderReviewPreflightHuman(execution);
     process.stdout.write(rendered.stdout);
     process.stderr.write(rendered.stderr);
   }
