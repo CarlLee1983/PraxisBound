@@ -3,6 +3,7 @@
 Contract ID：`SPEC-BATCH-REVIEW/R-001`。狀態：已接受（accepted，人類審閱並合併 #94）。日期：2026-09-17。
 修訂：2026-09-18，Review Projection 以需求為主軸的呈現（§18）、manifest `preface`（§3）與 Spec 章節詞彙（§5）；已接受（人類審閱 #100）。
 修訂：2026-09-18，Review Projection 的審閱層（§19，R-004）；已接受（人類審閱 #103）。
+修訂：2026-09-23，R-008 交接改以 ForgePilot `32b7a68` 公開 CLI 與 Goal Plan 產物為準（§10、§11、§21、§22，ADR-016）；待人類審閱。
 
 本文件定稿 [spec.md](spec.md) R-001 要求的產物格式、指紋、定位、命令結果與授權邊界。
 取捨與不可靜默推翻的邊界記錄於
@@ -22,8 +23,9 @@ index → render → （HTML 審閱，可匯出／還原修訂單）
    │          → index／render 新版（舊確認自動不適用）→ 再審
    └─ 無未解決阻擋意見：confirm（TTY）→ Agent 語義檢查 → preflight
           ├─ REVIEW_BLOCKED／INCOMPLETE／STALE → 回到修訂或補檢查
-          └─ REVIEW_READY → packet → （已授權時）ForgePilot 公開 CLI
-                                        → 等待 Goal 最終總檢
+          └─ REVIEW_READY → goal-plan → （已授權時）ForgePilot 公開 CLI 建立並預覽
+                                        → 人執行 execution authorize → run
+                                        → 如實回報 ForgePilot 結果（GOAL_COMPLETED 不是 DONE）
 ```
 
 預檢需要改變已確認定義時一律回到修訂與複審（R-007 AC-004）。
@@ -41,9 +43,10 @@ index → render → （HTML 審閱，可匯出／還原修訂單）
 | Revision Response 紀錄 | `records/responses-<to12>-<n>.json` | Agent 工作流程經 `review respond` 寫入（修訂，R-005） | 歷史 Evidence | 只新增 |
 | Definition Confirmation | `records/confirmation-<fp12>.json` | `review confirm` | 人類聲明（非身份驗證） | 只新增；同指紋只一份 |
 | Semantic Report | 使用者自選，交給 `--semantic-report` | Agent 工作流程 | Agent 觀察 | 輸入；以 sha256 記入預檢紀錄 |
-| Preflight Report | `records/preflight-<fp12>-<n>.json` | `review preflight`／`review packet` | 歷史 Evidence | 只新增；與同 `<fp12>` 下 `<n>` 最大者除 `checkedAt` 外全同時不寫（修訂性澄清，R-007） |
-| Execution Packet | `records/packet-<fp12>-<n>.json` 及 `--output` | `review packet` | 開工輸入；記錄觀察到的授權來源 | 只新增 |
-| 外部整合觀察 | `records/forgepilot-<fp12>-<n>.json` | Agent 工作流程 | 當次觀察；現況以 ForgePilot 為準 | 只新增 |
+| Preflight Report | `records/preflight-<fp12>-<n>.json` | `review preflight`／`review goal-plan` | 歷史 Evidence | 只新增；與同 `<fp12>` 下 `<n>` 最大者除 `checkedAt` 外全同時不寫（修訂性澄清，R-007） |
+| Readiness Sidecar（修訂，R-008） | `<Story 目錄>/readiness.json` | 人或 Agent；digest 由 `review readiness-digests` 更新 | 定義來源（§21） | 一般來源檔，存在時納入指紋 |
+| Goal Plan 產物（修訂，R-008） | `specs/batches/<BATCH-ID>/goal-plan/<plan.id>/` | `review goal-plan`；請求檔由 Agent 工作流程寫入 | 開工輸入；不含授權 | 同位元組重寫視為成功，不同即拒絕 |
+| 外部整合觀察 | `records/forgepilot-<fp12>-<n>.json` | Agent 工作流程經 `review observe` 寫入（修訂，R-008） | 當次觀察；現況以 ForgePilot 為準 | 只新增 |
 
 - `records/` 位於 `specs/batches/<BATCH-ID>/records/`。`<fp12>` 是 Requirement Fingerprint 前 12 個十六進位字元；
   `<to12>` 是回應紀錄 `toFingerprint` 的前 12 碼；`<sheet12>` 是已匯入 JSON 內容 sha256 的前 12 碼；
@@ -62,7 +65,7 @@ Schema：[`schemas/batch-manifest.schema.json`](schemas/batch-manifest.schema.js
 
 - `batchId` 沿用 Story ID 語法，可加 slug，且必須等於所在目錄名（`REVIEW_MANIFEST_INVALID`）。
 - `sources` 依種類列出 repo 相對 POSIX 路徑：`adrs`、`specs`、`stories`。
-  `stories` 指 Story 目錄，工具讀取其中的 `story.md` 與 `acceptance.md`；`task.md` 不納入（`protocol/story.md` 定義為非權威）。
+  `stories` 指 Story 目錄，工具讀取其中的 `story.md`、`acceptance.md`，以及存在時的 `readiness.json`（修訂，R-008，§21）；`task.md` 不納入（`protocol/story.md` 定義為非權威）。
   Story ID 取目錄名中符合 `protocol/story.md` ID 語法的前綴（例如 `RF-002-refund-approval` → `RF-002`）。
 - Spec 條目：Spec 文件中以 `R-` 加三位以上數字開頭、後接空白、全形或半形冒號或行尾的第二級 ATX heading（`## R-001：...`）。
   內文、表格或其他層級 heading 中的 `R-NNN` 字樣不是條目。Spec AC 為該條目區塊內以 `- AC-NNN：` 或 `* AC-NNN:` 開頭的列。
@@ -98,13 +101,14 @@ fingerprint = sha256(UTF-8(canonicalJson({
 })))
 ```
 
-- `sources` 包含 manifest 列出的每個 ADR、Spec，以及每個 Story 的 `story.md`、`acceptance.md`；
+- `sources` 包含 manifest 列出的每個 ADR、Spec，以及每個 Story 的 `story.md`、`acceptance.md`，與存在時的 `readiness.json`（修訂，R-008）；
+  `readiness.json` 是選用來源，不存在時不列入，也不算缺失；新增或移除它都改變指紋；
   依 `path` 的 UTF-8 bytes 升冪排序；不含 manifest 本身（已在 `manifest` 欄位）。
 - `canonicalJson`：物件 key 依上列固定順序，無多餘空白，字串依 JSON 標準跳脫，非 ASCII 字元不跳脫，不含結尾換行。
 - 不正規化換行、BOM 或 Unicode。CRLF 轉換會改變指紋並使舊確認不適用；這是如實反映位元組變動。
 - 讀取的是工作樹內容，包含未提交修改。Git HEAD、render 時間、HTML、`records/` 與驗證產物都不參與。
 - 必要來源缺失時，缺失檔以 `"sha256": null` 參與計算以便閱讀，結果帶 `REVIEW_SOURCE_MISSING`；
-  含 `null` 的指紋不可用於 `confirm` 與 `packet`。
+  含 `null` 的指紋不可用於 `confirm` 與 `goal-plan`。
 
 ## 5. 穩定定位
 
@@ -266,7 +270,7 @@ Schema：[`schemas/confirmation.schema.json`](schemas/confirmation.schema.json)�
   這組上限與 §20 的修訂紀錄上限分開計算；確認紀錄不出現在 §20 的證據區。
 - 不合法的確認紀錄依 §2 產生 `REVIEW_RECORD_INVALID`，既不算適用，也不作為比對基準。
 - 「最晚」：有效確認中 `confirmedAt`（標準 UTC 形式，§6）最晚者；同一時刻時取檔名位元組序較後者。只用於呈現差異。
-- 回報的命令：`render`。`index` 不讀 `records/`，輸出不變；`preflight`／`packet` 另依 §9、§10。
+- 回報的命令：`render`。`index` 不讀 `records/`，輸出不變；`preflight`／`goal-plan` 另依 §9、§10。
   `render` 的 `REVIEW_SOURCE_ADDED`／`REVIEW_SOURCE_REMOVED`／`REVIEW_SOURCE_CHANGED`／`REVIEW_MANIFEST_CHANGED` 為 advisory，
   只在存在有效確認且沒有一份適用時產生；完全沒有確認紀錄時不產生，也不標示任何文件。
 - 頁面：標題區以文字註明確認狀況，三種之一——「有一份確認紀錄綁定目前指紋」、「沒有確認紀錄綁定目前指紋；下列來源自
@@ -298,6 +302,7 @@ Semantic Report 由 Agent 產生：綁定 `fingerprint`；批次內每張 Story 
 | 確認適用於當前指紋：有有效確認但不適用（修訂性澄清，R-007） | `REVIEW_CONFIRMATION_STALE`（附 §8 差異） | STALE |
 | 確認適用於當前指紋：沒有任何有效確認（修訂性澄清，R-007） | `REVIEW_CONFIRMATION_MISSING` | INCOMPLETE |
 | 各 Story 通過既有 `story check` | 沿用其 issue code | BLOCKED |
+| 存在的 Readiness Sidecar 合法且與 Story、批次一致（修訂，R-008） | §21 所列 `REVIEW_READINESS_*` | BLOCKED |
 | 依賴無循環 | `REVIEW_DEPENDENCY_CYCLE` | BLOCKED |
 | 依賴與對應只引用批次內 Story | `REVIEW_STORY_UNKNOWN` | BLOCKED |
 | Spec 條目皆有 Story；Story 皆有 AC | `REVIEW_REQUIREMENT_UNMAPPED`、`REVIEW_ACCEPTANCE_MISSING` | BLOCKED |
@@ -315,10 +320,11 @@ Semantic Report 由 Agent 產生：綁定 `fingerprint`；批次內每張 Story 
 | 其他非阻擋診斷 | `REVIEW_DEPENDENCY_UNDECLARED`、`REVIEW_RECORD_INVALID`、`REVIEW_REVISION_STALE_TARGET`、`REVIEW_SECTION_UNRECOGNIZED`（修訂性澄清，R-002） | 不影響結果 |
 
 - 優先序：`ERROR`／`*-error` > `REVIEW_STALE` > `REVIEW_BLOCKED` > `REVIEW_INCOMPLETE` > `REVIEW_READY`；全部 issues 仍列出。
-- `--expect-fingerprint`／`--expect-revision` 由 `review packet` 與 Agent 工作流程在 ForgePilot 寫入前使用（§10、§11）。
+- （修訂，R-008）`--expect-fingerprint` 由 Agent 工作流程在每個 ForgePilot 寫入前使用（§11）；`--expect-revision` 是選用的 commit 檢查（ADR-015），交接路徑不再要求（§10）。
+  issue code `REVIEW_PACKET_FINGERPRINT_MISMATCH`／`REVIEW_PACKET_REVISION_MISMATCH` 已實作並保留原名，名稱中的 packet 為歷史用詞。
 - 預檢不執行 `make verify`、不要求尚未實作的測試通過，也不寫來源。
 - （修訂性澄清，R-007）預檢不檢查 Execution Authorization：唯讀評估不產生需要授權的效果，授權由 §10 在每個效果發生當下解析。
-  因此 R-007 AC-001 的「授權不足」不對應本表任何一列，而由 `review packet` 與 Agent 工作流程處理。
+  因此 R-007 AC-001 的「授權不足」不對應本表任何一列，而由 Agent 工作流程在每個效果前處理（§11）。
 - （修訂性澄清，R-007）「回應紀錄完整、合法」只對 `toFingerprint` 等於當前指紋的回應紀錄重跑 §7 全部檢查；
   其他指紋的回應紀錄是歷史，只檢查所列修訂單皆已匯入（`REVIEW_RESPONSE_INVALID`），不重算涵蓋，
   否則一次 supersede 就會讓只新增的舊紀錄永遠 `REVIEW_RESPONSE_MISMATCH`。
@@ -327,48 +333,88 @@ Semantic Report 由 Agent 產生：綁定 `fingerprint`；批次內每張 Story 
   不視為 `ERROR`，因為評估本身已完成。
 - manifest 合法時，每次執行都寫一份 Preflight Report；機械與語義診斷分列。`REVIEW_READY` 只表示未發現阻擋，不宣稱沒有缺陷。
 
-## 10. Execution Packet 與 `review packet`
+## 10. Goal Plan 產物與 `review goal-plan`（修訂，R-008）
 
-Schema：[`schemas/execution-packet.schema.json`](schemas/execution-packet.schema.json)。
-範例：[`examples/records/packet.json`](examples/records/packet.json)。
+（修訂，R-008）本節取代原 Execution Packet 與 `review packet`，不保留相容層（ADR-016）。
 
-`praxisbound review packet <manifest> --semantic-report <file> --output <file> [--attempt <n>] [--authorization-source <story|session|control-plane|none> --authorization-reference <text>]`：
+Schemas：[`schemas/goal-plan/`](schemas/goal-plan/)（declaration、manifest、coverage review 與共用定義）。
+這些 schema 取自 ForgePilot `32b7a68ebf96d74b55acec8f1cd9408f2ba70dab` 的 `internal/app/testdata/goal-plan-artifacts/v1/`，
+逐位元組收錄，作為 PraxisBound 擁有的 Goal Plan 格式；它取代 `@praxisbound/core` 0.3.0 以 FP-51 發布的 Goal Plan 形狀。
+兩邊日後不一致時，以本目錄為 PraxisBound 的權威並回到修訂，不在實作中擇一沿用。
 
-1. 以當前 HEAD 為 `--expect-revision`、當前指紋為 `--expect-fingerprint`，執行與 `preflight` 完全相同的判定並寫一份新的 Preflight Report。
-   非 `REVIEW_READY` 時不寫 packet，outcome 同預檢。
-2. `REVIEW_READY` 時寫 `records/packet-<fp12>-<n>.json`，並以原子方式寫 `--output`。packet 參照本次新寫的 Preflight Report。
-3. 內容：`batchId`、`fingerprint`、`revision`（HEAD）、`confirmation` 與 `preflight` 紀錄路徑及 sha256、`semanticReportSha256`、
-   依拓撲排序（同層依 Story ID 字典序）的 `stories[{ id, path, dependsOn }]`、選填 `attempt`、`goalId`、`authorization`、`generatedAt`。
-4. `goalId` = `<BATCH-ID>-<fp12>`；有 `--attempt <n>` 時為 `<BATCH-ID>-<fp12>-a<n>`。不做其他轉換。
-   ForgePilot `f2ec4b5` 對 Goal ID 只要求非空；日後 ForgePilot 拒絕此格式時，工作流程停止並回報，不自行改寫 ID。
-5. `authorization` 只記錄 `{ observedSource, reference }`，未提供時為 `none`。讀取 packet 的任何人或工具都不得把它當成授權；
-   `none` 時仍可輸出 packet，但 Agent 工作流程不得據此產生外部效果。
+`praxisbound review goal-plan <manifest> --semantic-report <file> [--attempt <n>]`：
 
-`--attempt` 只應由人在 ForgePilot 內處理完舊 Goal（例如取消）後明確提供；工具不檢查也不推斷舊 Goal 狀態。
-packet 不是 `protocol/handoff.md` 的 handoff，不含 verification 結果，也不宣稱任何工作已完成。
+1. 執行與 `preflight` 完全相同的判定（不帶 `--expect-revision`），並寫一份新的 Preflight Report。
+   另外要求批次內每張 Story 都有 Readiness Sidecar（§21），缺少時為 `REVIEW_READINESS_MISSING`（BLOCKED）；
+   這一項只屬於 `goal-plan`，`preflight` 對沒有 Sidecar 的 Story 不判阻擋，讓未使用 ForgePilot 的批次照常可交接。
+   結果非 `REVIEW_READY` 時不寫任何 Goal Plan 產物，outcome 同預檢。
+2. 識別：`plan.id` = goalId = `<BATCH-ID>-<fp12>`；有 `--attempt <n>` 時為 `<BATCH-ID>-<fp12>-a<n>`。
+   超過 128 字元時為 `configuration-error`、`REVIEW_GOAL_PLAN_ID_INVALID`。`plan.revision` 固定為 1。
+3. 產物寫在固定目錄 `specs/batches/<BATCH-ID>/goal-plan/<plan.id>/`，無輸出旗標：
+   - `declaration.json`：由 batch.json 投影。每張 Story 一個節點：`nodeRef` = Story ID、`storyRef` = Story 目錄路徑、
+     `dependsOn` = manifest 宣告的依賴（以 Story ID 表示）。
+   - `manifest.json`：`plan`、`declaration { path, sha256 }`、與 declaration 相同的節點，外加
+     `readinessContract { path: <storyRef>/readiness.json, sha256 }`；`reviewedSources` 依 path 位元組序列出
+     batch.json、每個 ADR、Spec、`story.md`、`acceptance.md`、`readiness.json` 與 declaration；
+     `coverageIndex { batchId, fingerprint }` 為當前指紋。
+   - `coverage-review.json`：只從指紋相符的 Definition Confirmation 投影（沒有時步驟 1 已判 INCOMPLETE）。
+     `reviewId` 由該確認紀錄的 sha256 導出：取前 32 個十六進位字元排成 8-4-4-4-12，第 13 字元設為 `4`，
+     第 17 字元設為 `8`、`9`、`a`、`b` 之一（原值 `& 0x3 | 0x8`）；`manifestSha256`、`reviewedSources`、`coverageIndex` 同 manifest；
+     `conclusion` = `approved`；`reviewer` = `{ "name": "PraxisBound Definition Confirmation <確認紀錄 repo 相對路徑>", "assurance": "self-asserted" }`；
+     `reviewedAt` = 確認的 `confirmedAt` 截至毫秒並補成 `.000Z` 形式。
+   節點依 Story ID 位元組序排列，`dependsOn` 亦同；JSON 以 2 空白縮排、結尾一個換行，非 ASCII 不跳脫。輸出因此可由來源完全重建。
+4. 寫入：每個檔案排他建立。檔案已存在且位元組相同時視為成功、不改寫；不同時整批拒絕（`failure`、`REVIEW_GOAL_PLAN_CONFLICT`），
+   已寫出的本次檔案不刪除也不改寫。目錄或其任一上層為 symlink 時拒絕（`REVIEW_PATH_UNSAFE`）。
+5. Goal Plan 產物以 digest 綁定內容，不綁 commit：ForgePilot 以 `--snapshot` 驗證工作樹（ADR-016，取代 ADR-015 中「交接綁 commit」的前提）。
+   `review preflight --expect-revision` 仍依 ADR-015 運作，只是不再是交接路徑的必要步驟。
 
-## 11. ForgePilot 整合規則（Agent 工作流程）
+`--attempt` 只應由人在 ForgePilot 內放棄舊 Goal（例如 `goal cancel`）後明確提供；工具不檢查也不推斷舊 Goal 狀態。
+Goal Plan 產物不含授權、不是 `protocol/handoff.md` 的 handoff、不含 verification 結果，也不宣稱任何工作已完成。
 
-Schema：[`schemas/forgepilot-observation.schema.json`](schemas/forgepilot-observation.schema.json)。
-範例：[`examples/records/forgepilot.json`](examples/records/forgepilot.json)。
+## 11. ForgePilot 整合規則（Agent 工作流程，修訂，R-008）
 
-僅透過 ForgePilot 公開 CLI；不讀寫 `.forgepilot`。已觀察的限制（ForgePilot `f2ec4b5`）：
-Work Item ID 由 ForgePilot 指派、無冪等鍵、依賴只能在建立時宣告、除 `run status` 外無 JSON 輸出。
+基準：ForgePilot `32b7a68ebf96d74b55acec8f1cd9408f2ba70dab`，從該 commit 的乾淨副本建置；不使用 PATH 上版本不明的執行檔。
+僅透過 ForgePilot 公開 CLI 並一律帶 `--json`；不讀寫 `.forgepilot`，不解析人類可讀輸出。
+ForgePilot 的 JSON 只在 exit 0 時保證；非 0 exit 一律停止，不嘗試解析。
 
-1. 解析 Execution Authorization；不足即停止（`authorization-missing`）。
-2. 每個寫入動作前（`goal create`、每個 `work add`、`run`）執行
-   `review preflight <manifest> --semantic-report <packet 所用報告> --expect-fingerprint <packet.fingerprint> --expect-revision <packet.revision>`，
-   並確認該報告 sha256 等於 `packet.semanticReportSha256`；非 `REVIEW_READY` 或不符即停止（`preflight-not-ready`）。
-3. `goal create --id <goalId> --title <batchId> --review-policy goal`。exit 非 0 → 停止；stderr 含 `already exists` 時為 `goal-exists`，否則 `step-failed`。不續建 Work Items。
-4. 依 packet 順序 `work add --goal <goalId> --story <path> [--depends-on <本次取得的 WI ID> ...]`；依賴使用本次實際取得的 WI ID，不以 Story ID 代替。
-5. 文字輸出解析界線：只解析兩種已文件化的行——`Goal <id> created`，以及 `work add` stdout 首行 `<WI-ID> <STATUS>`（`WI-ID` 符合 `^WI-[0-9]+$`）。
-   exit 0 但解析不到 → 停止（`result-unknown`）。解析只用來取得本次剛建立的 ID，**從不**用來查找或續接先前的嘗試。
-6. 任一步失敗或結果不明 → 停止，不啟動 Runner、不重試。恢復由人在 ForgePilot 內處理後，以新的 `--attempt` 重新產生 packet。
-7. 全部成功後才 `run --goal <goalId> ...`；exit 0 回報為「等待 Goal 最終總檢」（`completed-awaiting-goal-review`），
-   其他 exit 依 ForgePilot 意義如實回報（`run-stopped`），不寫 VERIFIED／DONE、不核准 review。
-8. 無論成功或停止，每次嘗試結束都寫一份外部整合觀察紀錄。
+一次交接分成兩段，由人的 `execution authorize` 隔開。
 
-重試識別與部分失敗的自動續接需要 ForgePilot 提供機器可讀查詢與冪等鍵；此缺口須另提 ForgePilot issue。
+**第一段：建立並預覽**
+
+1. 解析本段的 Execution Authorization（建立 Goal／Work Item 的效果）；不足即停止（`authorization-missing`）。
+2. 每個 ForgePilot 寫入動作前，重跑 `review preflight <manifest> --semantic-report <goal-plan 所用報告> --expect-fingerprint <coverageIndex.fingerprint>`，
+   並確認 `manifest.json` 的 sha256 未變；非 `REVIEW_READY` 或不符即停止（`preflight-not-ready`）。
+3. `work list --goal <goalId> --json`：
+   - `unknown goal` → `goal create --id <goalId> --title <batchId> --review-policy goal --json`。
+   - Goal 已存在：`review_policy` 必須為 `goal`，既有每個 Work Item 的 `external_ref` 必須是本 plan 的 Story ID，
+     其 `story_ref` 與 `depends_on`（對應後）必須和 plan 相符；任一不符即停止（`goal-mismatch`／`work-mismatch`），不續建。
+4. 依 declaration 的拓撲序（同層依 Story ID）對尚未存在的 Story 執行
+   `work add --goal <goalId> --story <storyRef> --external-ref <Story ID> [--depends-on <WI ID> ...] --json`。
+   依賴只用 ForgePilot 回傳的實際 WI ID，不以 Story ID 代替。`created: false` 是冪等重試的正常結果。
+5. 寫 `goal-plan/<plan.id>/preflight-request.json`（`forgepilot.goal-preflight-request/v1`；`nodeMappings` 取自實際 WI ID），
+   執行 `goal preflight --request <path> --json`；非 0 exit 即停止（`goal-preflight-failed`）。
+6. 寫 `goal-plan/<plan.id>/execution-request.json` 並執行 `execution plan --request <path> --json`。
+   Worker Profile（Codex 執行檔路徑、模型）、各項上限與 `expiresAt` 只取自人在當前會話明確提供的值，Agent 不選預設值。
+7. 把預覽與 approval token 交給人，停止（`awaiting-authorization`）。Agent 從不執行 `execution authorize`。
+
+**第二段：人授權之後**
+
+8. 重做步驟 2，再執行 `run --goal <goalId> --runtime codex --snapshot --dry-run`；exit 非 0 即停止（`step-failed`）。
+   未經授權的 Goal 會在這一步被 ForgePilot 拒絕；不以任何檔案或 Agent 記憶推定授權存在。
+9. 執行 `run --goal <goalId> --runtime codex --snapshot`，依 exit 如實回報：
+
+| exit | `stoppedBecause` | 回報 |
+| --- | --- | --- |
+| 0 | `goal-completed` | ForgePilot 的技術完成；不是 Human Review 接受、不是 DONE、不授權 merge／deploy |
+| 2 | `run-needs-human` | 停在需要人的條件 |
+| 3 | `run-limit-reached` | 觸及預算或時間上限 |
+| 130、143 | `run-interrupted` | 被中斷或終止 |
+| 其他 | `run-failed` | 錯誤 |
+
+- 任一步 exit 非 0 → 停止（`step-failed`）；exit 0 但 JSON 不合 `forgepilot.cli/v1` 或缺必要欄位 → 停止（`result-unknown`）。
+  停止後不啟動 Runner。恢復一律從步驟 1 重來：`work list` 讀現況、`--external-ref` 冪等續建；
+  只有人放棄舊 Goal 時才以 `--attempt` 產生新的 Goal Plan。
+- 每段結束（無論成功或停止）都以 `review observe` 寫一份外部整合觀察紀錄（§22）。不寫 VERIFIED／DONE、不核准 review、不略過 Gate。
 
 ## 12. 命令、結果與 `data`
 
@@ -382,7 +428,9 @@ Work Item ID 由 ForgePilot 指派、無冪等鍵、依賴只能在建立時宣�
 | `review respond <manifest> <responses.json>`（修訂，R-005） | `success` | `failure`（格式錯誤、不完整、指紋不符、過大）、`usage-error`、`configuration-error`、`ERROR` |
 | `review confirm <manifest>` | `success` | `failure`（拒絕或中止確認）、`usage-error`、`configuration-error`、`ERROR` |
 | `review preflight <manifest> ...` | `REVIEW_READY` | `REVIEW_BLOCKED`、`REVIEW_INCOMPLETE`、`REVIEW_STALE`、`usage-error`、`configuration-error`、`ERROR` |
-| `review packet <manifest> ...` | `REVIEW_READY` | 同 `preflight` |
+| `review goal-plan <manifest> ...`（修訂，R-008） | `REVIEW_READY` | 同 `preflight`；另有 `failure`（`REVIEW_GOAL_PLAN_CONFLICT`） |
+| `review readiness-digests <manifest>`（修訂，R-008） | `success` | `failure`（`REVIEW_READINESS_INVALID`）、`usage-error`、`configuration-error`、`ERROR` |
+| `review observe <manifest> <observation.json>`（修訂，R-008） | `success` | `failure`（`REVIEW_OBSERVATION_INVALID`、過大）、`usage-error`、`configuration-error`、`ERROR` |
 
 新 outcome 與 status／exit 的組合：
 
@@ -395,12 +443,12 @@ Work Item ID 由 ForgePilot 指派、無冪等鍵、依賴只能在建立時宣�
 
 - `usage-error`（無效 argv、非 TTY 的 `confirm`）與 `configuration-error`（manifest 無法讀取或不合法、路徑不安全、輸出位置衝突）固定 exit 2；
   內部失敗依 `docs/typescript-tooling/cli-contract.md` 使用 `ERROR`、exit 3。
-- `index`／`render` 只要 manifest 合法就回 `pass`／`success`，來源缺失與其他缺口以 issues 呈現：草稿可讀，不完整不可交接由 `preflight`／`packet` 判定。
+- `index`／`render` 只要 manifest 合法就回 `pass`／`success`，來源缺失與其他缺口以 issues 呈現：草稿可讀，不完整不可交接由 `preflight`／`goal-plan` 判定。
 - envelope `issues[]` 維持現行格式（`code`、`message`、選填 `path`、`subject`），不新增欄位。
   完整定位放在 `data.diagnostics[]`：`{ code, severity, locator? }`，`severity` 為 `blocking` 或 `advisory`，順序與 `issues[]` 一一對應。
 - `data` 最小形狀：`index`、`render`、`import`、`respond`、`confirm` 為 `{ batchId, fingerprint, sources, diagnostics }`；
   `import` 另含 `sheet`、`revisions`（§6），`respond` 另含 `record`（寫入的紀錄路徑）；
-  `preflight` 另含 `preflightRecord`；`packet` 另含 `preflightRecord`、`packetRecord`、`output`。含缺失來源時 `fingerprint` 仍輸出（§4），並有 `REVIEW_SOURCE_MISSING`。
+  `preflight` 另含 `preflightRecord`；`goal-plan` 另含 `preflightRecord`、`goalPlanDirectory`、`files`（修訂，R-008）；`observe` 另含 `record`；`readiness-digests` 另含 `updated`（改寫的 Sidecar 路徑）。含缺失來源時 `fingerprint` 仍輸出（§4），並有 `REVIEW_SOURCE_MISSING`。
 - 輸出失敗不覆寫上次成功輸出：寫入同目錄暫存檔後原子 rename；失敗時刪除暫存檔。
 - `--output` 解析後落在任一批次來源、manifest、`records/` 內，或本身為 symlink：`configuration-error`、`REVIEW_OUTPUT_CONFLICT`。
 - issue code 符合 `^[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)*$`；自動化不得比對 message。
@@ -421,6 +469,8 @@ Work Item ID 由 ForgePilot 指派、無冪等鍵、依賴只能在建立時宣�
 - （修訂，R-005）Review Projection 的修訂紀錄證據（§20）：`records/` 內檔名以 `revisions-` 或 `responses-` 開頭、以 `.json` 結尾的檔案（含不合法者）合計 ≤ 200 份；
   這些檔案的大小合計 ≤ 16 MiB；所有有效紀錄的意見與回應合計 ≤ 10000 則。超過任一項時整個證據區不呈現任何紀錄內容，不截斷、不部分呈現（§20）。
 
+- （修訂，R-008）Readiness Sidecar 與觀察紀錄輸入檔：單檔上限同 `records/` JSON。
+
 ForgePilot 輸出是觀察而非輸入：每個 stdout／stderr 保存前 1 MiB，超過時該步 `truncated: true` 並記錄原始 byte 長度。
 上限放寬屬 Additive；收緊屬 Breaking。
 
@@ -432,6 +482,9 @@ ForgePilot 輸出是觀察而非輸入：每個 stdout／stderr 保存前 1 MiB�
 - （修訂，R-003）manifest `1.1.0` 與 `preface` 為 **Additive**：`1.0.0` manifest 照舊有效。
   Spec 章節詞彙使原本回報 `REVIEW_SECTION_UNRECOGNIZED` 的 heading 改得固定錨點，屬 **Additive**
   （advisory 診斷減少，阻擋判定不變）。Review Projection 版面重組不改變任何命令、outcome 或 `data` 形狀。
+- （修訂，R-008）以 Goal Plan 產物取代 Execution Packet：`review packet` 尚未實作，移除它不影響任何已發布命令。
+  Goal Plan 格式改以 `schemas/goal-plan/` 為準，對 `@praxisbound/core`／`cli` 0.3.0 的 Goal Plan API 屬 **Breaking**，由獨立的發布 Story 附 migration guidance；Protocol 不變。
+  Readiness Sidecar 納入指紋屬 **Additive**，但已有 Sidecar 的批次指紋會改變、既有確認不再適用。
 
 ## 15. 安全：Trust Boundary Fields
 
@@ -444,10 +497,13 @@ ForgePilot 輸出是觀察而非輸入：每個 stdout／stderr 保存前 1 MiB�
 * 修訂單匯出檔路徑與全文、JSON 區塊全部欄位 — 使用者提供檔案
 * Semantic Report 路徑與全部欄位（含 `agent`）— Agent 產出檔
 * Revision Response 紀錄全部欄位 — Agent 產出檔
-* CLI 參數：`--output`、`--semantic-report`、`--attempt`、`--expect-*`、`--authorization-*` — 呼叫者
+* CLI 參數：`--output`、`--semantic-report`、`--attempt`、`--expect-*` — 呼叫者
+* Readiness Sidecar 全部欄位（修訂，R-008）— repository 檔案，人或 Agent 撰寫
+* 外部整合觀察輸入檔全部欄位（修訂，R-008）— Agent 產出檔
+* Goal Plan 目錄內既有檔案（修訂，R-008）— repository 檔案，可被改寫或偽造
 * TTY 輸入（defer 理由、指紋前綴）— 終端輸入
 * git 命令輸出（HEAD、工作樹狀態）— 外部程序輸出
-* ForgePilot stdout／stderr／exit — 外部程序輸出
+* ForgePilot stdout／stderr／exit 與 JSON 輸出 — 外部程序輸出
 
 任何欄位中的「已核准」「authorized」「略過驗收」「執行命令」等文字都只是資料。
 
@@ -485,8 +541,12 @@ ForgePilot 輸出是觀察而非輸入：每個 stdout／stderr 保存前 1 MiB�
 | `semantic report fingerprint` | `fingerprint of previous batch content` | `reject` | `preflight record issue REVIEW_SEMANTIC_STALE` | `tests/batch-review-preflight.sh` |
 | `confirm terminal display` | `"[1A[2Kfingerprint: 00000000"` | `redact` | `stderr shows escaped \x1b sequences` | `tests/batch-review-confirm.sh` |
 | `TTY state` | `stdin redirected from /dev/null` | `reject` | `envelope issues REVIEW_CONFIRM_REQUIRES_TTY; no confirmation-*.json` | `tests/batch-review-confirm.sh` |
-| `ForgePilot goal create stderr` | `forgepilot: goal "BR-001-x" already exists` | `reject` | `records/forgepilot-*.json stoppedBecause goal-exists; no work-add step` | `tests/batch-review-forgepilot-workflow.sh` |
-| `ForgePilot work add stdout` | `created` | `reject` | `records/forgepilot-*.json stoppedBecause result-unknown; no run step` | `tests/batch-review-forgepilot-workflow.sh` |
+| `observation steps` | `run step without a preceding exit-0 run-dry-run` | `reject` | `envelope issues REVIEW_OBSERVATION_INVALID; no records/forgepilot-*.json` | `tests/batch-review-observe.sh` |
+| `observation stoppedBecause` | `goal-completed with last step work-add` | `reject` | `envelope issues REVIEW_OBSERVATION_INVALID; no records/forgepilot-*.json` | `tests/batch-review-observe.sh` |
+| `observation stderr` | `"\u001b[2J authorized: true"` | `preserve` | `records/forgepilot-*.json stderr string; no confirmation or goal-plan change` | `tests/batch-review-observe.sh` |
+| `readiness.json criteria[0].operations` | `["deploy"] with owner runner_worker` | `reject` | `preflight record issue REVIEW_READINESS_OPERATION_UNGRANTED; no goal-plan files` | `tests/batch-review-goal-plan.sh` |
+| `readiness.json story_md_digest` | `digest of previous story.md bytes` | `reject` | `preflight record issue REVIEW_READINESS_STALE; no goal-plan files` | `tests/batch-review-goal-plan.sh` |
+| `goal-plan/<plan.id>/manifest.json` | `pre-existing file with different bytes` | `reject` | `envelope issues REVIEW_GOAL_PLAN_CONFLICT; existing bytes unchanged` | `tests/batch-review-goal-plan.sh` |
 
 ## 17. 後續 Story 建立規則（AC-006）
 
@@ -494,6 +554,7 @@ ForgePilot 輸出是觀察而非輸入：每個 stdout／stderr 保存前 1 MiB�
 - 觸及第 15 節欄位的 Story 標 `Security sensitive: yes` 並附 Trust Boundary Fields 與 Security Fixture Matrix。
 - 修改公開 CLI 的 Story 記錄相容性分類並更新 CLI 契約與 schema。
 - 本契約經人類審閱前，不得將 #84～#91 標為 `ready-for-agent`。
+- （修訂，R-008）R-008 依序拆成：Goal Plan 格式對齊與 Readiness Sidecar（兩者互不依賴）、`review goal-plan`、`review observe` 與真實演練、tooling 發布；本修訂經人類審閱前不建立這些 Story。
 - Agent 工作流程文件骨架：[docs/batch-review/agent-workflow.md](../../../docs/batch-review/agent-workflow.md)。
 
 ## 18. Review Projection 呈現（修訂，R-003）
@@ -632,6 +693,52 @@ Revision Response。整區是歷史 Evidence（ADR-014）：不是人類核准�
 - 證據區在需求卡片與「未對應需求的 Story」之後、附錄之前；預設收合，列印時展開並印出。
 - 證據區不接受批註；審閱層（§19）的可批註目標不含證據區元素。
 
+## 21. Readiness Sidecar 與 `review readiness-digests`（修訂，R-008）
+
+Schema：[`schemas/readiness-sidecar.schema.json`](schemas/readiness-sidecar.schema.json)。
+
+`<Story 目錄>/readiness.json` 是人或 Agent 撰寫的定義來源（ADR-016）：宣告每條 AC 的 `owner` 與 `operations`、
+Story 的 `inputs`、`outputs`、`future_identities` 與 `decision_follow_ups`。空陣列即宣告「沒有」，所以工具從不代為產生語義欄位，
+也不從 Story 散文推論。它是 Reference Tooling 慣例，不是 Protocol 產物；不交給 ForgePilot 的批次不需要它。
+
+- 存在時納入批次來源與指紋（§4），在 Review Projection 中與該 Story 一起以原文呈現，受 Definition Confirmation 約束。
+- `praxisbound review readiness-digests <manifest>`：只改寫既有 Sidecar 的 `story_md_digest` 與 `acceptance_md_digest`
+  為 `sha256:` 加當前原始位元組的小寫 hex，再以 2 空白縮排、結尾一個換行、保留各物件原有鍵順序的格式寫回；撰寫者原本的排版可能因此改變，內容不變。
+  不建立 Sidecar、不碰其他欄位。它修改定義來源，所以與任何來源修改一樣需要 Execution Authorization，並應在 `confirm` 前執行；
+  執行後指紋改變，既有確認依 §8 不再適用。outcome：`success`，或 `failure`（Sidecar 不合 schema，`REVIEW_READINESS_INVALID`，不寫任何檔案）。
+- 預檢（§9）對存在的 Sidecar 檢查，全部為 BLOCKED：
+
+| 檢查 | issue code |
+| --- | --- |
+| 大小與 schema 合法；`story_ref` 等於該 Story 目錄路徑 | `REVIEW_READINESS_INVALID`（超限為 `REVIEW_INPUT_TOO_LARGE`） |
+| 兩個 digest 等於當前 `story.md`、`acceptance.md` 原始位元組 | `REVIEW_READINESS_STALE` |
+| `criteria[].id` 與 acceptance.md 的 AC ID 集合完全相同 | `REVIEW_READINESS_CRITERIA_MISMATCH` |
+| `owner` 為 `runner_worker`、`canonical_verification` 或 `integration_final` 的 AC，`operations` 都在 Story `## Authority` 標為 `yes` 的項目內；`runner_worker` 只可有 `plan`、`modify` | `REVIEW_READINESS_OPERATION_UNGRANTED` |
+| `prerequisite_story_ref`、`prerequisite_output` 所屬 Story 位於該 Story 在 manifest 依賴中的遞移閉包；`follow_up_story_ref` 在批次內；`outputs[].id` 在批次內不重複 | `REVIEW_READINESS_REFERENCE_UNKNOWN` |
+
+  `owner` 為 `human`、`external` 的 AC，`operations` 描述的是人或外部方的工作，不與 Story Authority 比對。
+  這些檢查只驗證宣告與 Story、批次一致，不證明宣告正確；ForgePilot 仍依自己的規則再檢查一次。
+
+## 22. 外部整合觀察與 `review observe`（修訂，R-008）
+
+Schema：[`schemas/forgepilot-observation.schema.json`](schemas/forgepilot-observation.schema.json)（`schemaVersion` `2.0.0`；`1.0.0` 紀錄不再被採計，依 §2 為 `REVIEW_RECORD_INVALID`）。
+範例：[`examples/records/forgepilot.json`](examples/records/forgepilot.json)。
+
+`praxisbound review observe <manifest> <observation.json>`：Agent 把一段交接（§11）的觀察交給工具驗證，通過才寫入
+`records/forgepilot-<fp12>-<n>.json`（`<fp12>` 取自紀錄的 `fingerprint`）。它不呼叫 ForgePilot，也不判斷 ForgePilot 的現況。
+
+拒絕（`failure`、`REVIEW_OBSERVATION_INVALID`，不寫檔）的條件：
+
+- 不合 schema、超過 §13 上限（`REVIEW_INPUT_TOO_LARGE`），或 `batchId` 不等於 manifest。
+- `goalPlan` 指向的檔案不在 `specs/batches/<BATCH-ID>/goal-plan/` 下、不存在，或 sha256 不符；`goalId` 不等於該 manifest 的 `plan.id`。
+- 步驟順序違反 §11：`run` 之前沒有 exit 0 的 `run-dry-run`；`run-dry-run` 或 `run` 與 `goal-create`、`work-add` 出現在同一份紀錄；
+  非最後一步的 exit 不是 0；exit 0 的 `work-add` 缺 `workItemId` 或 `created`。
+- `stoppedBecause` 與最後一步不一致：`awaiting-authorization` 的最後一步須為 exit 0 的 `execution-plan`；
+  `goal-completed`／`run-needs-human`／`run-limit-reached`／`run-interrupted`／`run-failed` 的最後一步須為 `run`，且 exit 依 §11 對照表；
+  `step-failed` 的最後一步 exit 須非 0；`authorization-missing` 須沒有任何步驟。
+
+紀錄是當次觀察的歷史 Evidence：工具只驗證它內部一致，不驗證 ForgePilot 真的這樣輸出過；現況一律以 ForgePilot 為準。
+
 ## 與 AC 的對照
 
 | AC | 本文件位置 |
@@ -639,6 +746,6 @@ Revision Response。整區是歷史 Evidence（ADR-014）：不是人類核准�
 | R-001/AC-001 | §1、§6～§11、ADR-014 Decision |
 | R-001/AC-002 | §2（產物與權威）、§4（版本比對）、§9 與 §12（錯誤類型與退出結果）；不存在 current 狀態見 §2 |
 | R-001/AC-003 | §4 缺失來源、§12 `index`／`render` 規則 |
-| R-001/AC-004 | §6 匯入與取代、§8 適用判定、§9 預檢、§10 授權、§11 停止條件 |
+| R-001/AC-004 | §6 匯入與取代、§8 適用判定、§9 預檢、§10 Goal Plan、§11 授權與停止條件、§22 觀察 |
 | R-001/AC-005 | §14 |
 | R-001/AC-006 | §17；人類審閱為本 PR 的審閱 |

@@ -1,0 +1,144 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:praxisbound:batch-review:readiness-sidecar:1",
+  "title": "PraxisBound Readiness Sidecar v1",
+  "description": "Authored per-Story declaration at <story>/readiness.json. Field names and values follow what ForgePilot 32b7a68 internal/readiness/readiness.go reads; an empty array declares 'none'.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "story_ref",
+    "story_md_digest",
+    "acceptance_md_digest",
+    "criteria",
+    "inputs",
+    "outputs",
+    "decision_follow_ups"
+  ],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "story_ref": { "$ref": "#/$defs/storyRef" },
+    "story_md_digest": { "$ref": "#/$defs/prefixedSha256" },
+    "acceptance_md_digest": { "$ref": "#/$defs/prefixedSha256" },
+    "criteria": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 1000,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "operations", "owner", "future_identities"],
+        "properties": {
+          "id": { "type": "string", "pattern": "^AC-[0-9]{3,}$" },
+          "operations": {
+            "type": "array",
+            "maxItems": 8,
+            "uniqueItems": true,
+            "items": {
+              "enum": ["plan", "modify", "add_dependency", "migration", "commit", "push", "deploy", "publish"]
+            }
+          },
+          "owner": {
+            "enum": ["runner_worker", "canonical_verification", "integration_final", "human", "external"]
+          },
+          "future_identities": {
+            "type": "array",
+            "maxItems": 100,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["kind", "availability"],
+              "properties": {
+                "kind": { "enum": ["commit", "publication", "release"] },
+                "availability": {
+                  "enum": ["preexisting", "produced_by_current_work_item", "prerequisite", "external"]
+                },
+                "prerequisite_story_ref": { "$ref": "#/$defs/storyRef" }
+              },
+              "if": { "properties": { "availability": { "const": "prerequisite" } } },
+              "then": { "required": ["prerequisite_story_ref"] },
+              "else": { "not": { "required": ["prerequisite_story_ref"] } }
+            }
+          }
+        }
+      }
+    },
+    "inputs": {
+      "type": "array",
+      "maxItems": 1000,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "source"],
+        "properties": {
+          "id": { "$ref": "#/$defs/declarationId" },
+          "source": {
+            "type": "object",
+            "additionalProperties": false,
+            "minProperties": 1,
+            "maxProperties": 1,
+            "properties": {
+              "preexisting_artifact": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["path"],
+                "properties": { "path": { "$ref": "#/$defs/storyRef" } }
+              },
+              "prerequisite_output": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["output_id"],
+                "properties": { "output_id": { "$ref": "#/$defs/declarationId" } }
+              },
+              "external_preexisting": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["identity"],
+                "properties": { "identity": { "$ref": "#/$defs/declarationId" } }
+              }
+            }
+          }
+        }
+      }
+    },
+    "outputs": {
+      "type": "array",
+      "maxItems": 1000,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id"],
+        "properties": { "id": { "$ref": "#/$defs/declarationId" } }
+      }
+    },
+    "decision_follow_ups": {
+      "type": "array",
+      "maxItems": 1000,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["gate_id", "choice", "follow_up_story_ref"],
+        "properties": {
+          "gate_id": { "$ref": "#/$defs/declarationId" },
+          "choice": { "$ref": "#/$defs/declarationId" },
+          "follow_up_story_ref": { "$ref": "#/$defs/storyRef" }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "prefixedSha256": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "storyRef": {
+      "$ref": "urn:praxisbound:batch-review:defs:1#/$defs/repoPath"
+    },
+    "declarationId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256,
+      "pattern": "^\\S(?:.*\\S)?$"
+    }
+  }
+}

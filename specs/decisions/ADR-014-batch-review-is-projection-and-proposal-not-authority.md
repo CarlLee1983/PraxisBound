@@ -3,6 +3,7 @@
 * Status: accepted
 * Date: 2026-09-17
 * Accepted: 2026-09-17
+* Amended by: ADR-016 (proposed) — the Execution Packet, text-line parsing, and stop-without-resume handoff are replaced by Goal Plan artifacts and idempotent `--external-ref` resumption; the authority boundaries are unchanged
 
 ## Context
 

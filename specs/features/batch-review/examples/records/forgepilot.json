@@ -1,26 +1,34 @@
 {
-  "schemaVersion": "1.0.0",
+  "schemaVersion": "2.0.0",
   "batchId": "BR-001-checkout-refunds",
   "fingerprint": "8e2b7d4c1a09f36e5d2c8b7a6f4e3d2c1b0a9f8e7d6c5b4a3928170f6e5d4c3b",
-  "packet": {
-    "path": "specs/batches/BR-001-checkout-refunds/records/packet-8e2b7d4c1a09-1.json",
+  "goalPlan": {
+    "path": "specs/batches/BR-001-checkout-refunds/goal-plan/BR-001-checkout-refunds-8e2b7d4c1a09/manifest.json",
     "sha256": "a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f90"
   },
-  "forgepilotVersion": "f2ec4b51e217c60c149797d8e3999b9f685c9eaa",
-  "observedAt": "2026-09-17T10:05:00Z",
+  "goalId": "BR-001-checkout-refunds-8e2b7d4c1a09",
+  "forgepilotVersion": "32b7a68ebf96d74b55acec8f1cd9408f2ba70dab",
+  "observedAt": "2026-09-23T10:05:00Z",
   "steps": [
+    {
+      "command": "preflight",
+      "exit": 0,
+      "stdout": "{\"schemaVersion\":\"1.0.0\",\"status\":\"pass\",\"outcome\":\"REVIEW_READY\"}",
+      "stderr": ""
+    },
     {
       "command": "goal-create",
       "exit": 0,
-      "stdout": "Goal BR-001-checkout-refunds-8e2b7d4c1a09 created",
+      "stdout": "{\"format_version\":\"forgepilot.cli/v1\"}",
       "stderr": ""
     },
     {
       "command": "work-add",
       "story": "RF-001",
       "workItemId": "WI-001",
+      "created": true,
       "exit": 0,
-      "stdout": "WI-001 READY\nStory: specs/stories/RF-001-refund-request",
+      "stdout": "{\"format_version\":\"forgepilot.cli/v1\",\"created\":true}",
       "stderr": ""
     },
     {
