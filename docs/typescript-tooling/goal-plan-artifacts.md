@@ -71,12 +71,18 @@ A **Goal Plan Manifest** is a JSON object with:
 integer. `storyRef` and every path in a source binding are repository-relative
 paths: no leading `/`, no drive letter, no `..` or empty segment, no `//`, no
 backslash, and no control, format, or bidirectional-override character.
-`nodes` and each node's `dependsOn` are sorted by UTF-8 byte order; an
-out-of-order array, a wrong `readinessContract.path` (it must equal
-`<storyRef>/readiness.json`), or an unknown field is `malformed-artifact`.
-Duplicate node references, dangling `dependsOn` references, self-dependency,
-a dependency cycle, and a Declaration whose identity or node topology does
-not match its Manifest are `invalid-topology`.
+A Manifest's `nodes` and each node's `dependsOn`, and its `reviewedSources`,
+are sorted and unique, compared by UTF-8 byte order (not UTF-16 code-unit
+order, which can disagree with UTF-8 order for characters outside the Basic
+Multilingual Plane); an out-of-order or duplicate array, a wrong
+`readinessContract.path` (it must equal `<storyRef>/readiness.json`), or an
+unknown field is `malformed-artifact`. A Declaration's `dependsOn` has no
+sort requirement — only uniqueness and a valid node reference — matching
+both the schema and ForgePilot's own `parseGoalPlanDeclaration`; only a
+Manifest enforces sort order (Story TST-029 review HIGH-2). Duplicate node
+references, dangling `dependsOn` references, self-dependency, a dependency
+cycle, and a Declaration whose identity or node topology does not match its
+Manifest are `invalid-topology`.
 
 Validating a Manifest with caller-supplied source facts checks three digest
 bindings against the exact raw bytes supplied: the referenced Declaration
@@ -147,10 +153,19 @@ validatePlanCoverageReview(
 Exporters receive raw source bytes as `{ path, bytes }` entries (or, for the
 Manifest, per-node `{ path, bytes }` readiness bytes and a `{ path, bytes }`
 Declaration binding); each SHA-256 digest is computed by the exporter itself.
+`exportPlanCoverageReview`'s `sources` is required, not optional: exporting a
+Coverage Review always verifies the referenced Manifest's full digest binding
+first, exactly as `validatePlanCoverageReview` does, so the export and
+validate paths report the same category (`digest-mismatch` preserved, every
+other Manifest failure wrapped as `approval-binding-mismatch` with
+`causeCategory`) for an invalid Manifest (Story TST-029 review LOW-8/LOW-9).
 Export serializes with two-space indentation, a single trailing newline, no
 escaping of non-ASCII, and object keys in the schema's `required` order, so
-the same input always yields the same bytes; nodes and `dependsOn` are sorted
-before serialization.
+the same input always yields the same bytes; a Manifest's nodes, `dependsOn`,
+and `reviewedSources` are sorted before serialization (a Declaration's own
+`dependsOn` is likewise sorted on export for a deterministic canonical form,
+even though validating an externally supplied Declaration does not require
+that order).
 
 Validators decode JSON only to inspect its declared shape. They hash the
 exact bytes supplied at the public call boundary. Each call first takes one
@@ -178,9 +193,17 @@ that map to them, are:
 | `approval-binding-mismatch`  | A Coverage Review's `manifestSha256`, `reviewedSources`, or `coverageIndex` does not equal the referenced Manifest's own fields.             |
 
 Failures never contain a partial `declaration`, `manifest`, or `review`
-success value. Diagnostics may name the declared path and expected/observed
-digest; they never echo artifact content, a reviewer name, or an absolute
-path.
+success value. Diagnostics may name a fixed field path and, for a digest
+mismatch, the expected and observed hex digests, but never echo attacker-
+controlled text: an unknown field name, a duplicated JSON object key, a
+reviewer name, a source-fact path (including an absolute one supplied at the
+validator's boundary, before it is checked against the repository-path
+pattern), or a hostile `schemaVersion` value all name only their location, not
+their content; `observed` for an invalid `schemaVersion` is a fixed type
+description (`"string"`, `"number"`, `"missing"`, …), never the value itself.
+A referenced Declaration's or Manifest's own failure is never spliced into
+the containing Manifest's or Review's message; only its `category` is
+reused, and its original category is preserved in `causeCategory`.
 
 ## Canonical fixtures
 

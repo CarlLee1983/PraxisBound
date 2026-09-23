@@ -1,0 +1,9 @@
+PASS valid/goal-plan-manifest.json -> ok=true category=undefined
+PASS valid/plan-coverage-review.json -> ok=true category=undefined
+PASS invalid/cycle-goal-plan-manifest.json -> ok=false category=invalid-topology
+PASS invalid/dangling-dependency-goal-plan-manifest.json -> ok=false category=invalid-topology
+PASS invalid/manifest-digest-mismatch-plan-coverage-review.json -> ok=false category=approval-binding-mismatch
+PASS invalid/readiness-digest-mismatch-goal-plan-manifest.json -> ok=false category=digest-mismatch
+PASS invalid/source-digest-mismatch-goal-plan-manifest.json -> ok=false category=digest-mismatch
+all ForgePilot fixture checks passed
+exit=0

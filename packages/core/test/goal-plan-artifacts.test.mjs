@@ -361,25 +361,162 @@ test("AC-004: an over-bound artifact is rejected whole as malformed-artifact, ne
   assert.equal(tooManyResult.category, "malformed-artifact");
 });
 
-test("AC-005: hostile Manifest paths (traversal, absolute) are rejected as malformed-artifact", () => {
-  const manifestShape = {
+function baseManifestShape() {
+  return {
     schemaVersion: "1.0.0",
     plan: { id: "test-plan", revision: 1 },
     declaration: { path: "specs/plans/test-plan.json", sha256: "0".repeat(64) },
     nodes: [
       {
         nodeRef: "node-a",
-        storyRef: "../outside",
+        storyRef: "specs/stories/EX-001-first",
         readinessContract: {
-          path: "../outside/readiness.json",
+          path: "specs/stories/EX-001-first/readiness.json",
           sha256: "0".repeat(64),
         },
         dependsOn: [],
       },
     ],
-    reviewedSources: [{ path: "/etc/passwd", sha256: "1".repeat(64) }],
+    reviewedSources: [
+      { path: "specs/decisions/ADR-001-example.md", sha256: "1".repeat(64) },
+    ],
     coverageIndex: { batchId: "BR-001-fixture", fingerprint: "0".repeat(64) },
   };
+}
+
+test("Security Fixture Matrix: Manifest nodes[0].storyRef of ../outside is rejected in isolation", () => {
+  const manifestShape = baseManifestShape();
+  manifestShape.nodes[0].storyRef = "../outside";
+  manifestShape.nodes[0].readinessContract.path = "../outside/readiness.json";
+  const result = validateGoalPlanManifest(
+    encoder.encode(JSON.stringify(manifestShape)),
+    new Map(),
+  );
+  assert.equal(result.ok, false);
+  assert.equal(result.category, "malformed-artifact");
+});
+
+test("Security Fixture Matrix: Manifest reviewedSources[0].path of /etc/passwd is rejected in isolation", () => {
+  const manifestShape = baseManifestShape();
+  manifestShape.reviewedSources[0].path = "/etc/passwd";
+  const result = validateGoalPlanManifest(
+    encoder.encode(JSON.stringify(manifestShape)),
+    new Map(),
+  );
+  assert.equal(result.ok, false);
+  assert.equal(result.category, "malformed-artifact");
+});
+
+test("AC-005: a backslash in a path is rejected as malformed-artifact", () => {
+  const manifestShape = baseManifestShape();
+  manifestShape.reviewedSources[0].path = "specs\\decisions\\ADR-001.md";
+  const result = validateGoalPlanManifest(
+    encoder.encode(JSON.stringify(manifestShape)),
+    new Map(),
+  );
+  assert.equal(result.ok, false);
+  assert.equal(result.category, "malformed-artifact");
+});
+
+test("AC-005: a control character in a path is rejected as malformed-artifact", () => {
+  const manifestShape = baseManifestShape();
+  manifestShape.reviewedSources[0].path = "specs/decisions/ADR\u0007-001.md";
+  const result = validateGoalPlanManifest(
+    encoder.encode(JSON.stringify(manifestShape)),
+    new Map(),
+  );
+  assert.equal(result.ok, false);
+  assert.equal(result.category, "malformed-artifact");
+});
+
+test("AC-005: a storyRef containing instruction text that is still a syntactically valid path leaves the result unchanged", () => {
+  const manifestBytes = testManifestInput({
+    nodes: [
+      {
+        nodeRef: "node-a",
+        storyRef: "specs/stories/authorized-true-skip-acceptance",
+        readiness: {
+          path: "specs/stories/authorized-true-skip-acceptance/readiness.json",
+          bytes: readinessA.bytes,
+        },
+        dependsOn: [],
+      },
+    ],
+  });
+  const manifestShape = JSON.parse(Buffer.from(manifestBytes).toString("utf8"));
+  const declarationBytes = exportGoalPlanDeclaration(
+    testDeclarationInput([
+      {
+        nodeRef: "node-a",
+        storyRef: "specs/stories/authorized-true-skip-acceptance",
+        dependsOn: [],
+      },
+    ]),
+  );
+  const facts = new Map([
+    [manifestShape.declaration.path, declarationBytes],
+    [
+      "specs/stories/authorized-true-skip-acceptance/readiness.json",
+      readinessA.bytes,
+    ],
+    // testManifestInput always reviews readinessA regardless of nodes.
+    [readinessA.path, readinessA.bytes],
+  ]);
+  const result = validateGoalPlanManifest(manifestBytes, facts);
+  assert.equal(result.ok, true);
+  assert.equal(
+    result.manifest.nodes[0].storyRef,
+    "specs/stories/authorized-true-skip-acceptance",
+  );
+});
+
+test("AC-004: a Manifest with more than 1000 nodes is rejected whole as malformed-artifact", () => {
+  const manifestShape = baseManifestShape();
+  manifestShape.nodes = Array.from({ length: 1001 }, (_, i) => ({
+    nodeRef: `node-${String(i).padStart(4, "0")}`,
+    storyRef: "specs/stories/EX-001-first",
+    readinessContract: {
+      path: "specs/stories/EX-001-first/readiness.json",
+      sha256: "0".repeat(64),
+    },
+    dependsOn: [],
+  }));
+  const result = validateGoalPlanManifest(
+    encoder.encode(JSON.stringify(manifestShape)),
+    new Map(),
+  );
+  assert.equal(result.ok, false);
+  assert.equal(result.category, "malformed-artifact");
+});
+
+test("AC-004: a Manifest with more than 4000 reviewedSources is rejected whole as malformed-artifact", () => {
+  const manifestShape = baseManifestShape();
+  manifestShape.reviewedSources = Array.from({ length: 4001 }, (_, i) => ({
+    path: `specs/decisions/ADR-${String(i).padStart(5, "0")}-example.md`,
+    sha256: "1".repeat(64),
+  }));
+  const result = validateGoalPlanManifest(
+    encoder.encode(JSON.stringify(manifestShape)),
+    new Map(),
+  );
+  assert.equal(result.ok, false);
+  assert.equal(result.category, "malformed-artifact");
+});
+
+test("AC-004: a planId over 128 characters is rejected as malformed-artifact", () => {
+  const manifestShape = baseManifestShape();
+  manifestShape.plan = { id: "p".repeat(129), revision: 1 };
+  const result = validateGoalPlanManifest(
+    encoder.encode(JSON.stringify(manifestShape)),
+    new Map(),
+  );
+  assert.equal(result.ok, false);
+  assert.equal(result.category, "malformed-artifact");
+});
+
+test("AC-004: a repository path over 1024 characters is rejected as malformed-artifact", () => {
+  const manifestShape = baseManifestShape();
+  manifestShape.reviewedSources[0].path = `specs/${"a".repeat(1024)}.md`;
   const result = validateGoalPlanManifest(
     encoder.encode(JSON.stringify(manifestShape)),
     new Map(),
@@ -492,5 +629,326 @@ test("AC-005: unknown top-level fields are rejected on every artifact class", ()
         extra: true,
       }),
     () => true,
+  );
+});
+
+const HOSTILE_KEY = "\u001b[2J‮EVIL";
+
+test("HIGH-1: an unknown field name is never echoed in the message or path", () => {
+  const declarationBytes = encoder.encode(
+    JSON.stringify({
+      schemaVersion: "1.0.0",
+      plan: { id: "a", revision: 1 },
+      nodes: [{ nodeRef: "n", storyRef: "s", dependsOn: [] }],
+      [HOSTILE_KEY]: true,
+    }),
+  );
+  const result = validateGoalPlanDeclaration(declarationBytes);
+  assert.equal(result.ok, false);
+  assert.equal(result.category, "malformed-artifact");
+  assert.equal(result.message.includes(HOSTILE_KEY), false);
+  assert.equal((result.path ?? "").includes(HOSTILE_KEY), false);
+});
+
+test("HIGH-1: a duplicated JSON object key is never echoed in the message", () => {
+  const key = JSON.stringify(HOSTILE_KEY);
+  const duplicateKeyJson = `{"schemaVersion":"1.0.0","plan":{"id":"a","revision":1},"nodes":[],${key}:1,${key}:2}`;
+  const result = validateGoalPlanDeclaration(encoder.encode(duplicateKeyJson));
+  assert.equal(result.ok, false);
+  assert.equal(result.category, "malformed-artifact");
+  assert.match(result.message, /duplicated/);
+  assert.equal(result.message.includes(HOSTILE_KEY), false);
+});
+
+test("HIGH-1: a hostile schemaVersion value is never echoed, and observed is a fixed type description", () => {
+  const declarationBytes = encoder.encode(
+    JSON.stringify({
+      schemaVersion: HOSTILE_KEY,
+      plan: { id: "a", revision: 1 },
+      nodes: [{ nodeRef: "n", storyRef: "s", dependsOn: [] }],
+    }),
+  );
+  const result = validateGoalPlanDeclaration(declarationBytes);
+  assert.equal(result.ok, false);
+  assert.equal(result.category, "unsupported-schema");
+  assert.equal(result.message.includes(HOSTILE_KEY), false);
+  assert.equal(result.observed, "string");
+  assert.notEqual(result.observed, HOSTILE_KEY);
+});
+
+test("HIGH-1: nested Declaration/Manifest failures are not spliced into the Manifest message", () => {
+  const manifestShape = baseManifestShape();
+  manifestShape.declaration.sha256 = "0".repeat(64);
+  const declarationBytes = encoder.encode(
+    JSON.stringify({
+      schemaVersion: HOSTILE_KEY,
+      plan: { id: "a", revision: 1 },
+      nodes: [],
+    }),
+  );
+  const facts = new Map([
+    [manifestShape.declaration.path, declarationBytes],
+    [
+      "specs/stories/EX-001-first/readiness.json",
+      encoder.encode("placeholder"),
+    ],
+    ["specs/decisions/ADR-001-example.md", encoder.encode("placeholder")],
+  ]);
+  manifestShape.declaration.sha256 = sha256(declarationBytes);
+  manifestShape.nodes[0].readinessContract.sha256 = sha256(
+    encoder.encode("placeholder"),
+  );
+  manifestShape.reviewedSources[0].sha256 = sha256(
+    encoder.encode("placeholder"),
+  );
+  const result = validateGoalPlanManifest(
+    encoder.encode(JSON.stringify(manifestShape)),
+    facts,
+  );
+  assert.equal(result.ok, false);
+  assert.equal(result.category, "unsupported-schema");
+  assert.equal(result.message.includes(HOSTILE_KEY), false);
+});
+
+test("LOW-10: an unbound source fact path (including an absolute path) is never echoed in the message", () => {
+  const manifestBytes = testManifestInput();
+  const hostilePath = "/etc/passwd";
+  const facts = new Map([[hostilePath, "not bytes"]]);
+  const result = validateGoalPlanManifest(manifestBytes, facts);
+  assert.equal(result.ok, false);
+  assert.equal(result.category, "malformed-artifact");
+  assert.equal(result.message.includes(hostilePath), false);
+});
+
+test("HIGH-2: a Declaration's dependsOn is not required to be sorted, only unique and valid", () => {
+  const declarationBytes = encoder.encode(
+    JSON.stringify({
+      schemaVersion: "1.0.0",
+      plan: { id: "a", revision: 1 },
+      nodes: [
+        { nodeRef: "node-a", storyRef: "s/a", dependsOn: [] },
+        { nodeRef: "node-b", storyRef: "s/b", dependsOn: [] },
+        {
+          nodeRef: "node-c",
+          storyRef: "s/c",
+          dependsOn: ["node-b", "node-a"],
+        },
+      ],
+    }),
+  );
+  const result = validateGoalPlanDeclaration(declarationBytes);
+  assert.equal(result.ok, true);
+  assert.deepEqual(result.declaration.nodes[2].dependsOn, ["node-b", "node-a"]);
+});
+
+test("HIGH-2: a Manifest's dependsOn is still required to be sorted", () => {
+  const manifestShape = baseManifestShape();
+  manifestShape.nodes = [
+    {
+      nodeRef: "node-a",
+      storyRef: "specs/stories/EX-001-first",
+      readinessContract: {
+        path: "specs/stories/EX-001-first/readiness.json",
+        sha256: "0".repeat(64),
+      },
+      dependsOn: [],
+    },
+    {
+      nodeRef: "node-b",
+      storyRef: "specs/stories/EX-001-first",
+      readinessContract: {
+        path: "specs/stories/EX-001-first/readiness.json",
+        sha256: "0".repeat(64),
+      },
+      dependsOn: [],
+    },
+    {
+      nodeRef: "node-c",
+      storyRef: "specs/stories/EX-001-first",
+      readinessContract: {
+        path: "specs/stories/EX-001-first/readiness.json",
+        sha256: "0".repeat(64),
+      },
+      dependsOn: ["node-b", "node-a"],
+    },
+  ];
+  const result = validateGoalPlanManifest(
+    encoder.encode(JSON.stringify(manifestShape)),
+    new Map(),
+  );
+  assert.equal(result.ok, false);
+  assert.equal(result.category, "malformed-artifact");
+});
+
+test("MEDIUM-4: reviewedSources are sorted and compared by UTF-8 bytes, not UTF-16 code units", () => {
+  // "s/Ａ" (fullwidth A) sorts before "s/\u{1F600}" (grinning face) in
+  // UTF-8 byte order (0xEF < 0xF0 at the first differing byte), but after it
+  // under naive UTF-16 code-unit comparison (0xFF21 > the leading surrogate
+  // 0xD83D).
+  const fullwidthAPath = "s/Ａ";
+  const emojiPath = "s/\u{1F600}";
+  assert.ok(
+    fullwidthAPath < emojiPath === false,
+    "sanity: UTF-16 code-unit order places the emoji path first",
+  );
+
+  const manifestShape = baseManifestShape();
+  manifestShape.reviewedSources = [
+    { path: fullwidthAPath, sha256: sha256(encoder.encode("a")) },
+    { path: emojiPath, sha256: sha256(encoder.encode("b")) },
+  ];
+  const facts = new Map([
+    [fullwidthAPath, encoder.encode("a")],
+    [emojiPath, encoder.encode("b")],
+    ["specs/stories/EX-001-first/readiness.json", encoder.encode("readiness")],
+    [manifestShape.declaration.path, encoder.encode("declaration")],
+  ]);
+  manifestShape.nodes[0].readinessContract.sha256 = sha256(
+    encoder.encode("readiness"),
+  );
+
+  const result = validateGoalPlanManifest(
+    encoder.encode(JSON.stringify(manifestShape)),
+    facts,
+  );
+  // The Manifest's own declaration binding fails independently (a
+  // placeholder digest), but that failure must not be "must be sorted" —
+  // proving the UTF-8-order check accepts this correctly-ordered pair.
+  assert.notEqual(result.category, "invalid-topology");
+  if (result.ok === false) {
+    assert.notEqual(
+      result.message,
+      "reviewedSources must be sorted by UTF-8 path bytes",
+    );
+  }
+});
+
+test("MEDIUM-4: exported reviewedSources are sorted by UTF-8 bytes, not UTF-16 code units", () => {
+  const fullwidthA = { path: "s/Ａ", bytes: encoder.encode("a") };
+  const emoji = { path: "s/\u{1F600}", bytes: encoder.encode("b") };
+  const manifestBytes = testManifestInput({
+    nodes: [
+      {
+        nodeRef: "node-a",
+        storyRef: "specs/stories/EX-001-first",
+        readiness: readinessA,
+        dependsOn: [],
+      },
+    ],
+  });
+  const declarationBytes = exportGoalPlanDeclaration(
+    testDeclarationInput([
+      {
+        nodeRef: "node-a",
+        storyRef: "specs/stories/EX-001-first",
+        dependsOn: [],
+      },
+    ]),
+  );
+  const exported = exportGoalPlanManifest({
+    planId: "test-plan",
+    revision: 1,
+    declaration: {
+      path: "specs/plans/test-plan.json",
+      bytes: declarationBytes,
+    },
+    nodes: [
+      {
+        nodeRef: "node-a",
+        storyRef: "specs/stories/EX-001-first",
+        readiness: readinessA,
+        dependsOn: [],
+      },
+    ],
+    reviewedSources: [emoji, fullwidthA],
+    coverageIndex,
+  });
+  const shape = JSON.parse(Buffer.from(exported).toString("utf8"));
+  assert.deepEqual(
+    shape.reviewedSources.map((source) => source.path),
+    [fullwidthA.path, emoji.path],
+    "the fullwidth-A path sorts before the emoji path in UTF-8 byte order",
+  );
+  void manifestBytes;
+});
+
+test("LOW-8: exportPlanCoverageReview requires sources", () => {
+  const manifestBytes = testManifestInput();
+  assert.throws(
+    () =>
+      exportPlanCoverageReview({
+        manifestBytes,
+        reviewId: "00000000-0000-4000-8000-000000000004",
+        conclusion: "approved",
+        reviewer: { name: "Test Reviewer", assurance: "self-asserted" },
+        reviewedAt: "2026-01-02T03:04:05.000Z",
+      }),
+    (error) => error.category === "malformed-artifact",
+  );
+});
+
+test("LOW-9: export and validate report the same category and causeCategory for an invalid referenced Manifest", () => {
+  const manifestShape = baseManifestShape();
+  manifestShape.nodes = [
+    {
+      nodeRef: "node-a",
+      storyRef: "specs/stories/EX-001-first",
+      readinessContract: {
+        path: "specs/stories/EX-001-first/readiness.json",
+        sha256: "0".repeat(64),
+      },
+      dependsOn: ["node-b"],
+    },
+    {
+      nodeRef: "node-b",
+      storyRef: "specs/stories/EX-001-first",
+      readinessContract: {
+        path: "specs/stories/EX-001-first/readiness.json",
+        sha256: "0".repeat(64),
+      },
+      dependsOn: ["node-a"],
+    },
+  ];
+  const invalidManifestBytes = encoder.encode(JSON.stringify(manifestShape));
+  const manifestValidation = validateGoalPlanManifest(
+    invalidManifestBytes,
+    new Map(),
+  );
+  assert.equal(manifestValidation.ok, false);
+  assert.equal(manifestValidation.category, "invalid-topology");
+
+  const reviewValidation = validatePlanCoverageReview(
+    encoder.encode(
+      JSON.stringify({
+        schemaVersion: "1.0.0",
+        reviewId: "00000000-0000-4000-8000-000000000005",
+        manifestSha256: sha256(invalidManifestBytes),
+        reviewedSources: [],
+        coverageIndex: manifestShape.coverageIndex,
+        conclusion: "approved",
+        reviewer: { name: "Test Reviewer", assurance: "self-asserted" },
+        reviewedAt: "2026-01-02T03:04:05.000Z",
+      }),
+    ),
+    invalidManifestBytes,
+    new Map(),
+  );
+  assert.equal(reviewValidation.ok, false);
+  assert.equal(reviewValidation.category, "approval-binding-mismatch");
+  assert.equal(reviewValidation.causeCategory, "invalid-topology");
+
+  assert.throws(
+    () =>
+      exportPlanCoverageReview({
+        manifestBytes: invalidManifestBytes,
+        reviewId: "00000000-0000-4000-8000-000000000006",
+        conclusion: "approved",
+        reviewer: { name: "Test Reviewer", assurance: "self-asserted" },
+        reviewedAt: "2026-01-02T03:04:05.000Z",
+        sources: new Map(),
+      }),
+    (error) =>
+      error.category === "approval-binding-mismatch" &&
+      error.causeCategory === "invalid-topology",
   );
 });

@@ -1,0 +1,5 @@
+$ git init -q
+$ git add -A
+$ git -c user.email=test@example.com -c user.name=Test commit -q -m "fixture repo"
+$ git log --oneline -1
+b4c5ae6 fixture repo

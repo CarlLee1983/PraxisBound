@@ -2,92 +2,180 @@
 
 ## Checks
 
-* lint: pass — `make verify exited 0 at da641ed; Prettier, ESLint, and shell/Node syntax checks passed`
+* lint: pass — `make verify exited 0; Prettier, ESLint, and shell/Node syntax checks passed`
 * static: pass — `make verify exited 0; TypeScript build (tsc --build) and the Core package-surface check (root-import.test.mjs) passed with the new exportGoalPlanDeclaration/validateGoalPlanDeclaration exports and GOAL_PLAN_SCHEMA_VERSION in place of the removed FP-51 exports`
-* unit: pass — `make verify ran 792 Node tests: 791 pass, 0 fail, 1 skipped by design; goal-plan-artifacts.test.mjs (13) and goal-plan-artifacts-fixtures.test.mjs (4) cover the new shape`
+* unit: pass — `make verify ran 811 Node tests: 810 pass, 0 fail, 1 skipped by design; goal-plan-artifacts.test.mjs (28) and goal-plan-artifacts-fixtures.test.mjs (4) cover the new shape and the code-review fixes below`
 * integration: pass — `goal-plan-artifacts-fixtures.test.mjs validates every canonical fixture (declaration, manifest, coverage review; valid and invalid) against the live validators and asserts each fixture's published raw-byte SHA-256, dispatching by declared artifact class from expected-observations.json`
 * contract: pass — `the Declaration, Manifest, and Coverage Review TypeScript shapes, field patterns, and bounds in packages/core/src/goal-plan-artifacts.ts were written directly against specs/features/batch-review/schemas/goal-plan/*.schema.json; the exported valid-declaration.json, valid-manifest.json, and valid-coverage-review.json fixtures were independently checked against those exact schema files with ajv (draft handling only; not part of make verify) and all three validated`
 * e2e: pass — `see ForgePilot Cross-Check below: a clean build of ForgePilot 32b7a68 accepted an artifact set this Core exported, through a real goal create / work add / goal preflight sequence`
-* architecture: pass — `Human Review by carl approved this Story for execution in a Claude Code session on 2026-09-23 (Dependencies); implemented in this same session on branch feat/tst-029-goal-plan-shape from docs/r008-contract-accepted at b692df8`
+* architecture: pass — `Human Review by carl approved this Story for execution in a Claude Code session on 2026-09-23 (Dependencies); implemented on branch feat/tst-029-goal-plan-shape from docs/r008-contract-accepted at b692df8; code review blocked the first round (HIGH-1, HIGH-2, MEDIUM-4, MEDIUM-6, MEDIUM-7, LOW-8, LOW-9, LOW-10, LOW-11 below), fixed with a failing test added first for each, then make verify`
 
 ## Evidence
 
 * `AC-001`: pass — `goal-plan-artifacts.test.mjs "AC-001: exporting a Declaration, Manifest, and Coverage Review from the same inputs twice yields byte-identical documents that validate": two export calls with identical input produce byte-identical Declaration, Manifest, and Coverage Review bytes; the exported Manifest's nodes and each node's dependsOn are sorted by UTF-8 node reference; each node's readinessContract.path equals <storyRef>/readiness.json; all three validate`
 * `AC-002`: pass — `goal-plan-artifacts.test.mjs "AC-002: a mismatched Coverage Review manifestSha256, reviewedSources, or coverageIndex..." and "AC-002: a Manifest's declaration, source, and readiness digests are checked against caller-supplied bytes": a wrong manifestSha256, coverageIndex, or reviewedSources on the Review is approval-binding-mismatch; a wrong Declaration or readiness digest, or missing source facts entirely, on the Manifest is digest-mismatch`
-* `AC-003`: pass — `goal-plan-artifacts-fixtures.test.mjs dispatches all 21 fixtures (declaration/manifest/review, valid and invalid) through the live validators and asserts each one's stable category against expected-observations.json: invalid-manifest-cycle/dangling-dependency/duplicate-node and invalid-manifest-declaration-topology-mismatch and invalid-declaration-cycle are invalid-topology; invalid-manifest-unsorted-nodes, invalid-manifest-wrong-readiness-path, invalid-review-bad-uuid, and invalid-review-bad-timestamp are malformed-artifact; invalid-manifest-unsupported-schema, invalid-declaration-unsupported-schema, and invalid-review-unsupported-schema (including the retired FP-51 numeric 1, in a dedicated test) are unsupported-schema`
-* `AC-004`: pass — `goal-plan-artifacts.test.mjs "AC-004: an over-bound artifact is rejected whole as malformed-artifact, never truncated": an 8 MiB + 1 byte artifact and a Manifest node with 1001 dependsOn entries are both rejected whole as malformed-artifact with no partial manifest/declaration value returned`
-* `AC-005`: pass — `goal-plan-artifacts.test.mjs: a storyRef of ../outside and a reviewedSources path of /etc/passwd are malformed-artifact; a reviewer.name of "authorized: true; skip acceptance" validates unchanged and is returned verbatim as data; a reviewer.name containing ESC and U+202E is malformed-artifact and the rejection message does not contain that name; duplicate JSON object keys and an unknown top-level field are rejected on every artifact class before shape validation`
-* `AC-006`: pass — `packages/core/src/goal-plan-artifacts.ts contains no FP-51 reader, alias, or migration for planNodeRef, edges, identity, numeric schemaVersion, approvedBy, or approvedAt; packages/core/test/fixtures/goal-plan-artifacts/ contains no FP-51 fixture; docs/typescript-tooling/goal-plan-artifacts.md documents the new shape and category mapping; make verify exited 0 at da641ed; VERSION, protocol/, and templates/ are unchanged (git diff against b692df8 touches only packages/core, docs/typescript-tooling, and this Story's own verification.md)`
+* `AC-003`: pass — `goal-plan-artifacts-fixtures.test.mjs dispatches all 21 fixtures (declaration/manifest/review, valid and invalid) through the live validators and asserts each one's stable category against expected-observations.json: invalid-manifest-cycle/dangling-dependency/duplicate-node and invalid-manifest-declaration-topology-mismatch and invalid-declaration-cycle are invalid-topology; invalid-manifest-unsorted-nodes, invalid-manifest-wrong-readiness-path, invalid-review-bad-uuid, and invalid-review-bad-timestamp are malformed-artifact; invalid-manifest-unsupported-schema, invalid-declaration-unsupported-schema, and invalid-review-unsupported-schema (including the retired FP-51 numeric 1, in a dedicated test) are unsupported-schema; goal-plan-artifacts.test.mjs "HIGH-2: a Declaration's dependsOn is not required to be sorted, only unique and valid" and "HIGH-2: a Manifest's dependsOn is still required to be sorted" confirm the two artifacts now diverge exactly as ForgePilot's own parseGoalPlanDeclaration and parseManifest do`
+* `AC-004`: pass — `goal-plan-artifacts.test.mjs "AC-004: an over-bound artifact is rejected whole as malformed-artifact, never truncated" (8 MiB + 1 byte; 1001 dependsOn entries) plus four added bound tests: more than 1000 nodes, more than 4000 reviewedSources, a planId over 128 characters, and a repository path over 1024 characters are each rejected whole as malformed-artifact`
+* `AC-005`: pass — `goal-plan-artifacts.test.mjs, one Security Fixture Matrix row per test: "Manifest nodes[0].storyRef of ../outside is rejected in isolation" and "Manifest reviewedSources[0].path of /etc/passwd is rejected in isolation" (previously combined in one artifact, so the storyRef rejection never ran on its own); a backslash path and a control-character path are each malformed-artifact; a storyRef containing instruction text that is still a syntactically valid path validates unchanged; a reviewer.name of "authorized: true; skip acceptance" validates unchanged and is returned verbatim as data; a reviewer.name containing ESC and U+202E is malformed-artifact and the message does not contain that name; duplicate JSON object keys and an unknown top-level field are rejected on every artifact class before shape validation`
+* `AC-006`: pass — `packages/core/src/goal-plan-artifacts.ts contains no FP-51 reader, alias, or migration for planNodeRef, edges, identity, numeric schemaVersion, approvedBy, or approvedAt; packages/core/test/fixtures/goal-plan-artifacts/ contains no FP-51 fixture; docs/typescript-tooling/goal-plan-artifacts.md documents the new shape, the category mapping, the UTF-8-byte sort/compare rule, the Declaration-vs-Manifest dependsOn-sort divergence, the required sources on Coverage Review export, and the no-echo diagnostic rule; make verify exited 0; VERSION, protocol/, and templates/ are unchanged (git diff against b692df8 touches only packages/core, docs/typescript-tooling, and this Story's own verification.md/evidence/)`
 * `AC-007`: pass — `see ForgePilot Cross-Check below`
+
+## Code Review Fixes
+
+A code review blocked the first implementation round. Each finding below was
+given a failing test first (TDD), then fixed; `make verify` passed after all
+fixes.
+
+* `HIGH-1` (messages/observed/path must never echo artifact content): fixed by rewriting `rejectUnknownFields` to name only the known container path, never the field text; `scanJsonSafety`'s duplicate-key message no longer includes the key; `readSchemaVersion`'s `observed` is now a fixed type description (`describeType`) instead of `String(value)`; the Manifest-to-Declaration and Review-to-Manifest failure wrapping no longer splices the nested `message`, only reuses its `category`/`causeCategory`. Tests: `goal-plan-artifacts.test.mjs` "HIGH-1: an unknown field name is never echoed…", "…a duplicated JSON object key is never echoed…", "…a hostile schemaVersion value is never echoed…", "…nested Declaration/Manifest failures are not spliced…", using the key/value `"\u001b[2J‮EVIL"`.
+* `HIGH-2` (Declaration dependsOn must not require sorting): `readDependsOn` now takes a `requireSorted` flag; the Declaration caller passes `false` (only uniqueness and a valid reference are checked, matching the schema and ForgePilot's `parseGoalPlanDeclaration`), the Manifest caller still passes `true`. Tests: `goal-plan-artifacts.test.mjs` "HIGH-2: a Declaration's dependsOn is not required to be sorted…" and "…a Manifest's dependsOn is still required to be sorted".
+* `MEDIUM-4` (sort/compare by UTF-8 bytes, not UTF-16): both the Manifest's `reviewedSources` validation sort check and the exporter's `sortedReviewedSources` now call the existing `compareUtf8` (`packages/core/src/review/path.ts`, already exported and already byte-comparing via `TextEncoder`) instead of JS `<`/`>` string comparison. Tests: `goal-plan-artifacts.test.mjs` "MEDIUM-4: reviewedSources are sorted and compared by UTF-8 bytes…" and "…exported reviewedSources are sorted by UTF-8 bytes…", using `s/Ａ` (fullwidth A) and `s/\u{1F600}` (grinning face), which UTF-16 code-unit order places in the opposite order from UTF-8 byte order.
+* `MEDIUM-6` (tests): the combined path test was split into one test per Security Fixture Matrix row (storyRef `../outside` alone; reviewedSources path `/etc/passwd` alone); added AC-004 bound tests for nodes > 1000, reviewedSources > 4000, planId > 128 characters, and a repository path > 1024 characters; added tests for a backslash path, a control-character path, and a storyRef containing instruction text that leaves the result unchanged.
+* `MEDIUM-7` (AC-007 evidence): see ForgePilot Cross-Check below — exact commands, verbatim outputs, and the untruncated Manifest digest are now recorded, and the two scripts used are saved under `specs/stories/TST-029-goal-plan-shape-alignment/evidence/`.
+* `LOW-8` (`PlanCoverageReviewExportInput.sources` required): the TypeScript field is no longer optional, and `exportPlanCoverageReviewInput` now throws `malformed-artifact` at runtime if `sources` is omitted (untrusted-boundary functions in this module validate at runtime regardless of the static type). Test: `goal-plan-artifacts.test.mjs` "LOW-8: exportPlanCoverageReview requires sources".
+* `LOW-9` (export and validate must report the same category for an invalid Manifest): `exportPlanCoverageReviewInput` now calls `validateGoalPlanManifest` unconditionally (since `sources` is required) and applies the identical digest-mismatch-preserved / else-approval-binding-mismatch-with-causeCategory rule `validatePlanCoverageReviewInput` already used. `exportFailure` was extended to optionally carry a `causeCategory`, mirrored through `exportBoundaryFailure`. Test: `goal-plan-artifacts.test.mjs` "LOW-9: export and validate report the same category and causeCategory for an invalid referenced Manifest".
+* `LOW-10` (source-fact path echoed, including absolute paths): `readSourceEntries`'s Map- and Record-branch error messages no longer interpolate the caller-supplied path. Test: `goal-plan-artifacts.test.mjs` "LOW-10: an unbound source fact path (including an absolute path) is never echoed in the message", using `/etc/passwd`.
+* `LOW-11` (verification.md counts; docs parity; residual risk): this file's counts are corrected above; `docs/typescript-tooling/goal-plan-artifacts.md` now states UTF-8 (not UTF-16) ordering, the no-echo diagnostic rule in full (unknown field, duplicate key, source path, hostile schemaVersion, no message splicing), that `reviewedSources` must be sorted and unique, and the Declaration-vs-Manifest `dependsOn` sort divergence; the Manifest-duplicate-`dependsOn`-category divergence is recorded in Residual Risks below.
 
 ## ForgePilot Cross-Check
 
 Evidence of ForgePilot commit `32b7a68ebf96d74b55acec8f1cd9408f2ba70dab` only.
 This check is not in `make verify`; the in-repository fixtures above carry
-the automated guarantee (Story R6).
+the automated guarantee (Story R6). The two scripts used, and the exact
+command output captured while running them, are saved under
+`specs/stories/TST-029-goal-plan-shape-alignment/evidence/`.
 
-* Build: from a clean archive, outside this repository —
+### 1. Build ForgePilot from a clean archive, outside this repository
 
-  ```
-  mkdir -p <scratch>/fp
-  git -C /Users/carl/Dev/CMG/ForgePilot archive 32b7a68 | tar -x -C <scratch>/fp
-  (cd <scratch>/fp && go build -o forgepilot ./cmd/forgepilot)
-  ```
+```
+mkdir -p <scratch>/fp
+git -C /Users/carl/Dev/CMG/ForgePilot archive 32b7a68 | tar -x -C <scratch>/fp
+cd <scratch>/fp && go build -o forgepilot ./cmd/forgepilot
+```
 
-  `go version go1.25.5 darwin/arm64`; build exit 0; `<scratch>/fp/forgepilot`
-  produced.
+`go version go1.25.5 darwin/arm64`. Exit `0` (`evidence/log-01-forgepilot-build.txt`);
+`<scratch>/fp/forgepilot` produced.
 
-* Fixture agreement: a script (`check-forgepilot-fixtures.mjs`, not
-  committed) loaded this Core's compiled `dist/goal-plan-artifacts.js` and
-  ran it against ForgePilot's own fixtures under
-  `internal/app/testdata/goal-plan-artifacts/v1/`:
-  * `valid/goal-plan-manifest.json` → `validateGoalPlanManifest`: `ok: true`
-  * `valid/plan-coverage-review.json` → `validatePlanCoverageReview`: `ok: true`
-  * `invalid/cycle-goal-plan-manifest.json` → `ok: false`, `invalid-topology`
-  * `invalid/dangling-dependency-goal-plan-manifest.json` → `ok: false`, `invalid-topology`
-  * `invalid/manifest-digest-mismatch-plan-coverage-review.json` → `ok: false`, `approval-binding-mismatch`
-  * `invalid/readiness-digest-mismatch-goal-plan-manifest.json` → `ok: false`, `digest-mismatch`
-  * `invalid/source-digest-mismatch-goal-plan-manifest.json` → `ok: false`, `digest-mismatch`
+### 2. Fixture agreement
 
-  All 7 fixtures agree with this Core: ForgePilot's valid fixtures validate,
-  and all 5 named invalid fixtures are rejected by this Core.
+```
+pnpm --filter @praxisbound/core run build   # evidence/log-00-core-build.txt
+node specs/stories/TST-029-goal-plan-shape-alignment/evidence/check-forgepilot-fixtures.mjs <scratch>/fp
+```
 
-* `goal preflight` acceptance: in a scratch git repository seeded from
-  ForgePilot's own `valid/repository` fixture tree (`git init`, one commit),
-  then:
+Verbatim output (`evidence/log-02-fixture-check.txt`):
 
-  ```
-  forgepilot init
-  forgepilot goal create --id praxisbound-cross-check \
-    --title "PraxisBound cross-check" --review-policy goal --json
-  forgepilot work add --goal praxisbound-cross-check \
-    --story specs/stories/EX-001-first --external-ref node-001 --json
-  forgepilot work add --goal praxisbound-cross-check \
-    --story specs/stories/EX-001-first --external-ref node-002 \
-    --depends-on WI-001 --json
-  ```
+```
+PASS valid/goal-plan-manifest.json -> ok=true category=undefined
+PASS valid/plan-coverage-review.json -> ok=true category=undefined
+PASS invalid/cycle-goal-plan-manifest.json -> ok=false category=invalid-topology
+PASS invalid/dangling-dependency-goal-plan-manifest.json -> ok=false category=invalid-topology
+PASS invalid/manifest-digest-mismatch-plan-coverage-review.json -> ok=false category=approval-binding-mismatch
+PASS invalid/readiness-digest-mismatch-goal-plan-manifest.json -> ok=false category=digest-mismatch
+PASS invalid/source-digest-mismatch-goal-plan-manifest.json -> ok=false category=digest-mismatch
+all ForgePilot fixture checks passed
+exit=0
+```
 
-  All three exit 0 (`work add` created `WI-001` then `WI-002`, the second
-  depending on `WI-001`). A `declaration.json`, `manifest.json`, and
-  `coverage-review.json` were then exported by this Core
-  (`exportGoalPlanDeclaration`/`exportGoalPlanManifest`/
-  `exportPlanCoverageReview`) from that same repository's checked-in ADR,
-  spec, Story, and readiness bytes, written into the repository, and a
-  `goal-preflight-request.json` (`forgepilot.goal-preflight-request/v1`) was
-  written naming those two Work Item IDs. Running
+All 7 fixtures agree with this Core: ForgePilot's own valid fixtures
+validate, and all 5 named invalid fixtures are rejected by this Core with
+the same category ForgePilot's own `preflight.go` would reach.
 
-  ```
-  forgepilot goal preflight \
-    --request specs/batches/BR-002-cross-check/goal-plan/preflight-request.json \
-    --json
-  ```
+### 3. `goal preflight` acceptance
 
-  exited 0 and returned `"diagnostics":null` with every fact `"status":
-  "observed"` (`goal`, `manifest`, `declaration`, `sources`,
-  `readinessContracts`, `coverageReview`, `registration`), including
-  `"manifest":{"status":"observed","value":"88a79bdf…6b49"}` and
-  `"registration":{"status":"observed","value":"exact"}`. ForgePilot's
-  `goal preflight` accepted, unmodified, an artifact set this Core exported.
+A scratch git repository was seeded from ForgePilot's own
+`internal/app/testdata/goal-plan-artifacts/v1/valid/repository` fixture tree:
+
+```
+git init -q
+git add -A
+git -c user.email=test@example.com -c user.name=Test commit -q -m "fixture repo"
+git log --oneline -1
+```
+
+Output (`evidence/log-03-git-init.txt`): `b4c5ae6 fixture repo`.
+
+```
+<scratch>/fp/forgepilot init
+```
+
+Output (`evidence/log-04-forgepilot-init.txt`): `Initialized ForgePilot in <scratch fixture repository root>`.
+
+```
+<scratch>/fp/forgepilot goal create --id praxisbound-cross-check \
+  --title "PraxisBound cross-check" --review-policy goal --json
+```
+
+Verbatim output, exit `0` (`evidence/log-05-goal-create.json`):
+
+```json
+{"format_version":"forgepilot.cli/v1","goal":{"id":"praxisbound-cross-check","title":"PraxisBound cross-check","description":"","status":"ACTIVE","review_policy":"GOAL","completion_policy":"VERIFIED"}}
+```
+
+```
+<scratch>/fp/forgepilot work add --goal praxisbound-cross-check \
+  --story specs/stories/EX-001-first --external-ref node-001 --json
+```
+
+Verbatim output, exit `0` (`evidence/log-06-work-add-001.json`):
+
+```json
+{"format_version":"forgepilot.cli/v1","created":true,"work_item":{"id":"WI-001","goal_id":"praxisbound-cross-check","story_ref":"specs/stories/EX-001-first","external_ref":"node-001","status":"READY","depends_on":[]}}
+```
+
+```
+<scratch>/fp/forgepilot work add --goal praxisbound-cross-check \
+  --story specs/stories/EX-001-first --external-ref node-002 \
+  --depends-on WI-001 --json
+```
+
+Verbatim output, exit `0` (`evidence/log-07-work-add-002.json`):
+
+```json
+{"format_version":"forgepilot.cli/v1","created":true,"work_item":{"id":"WI-002","goal_id":"praxisbound-cross-check","story_ref":"specs/stories/EX-001-first","external_ref":"node-002","status":"PENDING","depends_on":["WI-001"]}}
+```
+
+A Declaration, Manifest, and Coverage Review were then exported by this Core
+from that same repository's checked-in ADR, spec, Story, and readiness
+bytes, and written into the repository:
+
+```
+node specs/stories/TST-029-goal-plan-shape-alignment/evidence/export-forgepilot-artifacts.mjs <scratch fixture repository root>
+```
+
+Verbatim output (`evidence/log-08-export-artifacts.json`):
+
+```json
+{
+  "declarationPath": "specs/plans/praxisbound-cross-check.json",
+  "manifestPath": "specs/batches/BR-002-cross-check/goal-plan/manifest.json",
+  "reviewPath": "specs/batches/BR-002-cross-check/goal-plan/coverage-review.json"
+}
+```
+
+A `goal-preflight-request.json` (`forgepilot.goal-preflight-request/v1`,
+saved as `evidence/preflight-request.json`) was written naming Work Item IDs
+`WI-001` and `WI-002`. Running:
+
+```
+<scratch>/fp/forgepilot goal preflight \
+  --request specs/batches/BR-002-cross-check/goal-plan/preflight-request.json \
+  --json
+```
+
+exited `0` with the verbatim response saved at `evidence/log-09-preflight.json`.
+Its `diagnostics` field is `null`. Every `facts` entry ForgePilot probed is
+`"status":"observed"`: `goal`, `manifest`, `declaration`, `sources`,
+`readinessContracts`, `coverageReview`, `registration`. The full (untruncated)
+Manifest digest ForgePilot itself computed and returned is:
+
+```
+88a79bdfbbd964d5c96ac3b0eaf4660fda1433dc624f391c4131671e258b6b49
+```
+
+(`"facts":{"manifest":{"status":"observed","value":"88a79bdfbbd964d5c96ac3b0eaf4660fda1433dc624f391c4131671e258b6b49"}, …}`
+in `evidence/log-09-preflight.json`), and `"registration":{"status":"observed","value":"exact"}`.
+ForgePilot's `goal preflight` accepted, unmodified, an artifact set this
+Core exported.
 
 ## Authority Used
 
@@ -99,4 +187,6 @@ the automated guarantee (Story R6).
 
 * `The ForgePilot cross-check ran in a scratch directory outside this repository, from a clean archive of the pinned commit; it is not repeated by make verify and must be re-run by hand against any future ForgePilot commit this Story's ADR-016 falsification condition names.`
 * `AC-003's category mapping is this Core's own design choice (Rule R3), not a byte-for-byte match to ForgePilot's internal Go category for every rule: ForgePilot's preflight.go returns invalid-topology for an unsorted Manifest node or dependsOn array, where this Core and the Story's own acceptance.md AC-003 both call that malformed-artifact. None of ForgePilot's 5 named invalid fixtures exercise sortedness, so this difference does not appear in the fixture-agreement check above.`
+* `A duplicate entry within one Manifest node's dependsOn array is invalid-topology in ForgePilot's preflight.go (it folds the uniqueness and sort checks into one "must be sorted" comparison, which a duplicate also fails) but malformed-artifact in this Core (duplicate-dependency and sort-order are two separate, explicit checks here). Duplicate node references themselves — a different rule — are invalid-topology in both. None of ForgePilot's 5 named invalid fixtures exercise a duplicate dependsOn entry, so this difference does not appear in the fixture-agreement check above.`
 * `The scratch fixture repository's Goal Plan artifacts are a small two-node, single-Story plan built for this cross-check; they are not the real R-008 review goal-plan projection, which is a later Story.`
+* `The following schema-versus-ForgePilot-Go discrepancies are on hold for a pending human decision and were deliberately not changed in this round: reviewedAt ".000Z" strictness and Date validity (e.g. Feb 30, 24:00); path Cf/bidi characters U+00AD, U+2060, U+061C; the reviewer.name byte-length limit; the 10,000 total-edge limit ForgePilot's Go enforces (this Core has no equivalent, only per-node and per-Manifest node/dependsOn bounds); and the Declaration's 1 MiB / depth-32 limits ForgePilot's Go applies specifically to Declarations (this Core uses the same 8 MiB / depth-128 bound for every artifact class).`

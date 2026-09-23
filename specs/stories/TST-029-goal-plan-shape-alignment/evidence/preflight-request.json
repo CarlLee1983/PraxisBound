@@ -1,0 +1,10 @@
+{
+  "formatVersion": "forgepilot.goal-preflight-request/v1",
+  "goalId": "praxisbound-cross-check",
+  "manifestPath": "specs/batches/BR-002-cross-check/goal-plan/manifest.json",
+  "coverageReviewPath": "specs/batches/BR-002-cross-check/goal-plan/coverage-review.json",
+  "nodeMappings": [
+    { "planNodeRef": "node-001", "workItemId": "WI-001" },
+    { "planNodeRef": "node-002", "workItemId": "WI-002" }
+  ]
+}

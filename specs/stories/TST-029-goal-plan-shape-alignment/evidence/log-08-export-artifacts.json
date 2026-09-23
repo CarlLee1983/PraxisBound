@@ -1,0 +1,5 @@
+{
+  "declarationPath": "specs/plans/praxisbound-cross-check.json",
+  "manifestPath": "specs/batches/BR-002-cross-check/goal-plan/manifest.json",
+  "reviewPath": "specs/batches/BR-002-cross-check/goal-plan/coverage-review.json"
+}

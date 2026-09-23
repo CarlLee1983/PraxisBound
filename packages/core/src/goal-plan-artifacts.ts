@@ -13,6 +13,7 @@
  */
 
 import { sha256Hex } from "./review/fingerprint.js";
+import { compareUtf8 } from "./review/path.js";
 
 /** The only Goal Plan artifact schema version this module supports. */
 export const GOAL_PLAN_SCHEMA_VERSION = "1.0.0" as const;
@@ -130,7 +131,7 @@ export interface PlanCoverageReviewExportInput {
   readonly reviewer: PlanCoverageReviewer;
   readonly reviewedAt: string;
   /** Raw integrity facts for the Manifest's declaration, readiness, and reviewed sources. */
-  readonly sources?: GoalPlanSourceFacts;
+  readonly sources: GoalPlanSourceFacts;
 }
 
 export interface GoalPlanValidationFailure {
@@ -253,6 +254,7 @@ function failure(
 function exportFailure(
   message: string,
   category: GoalPlanFailureCategory,
+  causeCategory?: GoalPlanFailureCategory,
 ): TypeError {
   const error = new TypeError(message);
   Object.defineProperty(error, "category", {
@@ -261,7 +263,24 @@ function exportFailure(
     value: category,
     writable: false,
   });
+  if (causeCategory !== undefined)
+    Object.defineProperty(error, "causeCategory", {
+      configurable: false,
+      enumerable: true,
+      value: causeCategory,
+      writable: false,
+    });
   return error;
+}
+
+function isFailureCategory(value: unknown): value is GoalPlanFailureCategory {
+  return (
+    value === "unsupported-schema" ||
+    value === "malformed-artifact" ||
+    value === "invalid-topology" ||
+    value === "digest-mismatch" ||
+    value === "approval-binding-mismatch"
+  );
 }
 
 function exportBoundaryFailure(
@@ -274,14 +293,7 @@ function exportBoundaryFailure(
         error,
         "category",
       )?.value;
-      if (
-        category === "unsupported-schema" ||
-        category === "malformed-artifact" ||
-        category === "invalid-topology" ||
-        category === "digest-mismatch" ||
-        category === "approval-binding-mismatch"
-      )
-        return error;
+      if (isFailureCategory(category)) return error;
     }
   } catch {
     // Caller-controlled proxy errors are normalized below.
@@ -428,7 +440,7 @@ function scanJsonSafety(text: string): string | undefined {
       while (index < text.length) {
         const key = readString();
         if (key === undefined) return false;
-        if (keys.has(key)) return fail(`JSON object key is duplicated: ${key}`);
+        if (keys.has(key)) return fail("JSON object key is duplicated");
         keys.add(key);
         skipWhitespace();
         if (text[index] !== ":") return fail("JSON object key lacks a colon");
@@ -517,6 +529,11 @@ function parseJson(bytes: Uint8Array): ParsedJsonResult {
   }
 }
 
+/**
+ * Reject an unknown field without echoing its (attacker-controlled) name:
+ * the message and path name only the known container, never the field text
+ * itself, so a hostile key can never appear in a diagnostic.
+ */
 function rejectUnknownFields(
   artifact: GoalPlanArtifactClass,
   value: JsonRecord,
@@ -528,11 +545,21 @@ function rejectUnknownFields(
       return failure(
         artifact,
         "malformed-artifact",
-        `${artifact} declares an unknown field: ${field}`,
-        { path: path === "" ? field : `${path}.${field}` },
+        path === ""
+          ? `${artifact} declares an unknown field`
+          : `${artifact} declares an unknown field at ${path}`,
+        path === "" ? {} : { path },
       );
   }
   return undefined;
+}
+
+/** A fixed, non-echoing description of an unexpected value's shape. */
+function describeType(value: unknown): string {
+  if (value === undefined) return "missing";
+  if (value === null) return "null";
+  if (Array.isArray(value)) return "array";
+  return typeof value;
 }
 
 function readSchemaVersion(
@@ -551,7 +578,9 @@ function readSchemaVersion(
       {
         path: "schemaVersion",
         expected: GOAL_PLAN_SCHEMA_VERSION,
-        observed: isRecord(value) ? String(value.schemaVersion) : "missing",
+        observed: isRecord(value)
+          ? describeType(value.schemaVersion)
+          : "missing",
       },
     );
   return undefined;
@@ -732,7 +761,10 @@ function readReviewedSources(
         { path: `${path}[${index}].path` },
       );
     seen.add(result.binding.path);
-    if (previous !== undefined && previous >= result.binding.path)
+    if (
+      previous !== undefined &&
+      compareUtf8(previous, result.binding.path) >= 0
+    )
       return failure(
         artifact,
         "malformed-artifact",
@@ -745,10 +777,18 @@ function readReviewedSources(
   return { ok: true, bindings };
 }
 
+/**
+ * Read a `dependsOn` array. `requireSorted` is true for a Manifest, whose
+ * artifact-level rules ForgePilot's `preflight.go` enforces require UTF-8
+ * sort order; a Declaration's `dependsOn` has no such requirement in either
+ * the schema or ForgePilot's `parseGoalPlanDeclaration` — only uniqueness
+ * and a valid node reference (Story TST-029 review HIGH-2).
+ */
 function readDependsOn(
   artifact: GoalPlanArtifactClass,
   value: unknown,
   path: string,
+  requireSorted: boolean,
 ):
   | { readonly ok: true; readonly dependsOn: readonly string[] }
   | GoalPlanValidationFailure {
@@ -778,11 +818,11 @@ function readDependsOn(
       return failure(
         artifact,
         "malformed-artifact",
-        `${path} repeats a dependency: ${entry}`,
+        `${path} repeats a dependency`,
         { path: `${path}[${index}]` },
       );
     seen.add(entry);
-    if (previous !== undefined && previous >= entry)
+    if (requireSorted && previous !== undefined && previous >= entry)
       return failure(
         artifact,
         "malformed-artifact",
@@ -940,6 +980,7 @@ function readDeclarationShape(
       artifact,
       entry.dependsOn,
       `${nodePath}.dependsOn`,
+      false,
     );
     if (!dependsOnResult.ok) return dependsOnResult;
     nodes.push({
@@ -1149,6 +1190,7 @@ function readManifestShape(
       artifact,
       entry.dependsOn,
       `${nodePath}.dependsOn`,
+      true,
     );
     if (!dependsOnResult.ok) return dependsOnResult;
 
@@ -1203,7 +1245,7 @@ function readSourceEntries(value: GoalPlanSourceFacts):
       if (!isUint8Array(bytes))
         return {
           ok: false,
-          message: `source bytes for ${path} must be a Uint8Array`,
+          message: "source bytes for a bound path must be a Uint8Array",
         };
       entries.push([path, bytes]);
     }
@@ -1232,7 +1274,7 @@ function readSourceEntries(value: GoalPlanSourceFacts):
       if (!isUint8Array(bytes))
         return {
           ok: false,
-          message: `source bytes for ${path} must be a Uint8Array`,
+          message: "source bytes for a bound path must be a Uint8Array",
         };
       entries.push([path, bytes]);
     }
@@ -1373,7 +1415,7 @@ function validateGoalPlanManifestInput(
     return failure(
       "goal-plan-manifest",
       declarationResult.category,
-      `referenced Declaration is not valid: ${declarationResult.message}`,
+      "referenced Declaration is not valid",
       { path: "declaration", causeCategory: declarationResult.category },
     );
   const matchFailure = matchDeclarationToManifest(
@@ -1654,7 +1696,7 @@ function validatePlanCoverageReviewInput(
     return failure(
       "plan-coverage-review",
       category,
-      `referenced Goal Plan Manifest is not valid: ${manifestResult.message}`,
+      "referenced Goal Plan Manifest is not valid",
       { path: "manifest", causeCategory: manifestResult.category },
     );
   }
@@ -1773,9 +1815,7 @@ function sortedReviewedSources(
     seen.add(binding.path);
     return binding;
   });
-  return [...bindings].sort((a, b) =>
-    a.path < b.path ? -1 : a.path > b.path ? 1 : 0,
-  );
+  return [...bindings].sort((a, b) => compareUtf8(a.path, b.path));
 }
 
 function sortedDependsOn(dependsOn: readonly string[]): readonly string[] {
@@ -1967,30 +2007,40 @@ function exportPlanCoverageReviewInput(
       "malformed-artifact",
     );
   const manifestBytes = manifestSnapshot.bytes;
-  const manifestStructure = validateManifestStructure(manifestBytes);
-  if (!manifestStructure.ok)
+  if (input.sources === undefined)
     throw exportFailure(
-      `cannot bind Coverage Review to invalid Manifest: ${manifestStructure.message}`,
-      manifestStructure.category,
+      "Coverage Review export requires sources to verify the referenced Manifest",
+      "malformed-artifact",
     );
-  if (input.sources !== undefined) {
-    const manifestValidation = validateGoalPlanManifest(
-      manifestBytes,
-      input.sources,
+  // Mirrors validatePlanCoverageReviewInput's own referenced-Manifest
+  // handling exactly, so the export and validate paths report the same
+  // category and causeCategory for an invalid Manifest (Story TST-029
+  // review LOW-9): digest-mismatch stays digest-mismatch, everything else
+  // becomes approval-binding-mismatch with the Manifest's own category
+  // preserved as causeCategory.
+  const manifestValidation = validateGoalPlanManifest(
+    manifestBytes,
+    input.sources,
+  );
+  if (!manifestValidation.ok) {
+    const category =
+      manifestValidation.category === "digest-mismatch"
+        ? "digest-mismatch"
+        : "approval-binding-mismatch";
+    throw exportFailure(
+      "cannot bind Coverage Review to invalid Manifest",
+      category,
+      manifestValidation.category,
     );
-    if (!manifestValidation.ok)
-      throw exportFailure(
-        `cannot bind Coverage Review to invalid Manifest: ${manifestValidation.message}`,
-        manifestValidation.category,
-      );
   }
+  const manifest = manifestValidation.manifest;
 
   const orderedArtifact: JsonRecord = {
     schemaVersion: GOAL_PLAN_SCHEMA_VERSION,
     reviewId: input.reviewId,
     manifestSha256: sha256Hex(manifestBytes),
-    reviewedSources: manifestStructure.manifest.reviewedSources,
-    coverageIndex: manifestStructure.manifest.coverageIndex,
+    reviewedSources: manifest.reviewedSources,
+    coverageIndex: manifest.coverageIndex,
     conclusion: input.conclusion,
     reviewer: {
       name: input.reviewer.name,
