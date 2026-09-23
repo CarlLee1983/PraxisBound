@@ -64,7 +64,7 @@ built_cli_help_and_version_are_exact() {
   praxisbound_empty="$praxisbound_test_dir/empty"
 
   : >"$praxisbound_empty"
-  printf 'PraxisBound CLI v%s\n\nUsage:\n  praxisbound [command]\n\nCommands:\n  init               Plan or apply PraxisBound initialization\n  codex activate     Preview or apply project-local Codex activation\n  doctor             Inspect the static Repository Contract\n  verify             Run the canonical repository verification target\n  handoff check      Check immutable Handoff evidence\n  release check      Inspect local Git release readiness\n  story check        Check the static Story contract\n  review index       Report the batch review source index\n  review render      Write an offline batch review HTML projection\n  review import      Record an exported Revision Sheet\n  review respond     Record a Revision Response file\n  review confirm     Record an explicit terminal Definition Confirmation\n  verification check Resolve plans and check recorded results\n  help, --help       Show this help\n  version, --version Print the CLI version\n\nOther migration commands are unavailable.\n' \
+  printf 'PraxisBound CLI v%s\n\nUsage:\n  praxisbound [command]\n\nCommands:\n  init               Plan or apply PraxisBound initialization\n  codex activate     Preview or apply project-local Codex activation\n  doctor             Inspect the static Repository Contract\n  verify             Run the canonical repository verification target\n  handoff check      Check immutable Handoff evidence\n  release check      Inspect local Git release readiness\n  story check        Check the static Story contract\n  review index       Report the batch review source index\n  review render      Write an offline batch review HTML projection\n  review import      Record an exported Revision Sheet\n  review respond     Record a Revision Response file\n  review confirm     Record an explicit terminal Definition Confirmation\n  review preflight   Evaluate every mechanical batch review check\n  verification check Resolve plans and check recorded results\n  help, --help       Show this help\n  version, --version Print the CLI version\n\nOther migration commands are unavailable.\n' \
     "$praxisbound_version" >"$praxisbound_help"
   printf '%s\n' "$praxisbound_version" >"$praxisbound_version_output"
 
@@ -141,6 +141,8 @@ packed_packages_have_the_bounded_public_contract() {
     './dist/review/annotation-ui.js' \
     './dist/review/confirmation.d.ts' \
     './dist/review/confirmation.js' \
+    './dist/review/dependency-graph.d.ts' \
+    './dist/review/dependency-graph.js' \
     './dist/review/fingerprint.d.ts' \
     './dist/review/fingerprint.js' \
     './dist/review/html.d.ts' \
@@ -155,6 +157,10 @@ packed_packages_have_the_bounded_public_contract() {
     './dist/review/markdown.js' \
     './dist/review/path.d.ts' \
     './dist/review/path.js' \
+    './dist/review/preflight-report.d.ts' \
+    './dist/review/preflight-report.js' \
+    './dist/review/preflight.d.ts' \
+    './dist/review/preflight.js' \
     './dist/review/render-confirmation.d.ts' \
     './dist/review/render-confirmation.js' \
     './dist/review/render-evidence.d.ts' \
@@ -265,12 +271,16 @@ packed_packages_have_the_bounded_public_contract() {
     './dist/review-confirmation-records.js' \
     './dist/review-evidence.d.ts' \
     './dist/review-evidence.js' \
+    './dist/review-git.d.ts' \
+    './dist/review-git.js' \
     './dist/review-import.d.ts' \
     './dist/review-import.js' \
     './dist/review-input.d.ts' \
     './dist/review-input.js' \
     './dist/review-paths.d.ts' \
     './dist/review-paths.js' \
+    './dist/review-preflight.d.ts' \
+    './dist/review-preflight.js' \
     './dist/review-records.d.ts' \
     './dist/review-records.js' \
     './dist/review-respond.d.ts' \
