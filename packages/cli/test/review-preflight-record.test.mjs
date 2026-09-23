@@ -62,8 +62,28 @@ async function readyFixtureRepo(batchId, manifest = baseManifest(batchId)) {
   return fixtureRepo(batchId, readyFixtureFiles(), manifest);
 }
 
-async function writeSemanticReportFile(root) {
-  await writeFile(join(root, "semantic-report.json"), "{}");
+/** A valid, current Semantic Report covering the fixture's one Story (`RF-001`) with `none` conclusions in every category (R6). */
+async function writeSemanticReportFile(root, batchId, fingerprint) {
+  const none = { result: "none" };
+  const report = {
+    schemaVersion: "1.0.0",
+    batchId,
+    fingerprint,
+    agent: "test-fixture-agent 1.0",
+    observedAt: "2026-09-01T00:00:00Z",
+    stories: [
+      {
+        story: "RF-001",
+        categories: {
+          "missing-split": none,
+          contradiction: none,
+          "insufficient-acceptance": none,
+          "open-question": none,
+        },
+      },
+    ],
+  };
+  await writeFile(join(root, "semantic-report.json"), JSON.stringify(report));
   return "semantic-report.json";
 }
 
@@ -118,7 +138,11 @@ test("AC-001: the Preflight Report is written as preflight-<fp12>-1.json and val
   try {
     const data = await indexData(root, manifestPath);
     await writeConfirmation(root, batchId, data);
-    const semanticReport = await writeSemanticReportFile(root);
+    const semanticReport = await writeSemanticReportFile(
+      root,
+      batchId,
+      data.fingerprint,
+    );
     const fp12 = data.fingerprint.slice(0, 12);
 
     const execution = await run(root, [
@@ -153,7 +177,8 @@ test("AC-001: the Preflight Report is written as preflight-<fp12>-1.json and val
     assert.equal(parsed.outcome, "REVIEW_READY");
     assert.equal(parsed.fingerprint, data.fingerprint);
     assert.equal(parsed.semantic.length, 0);
-    assert.equal(parsed.semanticReport, null);
+    assert.notEqual(parsed.semanticReport, null);
+    assert.match(parsed.semanticReport.sha256, /^[a-f0-9]{64}$/);
     assert.equal(parsed.expect, null);
   } finally {
     await cleanupWorkspace(root);
@@ -166,7 +191,11 @@ test("AC-006: an identical rerun writes no new file and reports the same path", 
   try {
     const data = await indexData(root, manifestPath);
     await writeConfirmation(root, batchId, data);
-    const semanticReport = await writeSemanticReportFile(root);
+    const semanticReport = await writeSemanticReportFile(
+      root,
+      batchId,
+      data.fingerprint,
+    );
     const fp12 = data.fingerprint.slice(0, 12);
 
     const first = await run(root, [
@@ -199,7 +228,11 @@ test("AC-006: a changed result (different --expect-fingerprint) writes a new -2 
   try {
     const data = await indexData(root, manifestPath);
     await writeConfirmation(root, batchId, data);
-    const semanticReport = await writeSemanticReportFile(root);
+    const semanticReport = await writeSemanticReportFile(
+      root,
+      batchId,
+      data.fingerprint,
+    );
     const fp12 = data.fingerprint.slice(0, 12);
 
     await run(root, [
@@ -239,7 +272,11 @@ test("AC-006: 201 pre-existing reports for the same fp12 never block a write, wh
   try {
     const data = await indexData(root, manifestPath);
     await writeConfirmation(root, batchId, data);
-    const semanticReport = await writeSemanticReportFile(root);
+    const semanticReport = await writeSemanticReportFile(
+      root,
+      batchId,
+      data.fingerprint,
+    );
     const fp12 = data.fingerprint.slice(0, 12);
 
     const recordsDir = join(root, "specs", "batches", batchId, "records");
@@ -286,7 +323,11 @@ test("AC-006: a malformed highest baseline is an advisory REVIEW_RECORD_INVALID,
   try {
     const data = await indexData(root, manifestPath);
     await writeConfirmation(root, batchId, data);
-    const semanticReport = await writeSemanticReportFile(root);
+    const semanticReport = await writeSemanticReportFile(
+      root,
+      batchId,
+      data.fingerprint,
+    );
     const fp12 = data.fingerprint.slice(0, 12);
 
     const recordsDir = join(root, "specs", "batches", batchId, "records");
@@ -324,7 +365,11 @@ test("AC-006: a symlinked highest baseline is an advisory REVIEW_RECORD_INVALID,
   try {
     const data = await indexData(root, manifestPath);
     await writeConfirmation(root, batchId, data);
-    const semanticReport = await writeSemanticReportFile(root);
+    const semanticReport = await writeSemanticReportFile(
+      root,
+      batchId,
+      data.fingerprint,
+    );
     const fp12 = data.fingerprint.slice(0, 12);
 
     const recordsDir = join(root, "specs", "batches", batchId, "records");
@@ -360,7 +405,11 @@ test("AC-006: an injected write failure (link throws) yields REVIEW_INCOMPLETE w
   try {
     const data = await indexData(root, manifestPath);
     await writeConfirmation(root, batchId, data);
-    const semanticReport = await writeSemanticReportFile(root);
+    const semanticReport = await writeSemanticReportFile(
+      root,
+      batchId,
+      data.fingerprint,
+    );
     const filesystem = {
       ...defaultRecordFilesystem,
       link: async () => {
@@ -399,7 +448,11 @@ test("AC-007: the batch snapshot allows exactly the one new preflight file and n
   try {
     const data = await indexData(root, manifestPath);
     await writeConfirmation(root, batchId, data);
-    const semanticReport = await writeSemanticReportFile(root);
+    const semanticReport = await writeSemanticReportFile(
+      root,
+      batchId,
+      data.fingerprint,
+    );
 
     const paths = [manifestPath, ...DEFINITION_SOURCES];
     const before = await hashSources(root, paths);
@@ -430,7 +483,11 @@ test("review round 2 H1: an out-of-range baseline name (21 digits) never wins hi
   try {
     const data = await indexData(root, manifestPath);
     await writeConfirmation(root, batchId, data);
-    const semanticReport = await writeSemanticReportFile(root);
+    const semanticReport = await writeSemanticReportFile(
+      root,
+      batchId,
+      data.fingerprint,
+    );
     const fp12 = data.fingerprint.slice(0, 12);
 
     const recordsDir = join(root, "specs", "batches", batchId, "records");
@@ -495,7 +552,11 @@ test("review round 2 L3: a baseline whose content fingerprint does not start wit
   try {
     const data = await indexData(root, manifestPath);
     await writeConfirmation(root, batchId, data);
-    const semanticReport = await writeSemanticReportFile(root);
+    const semanticReport = await writeSemanticReportFile(
+      root,
+      batchId,
+      data.fingerprint,
+    );
     const fp12 = data.fingerprint.slice(0, 12);
 
     const recordsDir = join(root, "specs", "batches", batchId, "records");
@@ -545,7 +606,11 @@ test("AC-006: a baseline file over the 1 MiB record bound is advisory REVIEW_REC
   try {
     const data = await indexData(root, manifestPath);
     await writeConfirmation(root, batchId, data);
-    const semanticReport = await writeSemanticReportFile(root);
+    const semanticReport = await writeSemanticReportFile(
+      root,
+      batchId,
+      data.fingerprint,
+    );
     const fp12 = data.fingerprint.slice(0, 12);
 
     const recordsDir = join(root, "specs", "batches", batchId, "records");

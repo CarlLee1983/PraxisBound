@@ -1,25 +1,25 @@
 /**
- * `praxisbound review preflight <manifest>` (contract §9, Story TST-027):
- * gathers every mechanical input the contract §9 table needs — the batch's
- * own index/plan diagnostics, the dependency graph, confirmation
+ * `praxisbound review preflight <manifest>` (contract §9, Story TST-027,
+ * extended by TST-028): gathers every input the contract §9 table needs —
+ * the batch's own index/plan diagnostics, the dependency graph, confirmation
  * applicability, unresolved requests, existing revision/response/story
  * findings, the fingerprint expectation, the git-observed HEAD/uncommitted
- * state (`ADR-015`, only when `--expect-revision` is given), and whether a
- * Semantic Report file exists — and hands them to Core's
+ * state (`ADR-015`, only when `--expect-revision` is given), and the
+ * Semantic Report's own findings (`review-semantic-report.js`, R10a's path
+ * rule and Core's `evaluateSemanticReport`) — and hands them to Core's
  * `evaluatePreflight`, which owns every classification, severity,
  * precedence, and outcome decision (R6). This module never re-implements
  * one of those decisions; it only collects input, projects the result, and
  * writes the Preflight Report (contract §2, §9 R7 deduplication).
  *
- * Out of scope for this Story (TST-028): Semantic Report parsing, its
- * fingerprint/coverage/blocking checks, and `review packet`.
+ * Out of scope: `review packet`.
  */
 
-import { lstat } from "node:fs/promises";
-import { isAbsolute, resolve } from "node:path";
+import { resolve } from "node:path";
 
 import {
   buildPreflightReportRecord,
+  buildTargetLookup,
   canonicalUtcTime,
   computeEffectiveRevisions,
   computeUnresolvedRequests,
@@ -34,10 +34,12 @@ import {
   type PreflightReportExpect,
   type PreflightReportRecord,
   type PreflightReportRecordRef,
+  type PreflightReportSemanticReportRef,
   type ReviewDiagnostic,
 } from "@praxisbound/core";
 
 import { loadReviewConfirmationApplicability } from "./review-confirmation-records.js";
+import { loadSemanticReport } from "./review-semantic-report.js";
 import {
   computeResponseCoverage,
   recordSetInvalidIssues,
@@ -77,11 +79,12 @@ Usage:
     [--expect-fingerprint <sha256> --expect-revision <commit>] [--json]
   praxisbound review preflight --help
 
-A read-only evaluation of every mechanical contract §9 check: missing
-sources, Story readiness, dependency cycles, unresolved requests, existing
-record validity, and (this version) only whether a Semantic Report file
-exists. It never runs make verify, never requires an unimplemented test to
-pass, and never writes a source. REVIEW_READY only means no blocker was
+A read-only evaluation of every contract §9 check: missing sources, Story
+readiness, dependency cycles, unresolved requests, existing record validity,
+and the Semantic Report named by --semantic-report (well formed, bound to
+the current fingerprint, covering every batch Story). It never runs make
+verify, never requires an unimplemented test to pass, and never writes a
+source. REVIEW_READY only means no blocker was
 found — it grants no execution authority and claims no absence of defects.
 `;
 
@@ -173,22 +176,6 @@ function parsePreflightArguments(
     expectRevision,
     valid: valid && manifest !== undefined,
   };
-}
-
-/** Resolved relative to `root`; a symlink, a non-file, or a missing path is `"missing"` — never followed, never read (this Story checks existence only). */
-async function resolveSemanticReportState(
-  root: string,
-  argument: string | undefined,
-): Promise<"present" | "missing"> {
-  if (argument === undefined) return "missing";
-  const absolute = isAbsolute(argument) ? argument : resolve(root, argument);
-  try {
-    const stats = await lstat(absolute);
-    if (stats.isSymbolicLink() || !stats.isFile()) return "missing";
-    return "present";
-  } catch {
-    return "missing";
-  }
 }
 
 /**
@@ -614,10 +601,40 @@ export async function runReviewPreflight(
         });
     }
 
-    const semanticReport = await resolveSemanticReportState(
-      root,
-      parsed.semanticReport,
+    // R10a: the `--semantic-report` path must resolve inside the repository
+    // with no symlinked segment; a violation is `configuration-error`,
+    // exit 2, `REVIEW_PATH_UNSAFE`, and nothing is written — checked before
+    // any other Semantic Report decision.
+    const locatorLookup = buildTargetLookup(index);
+    const batchBlockSha256 = sha256Hex(
+      new TextEncoder().encode(index.fingerprint),
     );
+    const semanticLoad = await loadSemanticReport(root, parsed.semanticReport, {
+      batchId: index.batchId,
+      fingerprint: index.fingerprint,
+      storyIds: index.stories
+        .map((story) => story.id)
+        .filter((id): id is string => id !== undefined),
+      locatorLookup,
+      manifestPath,
+      batchBlockSha256,
+    });
+    if (semanticLoad.unsafe) {
+      return {
+        mode: parsed.mode,
+        result: envelope("error", "configuration-error", 2, [
+          issue(
+            "REVIEW_PATH_UNSAFE",
+            "semantic report path resolves outside the repository root or through a symlink",
+          ),
+        ]),
+      };
+    }
+    const semanticFindings = semanticLoad.findings;
+    const semanticReportRef: PreflightReportSemanticReportRef | null =
+      semanticLoad.sha256 === undefined
+        ? null
+        : { sha256: semanticLoad.sha256 };
 
     const evaluateNow = () =>
       evaluatePreflight({
@@ -630,7 +647,7 @@ export async function runReviewPreflight(
         storyFindings,
         expectFingerprint: parsed.expectFingerprint,
         gitFindings,
-        semanticReport,
+        semanticFindings,
       });
 
     const evaluation = evaluateNow();
@@ -687,9 +704,7 @@ export async function runReviewPreflight(
       outcome: evaluation.outcome,
       checkedAt: canonicalUtcTime(now().toISOString()),
       confirmation: confirmationRef,
-      // Always `null` in this Story: the Semantic Report is checked only
-      // for existence here (TST-028 fills this from its parsed content).
-      semanticReport: null,
+      semanticReport: semanticReportRef,
       mechanical: evaluation.mechanical,
       semantic: evaluation.semantic,
       expect: expectRef,
@@ -716,6 +731,7 @@ export async function runReviewPreflight(
         result: buildPreflightEnvelope(
           index,
           evaluation,
+          semanticLoad.agent,
           preflightBaseline.baseline.path,
         ),
         loaded: loadedBatch,
@@ -733,7 +749,11 @@ export async function runReviewPreflight(
       });
       return {
         mode: parsed.mode,
-        result: buildPreflightEnvelope(index, evaluateNow()),
+        result: buildPreflightEnvelope(
+          index,
+          evaluateNow(),
+          semanticLoad.agent,
+        ),
         loaded: loadedBatch,
       };
     };
@@ -755,7 +775,12 @@ export async function runReviewPreflight(
     if (written.ok) {
       return {
         mode: parsed.mode,
-        result: buildPreflightEnvelope(index, evaluation, written.relativePath),
+        result: buildPreflightEnvelope(
+          index,
+          evaluation,
+          semanticLoad.agent,
+          written.relativePath,
+        ),
         loaded: loadedBatch,
       };
     }
@@ -794,6 +819,8 @@ function buildPreflightEnvelope(
     }[];
   },
   evaluation: ReturnType<typeof evaluatePreflight>,
+  /** The Semantic Report's own `agent` field, once read (R5): shown only as the Agent's unverified claim, never as identity. */
+  semanticAgent?: string,
   preflightRecordPath?: string,
 ) {
   const mechanicalAndSemantic = [
@@ -815,6 +842,12 @@ function buildPreflightEnvelope(
     fingerprint: index.fingerprint,
     sources: toDataValue(index.sources),
     diagnostics: toDataValue(diagnostics),
+    // Only the Agent observations section's boundary within the flat
+    // `diagnostics`/`issues` arrays (Core already orders `mechanical`
+    // before `semantic`): the human renderer needs this to split the two
+    // sections without duplicating either array's shape.
+    semanticCount: evaluation.semantic.length,
+    ...(semanticAgent === undefined ? {} : { semanticAgent }),
     ...(preflightRecordPath === undefined
       ? {}
       : { preflightRecord: preflightRecordPath }),
@@ -866,18 +899,61 @@ export function renderReviewPreflightHuman(
         readonly diagnostics: readonly {
           readonly code: string;
           readonly severity: "blocking" | "advisory";
+          readonly locator?: {
+            readonly path: string;
+            readonly anchor: string;
+            readonly blockSha256: string;
+          };
         }[];
+        readonly semanticCount?: number;
+        readonly semanticAgent?: string;
         readonly preflightRecord?: string;
       }
     | undefined;
 
-  // This Story's `semantic` is always empty (TST-028 parses the Semantic
-  // Report); the mechanical/semantic split is purely by array position,
-  // since Core already orders `mechanical` first.
-  const semanticCodes = new Set<string>();
-  const mechanicalIssues = result.issues.filter(
-    (reported) => !semanticCodes.has(reported.code),
-  );
+  // Core already orders `mechanical` before `semantic` (both `result.issues`
+  // and `data.diagnostics` are the two concatenated in that order, R6): the
+  // last `semanticCount` entries are the Semantic Report's own diagnostics
+  // (Story TST-028), the rest are every other check's.
+  const semanticCount = data?.semanticCount ?? 0;
+  const allIssues = result.issues;
+  const allDiagnostics = data?.diagnostics ?? [];
+  const splitIndex = Math.max(allIssues.length - semanticCount, 0);
+  const mechanicalIssues = allIssues.slice(0, splitIndex);
+  const semanticIssues = allIssues.slice(splitIndex);
+  const mechanicalDiagnostics = allDiagnostics.slice(0, splitIndex);
+  const semanticDiagnostics = allDiagnostics.slice(splitIndex);
+
+  function severityLabel(
+    severity: "blocking" | "advisory" | undefined,
+  ): string {
+    return severity === "advisory" ? "NOTE" : "BLOCK";
+  }
+
+  function renderLine(
+    reported: {
+      readonly code: string;
+      readonly message: string;
+      readonly path?: string;
+    },
+    diagnostic:
+      | {
+          readonly severity: "blocking" | "advisory";
+          readonly locator?: {
+            readonly path: string;
+            readonly anchor: string;
+            readonly blockSha256: string;
+          };
+        }
+      | undefined,
+  ): string {
+    const locatorPath = reported.path ?? diagnostic?.locator?.path;
+    const location =
+      locatorPath === undefined
+        ? ""
+        : ` (${escapeHumanControlCharacters(locatorPath)})`;
+    return `${severityLabel(diagnostic?.severity)} ${reported.code}: ${escapeHumanControlCharacters(reported.message)}${location}`;
+  }
 
   const lines = ["PraxisBound Batch Review Preflight", ""];
   if (data !== undefined) {
@@ -892,17 +968,20 @@ export function renderReviewPreflightHuman(
   if (mechanicalIssues.length === 0) {
     lines.push("none");
   } else {
-    for (const reported of mechanicalIssues) {
-      const location =
-        reported.path === undefined
-          ? ""
-          : ` (${escapeHumanControlCharacters(reported.path)})`;
-      lines.push(
-        `ISSUE ${reported.code}: ${escapeHumanControlCharacters(reported.message)}${location}`,
-      );
-    }
+    for (const [index, reported] of mechanicalIssues.entries())
+      lines.push(renderLine(reported, mechanicalDiagnostics[index]));
   }
-  lines.push("", "Agent observations (unverified)", "none");
+  lines.push("", "Agent observations (unverified)");
+  if (data?.semanticAgent !== undefined)
+    lines.push(
+      `Agent (self-reported): ${escapeHumanControlCharacters(data.semanticAgent)}`,
+    );
+  if (semanticIssues.length === 0) {
+    lines.push("none");
+  } else {
+    for (const [index, reported] of semanticIssues.entries())
+      lines.push(renderLine(reported, semanticDiagnostics[index]));
+  }
   lines.push("", `Result: ${result.outcome}`);
   if (result.outcome === "REVIEW_READY") {
     lines.push("", "只表示未發現阻擋，不宣稱沒有缺陷");

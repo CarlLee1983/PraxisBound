@@ -74,9 +74,29 @@ async function readyFixtureRepo(batchId, manifest = baseManifest(batchId)) {
   return fixtureRepo(batchId, readyFixtureFiles(), manifest);
 }
 
-async function writeSemanticReportFile(root) {
+/** A valid, current Semantic Report covering the fixture's one Story (`RF-001`) with `none` conclusions in every category, so a caller after TST-028 still gets `REVIEW_READY` (R6). */
+async function writeSemanticReportFile(root, batchId, fingerprint) {
   const path = join(root, "semantic-report.json");
-  await writeFile(path, "{}");
+  const none = { result: "none" };
+  const report = {
+    schemaVersion: "1.0.0",
+    batchId,
+    fingerprint,
+    agent: "test-fixture-agent 1.0",
+    observedAt: "2026-09-01T00:00:00Z",
+    stories: [
+      {
+        story: "RF-001",
+        categories: {
+          "missing-split": none,
+          contradiction: none,
+          "insufficient-acceptance": none,
+          "open-question": none,
+        },
+      },
+    ],
+  };
+  await writeFile(path, JSON.stringify(report));
   return "semantic-report.json";
 }
 
@@ -122,7 +142,11 @@ test("AC-001: a batch with an applicable confirmation, a ready Story, no cycle, 
   try {
     const data = await indexData(root, manifestPath);
     await writeConfirmation(root, batchId, data);
-    const semanticReport = await writeSemanticReportFile(root);
+    const semanticReport = await writeSemanticReportFile(
+      root,
+      batchId,
+      data.fingerprint,
+    );
 
     const execution = await run(root, [
       manifestPath,
@@ -355,7 +379,11 @@ test("AC-005: an advisory-only invalid record (REVIEW_RECORD_INVALID) never chan
   try {
     const data = await indexData(root, manifestPath);
     await writeConfirmation(root, batchId, data);
-    const semanticReport = await writeSemanticReportFile(root);
+    const semanticReport = await writeSemanticReportFile(
+      root,
+      batchId,
+      data.fingerprint,
+    );
 
     // A `revisions-*.json` name that fails the strict
     // `revisions-<sha12>.json` pattern is invalid (advisory), never a
@@ -465,7 +493,11 @@ test("AC-007: batch sources, the manifest, and existing records are byte-identic
   try {
     const data = await indexData(root, manifestPath);
     await writeConfirmation(root, batchId, data);
-    const semanticReport = await writeSemanticReportFile(root);
+    const semanticReport = await writeSemanticReportFile(
+      root,
+      batchId,
+      data.fingerprint,
+    );
 
     const paths = [manifestPath, ...DEFINITION_SOURCES];
     const before = await hashSources(root, paths);
@@ -703,7 +735,11 @@ test("AC-007: human and JSON output never contain authorized/authorization/appro
   try {
     const data = await indexData(root, manifestPath);
     await writeConfirmation(root, batchId, data);
-    const semanticReport = await writeSemanticReportFile(root);
+    const semanticReport = await writeSemanticReportFile(
+      root,
+      batchId,
+      data.fingerprint,
+    );
 
     const execution = await run(root, [
       manifestPath,

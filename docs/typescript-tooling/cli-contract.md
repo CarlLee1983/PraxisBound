@@ -51,22 +51,22 @@ verify             = execute make verify
 
 ## Command mapping and options
 
-| New command                                              | Legacy capability                     | Contract                                                                                                                    |
-| -------------------------------------------------------- | ------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
-| `praxisbound init [repo]`                                | `scripts/bootstrap`                   | Apply fresh adoption by default; supports `--dry-run`, mutually exclusive `--force`/`--upgrade`.                            |
-| `praxisbound doctor [repo]`                              | `scripts/doctor`                      | Static, read-only by default; retains `--run-verify` during compatibility period.                                           |
-| `praxisbound verify [repo]`                              | Doctor execution mode / `make verify` | Explicitly runs target-owned `make verify` once from physical root.                                                         |
-| `praxisbound story check [story ...]`                    | `scripts/story-check`                 | Discovers Stories when omitted; supports `--ready`.                                                                         |
-| `praxisbound verification check [story ...]`             | `scripts/verification-check`          | Resolves plans by default; supports `--result`.                                                                             |
-| `praxisbound handoff check [file]`                       | `scripts/handoff-check`               | Defaults to `specs/handoff.md`.                                                                                             |
-| `praxisbound release check [repo]`                       | `scripts/release-check` Node wrapper  | Local, read-only release inspection; target defaults to `.`; never performs remote checks.                                  |
-| `praxisbound review index <manifest>`                    | none (new capability)                 | Reads one Batch Manifest and its declared sources; read-only; writes nothing.                                               |
-| `praxisbound review render <manifest> --output <file>`   | none (new capability)                 | Writes an additive, self-contained offline HTML Review Projection; never changes selected sources.                          |
-| `praxisbound review import <manifest> <sheet>`           | none (new capability)                 | Reads a Markdown Revision Sheet and records new requests, create-new, under the batch's `records/`; never changes a source. |
-| `praxisbound review respond <manifest> <responses.json>` | none (new capability)                 | The only way to record a Revision Response file, create-new, after the contract §7 fingerprint and coverage checks.         |
-| `praxisbound review confirm <manifest>`                  | none (new capability)                 | The only way to record a Definition Confirmation, create-new, through an interactive terminal act (contract §8).            |
-| `praxisbound review preflight <manifest>`                | none (new capability)                 | Evaluates every mechanical contract §9 check (including git, `ADR-015`) and writes one Preflight Report (Story TST-027).    |
-| `praxisbound codex activate <repo>`                      | `scripts/codex-activate`              | Preview by default; supports `--apply`; stays a late migration wave.                                                        |
+| New command                                              | Legacy capability                     | Contract                                                                                                                                                             |
+| -------------------------------------------------------- | ------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `praxisbound init [repo]`                                | `scripts/bootstrap`                   | Apply fresh adoption by default; supports `--dry-run`, mutually exclusive `--force`/`--upgrade`.                                                                     |
+| `praxisbound doctor [repo]`                              | `scripts/doctor`                      | Static, read-only by default; retains `--run-verify` during compatibility period.                                                                                    |
+| `praxisbound verify [repo]`                              | Doctor execution mode / `make verify` | Explicitly runs target-owned `make verify` once from physical root.                                                                                                  |
+| `praxisbound story check [story ...]`                    | `scripts/story-check`                 | Discovers Stories when omitted; supports `--ready`.                                                                                                                  |
+| `praxisbound verification check [story ...]`             | `scripts/verification-check`          | Resolves plans by default; supports `--result`.                                                                                                                      |
+| `praxisbound handoff check [file]`                       | `scripts/handoff-check`               | Defaults to `specs/handoff.md`.                                                                                                                                      |
+| `praxisbound release check [repo]`                       | `scripts/release-check` Node wrapper  | Local, read-only release inspection; target defaults to `.`; never performs remote checks.                                                                           |
+| `praxisbound review index <manifest>`                    | none (new capability)                 | Reads one Batch Manifest and its declared sources; read-only; writes nothing.                                                                                        |
+| `praxisbound review render <manifest> --output <file>`   | none (new capability)                 | Writes an additive, self-contained offline HTML Review Projection; never changes selected sources.                                                                   |
+| `praxisbound review import <manifest> <sheet>`           | none (new capability)                 | Reads a Markdown Revision Sheet and records new requests, create-new, under the batch's `records/`; never changes a source.                                          |
+| `praxisbound review respond <manifest> <responses.json>` | none (new capability)                 | The only way to record a Revision Response file, create-new, after the contract §7 fingerprint and coverage checks.                                                  |
+| `praxisbound review confirm <manifest>`                  | none (new capability)                 | The only way to record a Definition Confirmation, create-new, through an interactive terminal act (contract §8).                                                     |
+| `praxisbound review preflight <manifest>`                | none (new capability)                 | Evaluates every contract §9 check — mechanical (including git, `ADR-015`) and the Semantic Report's own — and writes one Preflight Report (Stories TST-027/TST-028). |
+| `praxisbound codex activate <repo>`                      | `scripts/codex-activate`              | Preview by default; supports `--apply`; stays a late migration wave.                                                                                                 |
 
 Global options may appear after the selected command path and before or among
 that command's options. They may appear once; `--` ends option parsing.
@@ -576,13 +576,12 @@ in this command's own output as a claim of authorization or completion.
 
 `praxisbound review preflight <manifest> [--semantic-report <file>]
 [--expect-fingerprint <sha256> --expect-revision <commit>] [--json]` (Story
-TST-027, Additive) evaluates every mechanical contract §9 check, writes one
-Preflight Report (`records/preflight-<fp12>-<n>.json`, contract §2), and
-reports one result envelope. **This version** covers contract §9 minus the
-Semantic Report parsing/fingerprint/coverage/blocking rows, which TST-028
-adds; `mechanical`/`semantic` split, and `data.preflightRecord`, are already
-in place, with `semantic` always `[]` and `semanticReport: null` in the
-written record until TST-028 fills them.
+TST-027/TST-028, Additive) evaluates every contract §9 check — mechanical and
+the Semantic Report's own — writes one Preflight Report
+(`records/preflight-<fp12>-<n>.json`, contract §2), and reports one result
+envelope. Mechanical diagnostics go into `mechanical`; the Semantic Report's
+own diagnostics go into `semantic`, apart from `mechanical`, though both
+count toward the outcome (contract §9 R6, Story TST-028 R1–R6).
 
 Argv: `--expect-fingerprint`/`--expect-revision` must both be given or both
 omitted (`usage-error`); `--expect-fingerprint` must match
@@ -626,9 +625,38 @@ outcome decision, contract §9 R6):
   its Story directory as `path`.
 - `--expect-fingerprint` against the current fingerprint:
   `REVIEW_PACKET_FINGERPRINT_MISMATCH`.
-- Whether `--semantic-report <file>` resolves (relative to the repository
-  root) to an existing, non-symlinked regular file — checked for existence
-  only, never read: `REVIEW_SEMANTIC_MISSING` when absent.
+- The Semantic Report named by `--semantic-report <file>` (Story TST-028,
+  R10a): the path must resolve inside the repository with no symlinked
+  segment (checked the same way `--output` is: `resolveOutputPath`/
+  `findUnsafeSourcePath`), and the file is opened with `O_NOFOLLOW`; a
+  violation is `configuration-error`, exit 2, `REVIEW_PATH_UNSAFE`, and
+  nothing is written — checked before any other Semantic Report decision. An
+  absent flag or a path that does not resolve to a readable regular file is
+  `REVIEW_SEMANTIC_MISSING`. The file's size is checked (via `fstat`) before
+  any content is read; over the §13 bound (1 MiB) is `REVIEW_INPUT_TOO_LARGE`
+  with no `semanticReport` recorded. Once the bytes are read within the
+  bound, `semanticReport: {sha256}` is always recorded in the written
+  Preflight Report, whether or not the content later proves valid (Story
+  TST-028 Capacity). The read bytes are handed to Core's pure
+  `evaluateSemanticReport` (`packages/core/src/review/semantic-report.ts`),
+  which — in order (R1) — rejects a nesting depth over 32, a single string
+  over 64 KiB, or a total issue count over 1000 as `REVIEW_INPUT_TOO_LARGE`;
+  rejects invalid JSON, a schema violation, or a different `batchId` as
+  `REVIEW_SEMANTIC_INVALID`; rejects a different `fingerprint` as
+  `REVIEW_SEMANTIC_STALE` (contributing no observations); and only then
+  checks coverage and turns every issue into a diagnostic: a missing batch
+  Story is `REVIEW_SEMANTIC_COVERAGE`; a duplicated Story, a Story outside
+  the batch, or an issue locator that does not name a batch source and match
+  an anchor/`blockSha256` in the current index (via `buildTargetLookup`/
+  `matchRevisionTarget`, the same functions `review import` uses, R4) is
+  `REVIEW_SEMANTIC_INVALID`; each issue whose `blocking` is `true` is
+  `REVIEW_SEMANTIC_BLOCKING`, each other issue `REVIEW_SEMANTIC_OBSERVATION`,
+  each carrying the issue's own locator. A report whose every conclusion is
+  `none` is valid (R6). The report's `agent` field is never placed into a
+  diagnostic or used as identity (R5); it is shown, ESC-escaped, only as
+  `Agent (self-reported): <agent>` in human output. Text inside the report —
+  including `authorized: true`, `approved`, or instructions — is data: it
+  never changes the outcome (R7).
 - (`ADR-015`) When `--expect-revision` is given, one git observation (HEAD
   and per-path working-tree status) through the injected
   `ReviewGitAdapter` (`packages/cli/src/review-git.ts`, defaulting to
@@ -656,8 +684,8 @@ the combined `mechanical`/`semantic` diagnostic count exceeds contract
 §13's 10000-diagnostic bound, the command reports `ERROR`, exit 3, and
 writes nothing. Otherwise it builds the record (`schemaVersion`, `batchId`,
 `fingerprint`, `outcome`, `checkedAt` from an injectable clock, the
-applicable confirmation's `{path, sha256}` or `null`, `semanticReport:
-null`, `mechanical`, `semantic: []`, `expect`) and either reuses the
+applicable confirmation's `{path, sha256}` or `null`, `semanticReport`
+(`{sha256}` or `null`, above), `mechanical`, `semantic`, `expect`) and either reuses the
 baseline's path (when it is valid and equal to the new record in every
 field but `checkedAt`, `expect` included) or writes a new
 `records/preflight-<fp12>-<n>.json` with `<n>` starting at the baseline's
@@ -680,15 +708,21 @@ itself already completed, so this is never `ERROR`.
 
 `data` extends the `review index` minimal shape (`batchId`, `fingerprint`,
 `sources`, `diagnostics`) with `preflightRecord` (the repo-relative path of
-the Preflight Report written or reused), omitted only when a write failure
-downgraded the outcome to `REVIEW_INCOMPLETE`. Human output (stderr not
-used; stdout in `--json` mode, stdout otherwise) lists a `Record:` line, then
-two labelled sections — "Mechanical checks" and "Agent observations
-(unverified)" (always "none" in this version, since Semantic Report parsing
-is TST-028) — and, on `REVIEW_READY`, the fixed line
-「只表示未發現阻擋，不宣稱沒有缺陷」 (contract §9, Story R8). Every message
-and path is ESC-escaped the same way every other review command escapes
-untrusted text.
+the Preflight Report written or reused), `semanticCount` (how many of the
+trailing `diagnostics`/`issues` entries are the Semantic Report's own, so a
+caller can split the two without a shape change to `diagnostics` itself),
+and `semanticAgent` (the report's own `agent`, once read), each omitted only
+when not applicable; `preflightRecord` is additionally omitted when a write
+failure downgraded the outcome to `REVIEW_INCOMPLETE`. Human output (stderr
+not used; stdout in `--json` mode, stdout otherwise) lists a `Record:` line,
+then two labelled sections — "Mechanical checks" and "Agent observations
+(unverified)" (the latter listing the Semantic Report's own diagnostics, and
+an `Agent (self-reported): <agent>` line once a report was parsed) — and, on
+`REVIEW_READY`, the fixed line 「只表示未發現阻擋，不宣稱沒有缺陷」 (contract
+§9, Story R8). Every line in both sections is labelled `BLOCK` or `NOTE`
+(never `ISSUE`) by its diagnostic's severity (Story R10c; `--json` output is
+unchanged). Every message and path is ESC-escaped the same way every other
+review command escapes untrusted text.
 
 ## `review preflight` and `review packet` outcomes
 

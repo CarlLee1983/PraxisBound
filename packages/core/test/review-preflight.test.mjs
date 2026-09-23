@@ -17,7 +17,7 @@ function baseInput(overrides = {}) {
     storyFindings: [],
     expectFingerprint: undefined,
     gitFindings: [],
-    semanticReport: "present",
+    semanticFindings: [],
     ...overrides,
   };
 }
@@ -187,10 +187,20 @@ test("AC-003: a matching expectFingerprint produces no diagnostic", () => {
 });
 
 test("AC-003: a missing Semantic Report yields REVIEW_SEMANTIC_MISSING and REVIEW_INCOMPLETE", () => {
-  const result = evaluatePreflight(baseInput({ semanticReport: "missing" }));
+  const result = evaluatePreflight(
+    baseInput({
+      semanticFindings: [
+        {
+          code: "REVIEW_SEMANTIC_MISSING",
+          message: "no Semantic Report was provided",
+        },
+      ],
+    }),
+  );
   assert.equal(result.outcome, "REVIEW_INCOMPLETE");
+  assert.deepEqual(result.mechanical, []);
   assert.deepEqual(
-    result.mechanical.map((diagnostic) => diagnostic.code),
+    result.semantic.map((diagnostic) => diagnostic.code),
     ["REVIEW_SEMANTIC_MISSING"],
   );
 });

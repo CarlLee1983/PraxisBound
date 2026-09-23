@@ -183,6 +183,8 @@ packed_packages_have_the_bounded_public_contract() {
     './dist/review/revision-sheet.js' \
     './dist/review/revision-targets.d.ts' \
     './dist/review/revision-targets.js' \
+    './dist/review/semantic-report.d.ts' \
+    './dist/review/semantic-report.js' \
     './dist/review/types.d.ts' \
     './dist/review/types.js' \
     './dist/review/vocabulary.d.ts' \
@@ -285,6 +287,8 @@ packed_packages_have_the_bounded_public_contract() {
     './dist/review-records.js' \
     './dist/review-respond.d.ts' \
     './dist/review-respond.js' \
+    './dist/review-semantic-report.d.ts' \
+    './dist/review-semantic-report.js' \
     './dist/review.d.ts' \
     './dist/review.js' \
     './dist/snapshot/AGENTS.md' \

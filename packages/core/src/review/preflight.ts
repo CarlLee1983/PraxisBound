@@ -4,9 +4,10 @@
  * the confirmation, unresolved-request, dependency-cycle, record, Story, git,
  * and fingerprint findings the CLI gathers, derives every diagnostic's
  * severity and the run's outcome from one classification table (R6), and
- * orders the result deterministically. The Semantic Report is checked only
- * for existence here (`REVIEW_SEMANTIC_MISSING`); TST-028 parses its content.
- * This module never touches a filesystem, process, or clock.
+ * orders the result deterministically. The Semantic Report's own
+ * diagnostics (Story TST-028, `semantic-report.js`) are placed in
+ * `semantic[]`, apart from every other check's `mechanical[]`. This module
+ * never touches a filesystem, process, or clock.
  */
 
 import { escapeHiddenCharacters } from "./path.js";
@@ -60,13 +61,20 @@ export interface PreflightInput {
   readonly expectFingerprint: string | undefined;
   /** REVIEW_PACKET_REVISION_MISMATCH, REVIEW_NOT_A_GIT_REPOSITORY, REVIEW_SOURCES_UNCOMMITTED. */
   readonly gitFindings: readonly PreflightFinding[];
-  readonly semanticReport: "missing" | "present";
+  /**
+   * The Semantic Report's own diagnostics (Story TST-028): the CLI decides
+   * `REVIEW_SEMANTIC_MISSING` (absent or unreadable file) and the
+   * size-before-read `REVIEW_INPUT_TOO_LARGE`; Core's `semantic-report.js`
+   * decides every other code once the file's bytes were read. Placed into
+   * `semantic[]`, never `mechanical[]`, though still classified by
+   * `CLASS_BY_CODE` and counted toward the outcome (R6).
+   */
+  readonly semanticFindings: readonly PreflightFinding[];
 }
 
 export interface PreflightEvaluation {
   readonly outcome: PreflightOutcome;
   readonly mechanical: readonly ReviewDiagnostic[];
-  /** Always empty in this Story; TST-028 fills it from the parsed Semantic Report. */
   readonly semantic: readonly ReviewDiagnostic[];
 }
 
@@ -104,6 +112,11 @@ const CLASS_BY_CODE: Readonly<Record<string, PreflightOutcomeClass>> = {
   // over-limit `records/confirmation-*.json` collection never blocks the
   // outcome outright; review round 2, M3).
   REVIEW_INPUT_TOO_LARGE: "incomplete",
+  // Semantic Report rows (contract §9, Story TST-028).
+  REVIEW_SEMANTIC_INVALID: "incomplete",
+  REVIEW_SEMANTIC_COVERAGE: "incomplete",
+  REVIEW_SEMANTIC_STALE: "stale",
+  REVIEW_SEMANTIC_BLOCKING: "blocked",
   // ADVISORY (不影響結果)
   REVIEW_DEPENDENCY_UNDECLARED: "advisory",
   REVIEW_RECORD_INVALID: "advisory",
@@ -113,6 +126,7 @@ const CLASS_BY_CODE: Readonly<Record<string, PreflightOutcomeClass>> = {
   REVIEW_SOURCE_REMOVED: "advisory",
   REVIEW_SOURCE_CHANGED: "advisory",
   REVIEW_MANIFEST_CHANGED: "advisory",
+  REVIEW_SEMANTIC_OBSERVATION: "advisory",
 };
 
 /** Outcome-precedence order (R1): STALE > BLOCKED > INCOMPLETE > (READY). */
@@ -286,23 +300,11 @@ function fingerprintMismatchDiagnostics(
   ];
 }
 
-function semanticReportDiagnostics(
-  semanticReport: "missing" | "present",
-): ReviewDiagnostic[] {
-  if (semanticReport === "present") return [];
-  return [
-    finalizeDiagnostic(
-      "REVIEW_SEMANTIC_MISSING",
-      "no Semantic Report was provided",
-      undefined,
-      undefined,
-    ),
-  ];
-}
-
-function outcomeFor(mechanical: readonly ReviewDiagnostic[]): PreflightOutcome {
+function outcomeFor(
+  diagnostics: readonly ReviewDiagnostic[],
+): PreflightOutcome {
   const classes = new Set(
-    mechanical.map((diagnostic) => classify(diagnostic.code)),
+    diagnostics.map((diagnostic) => classify(diagnostic.code)),
   );
   if (classes.has("stale")) return "REVIEW_STALE";
   if (classes.has("blocked")) return "REVIEW_BLOCKED";
@@ -311,17 +313,18 @@ function outcomeFor(mechanical: readonly ReviewDiagnostic[]): PreflightOutcome {
 }
 
 /**
- * Evaluates every mechanical contract §9 check in scope for this Story
- * (R-007 minus TST-028's Semantic Report parsing) and returns the outcome
- * and the full diagnostic list, ordered by result class
+ * Evaluates every contract §9 check in scope for this Story and returns the
+ * outcome and the two diagnostic lists, each ordered by result class
  * (`CLASS_ORDER`: STALE, BLOCKED, INCOMPLETE, ADVISORY) and, within a class,
- * by the order each check ran (batch diagnostics, dependency cycles,
- * confirmation, unresolved requests, record findings, Story findings,
- * fingerprint, git findings, Semantic Report). `semantic` is always empty
- * here (TST-028).
+ * by the order each check ran. `mechanical` holds every check but the
+ * Semantic Report's own (batch diagnostics, dependency cycles, confirmation,
+ * unresolved requests, record findings, Story findings, fingerprint, git
+ * findings); `semantic` holds only the Semantic Report's diagnostics
+ * (Story TST-028) — kept apart from `mechanical` (R6) though both count
+ * toward the outcome, which is derived from the two lists together.
  */
 export function evaluatePreflight(input: PreflightInput): PreflightEvaluation {
-  const raw: ReviewDiagnostic[] = [
+  const mechanicalRaw: ReviewDiagnostic[] = [
     ...input.batchDiagnostics.map((diagnostic) =>
       finalizeDiagnostic(
         diagnostic.code,
@@ -340,12 +343,24 @@ export function evaluatePreflight(input: PreflightInput): PreflightEvaluation {
       input.expectFingerprint,
     ),
     ...input.gitFindings.map(finalizeFinding),
-    ...semanticReportDiagnostics(input.semanticReport),
   ];
+  const semanticRaw: ReviewDiagnostic[] =
+    input.semanticFindings.map(finalizeFinding);
 
   const mechanical = CLASS_ORDER.flatMap((outcomeClass) =>
-    raw.filter((diagnostic) => classify(diagnostic.code) === outcomeClass),
+    mechanicalRaw.filter(
+      (diagnostic) => classify(diagnostic.code) === outcomeClass,
+    ),
+  );
+  const semantic = CLASS_ORDER.flatMap((outcomeClass) =>
+    semanticRaw.filter(
+      (diagnostic) => classify(diagnostic.code) === outcomeClass,
+    ),
   );
 
-  return { outcome: outcomeFor(mechanical), mechanical, semantic: [] };
+  return {
+    outcome: outcomeFor([...mechanical, ...semantic]),
+    mechanical,
+    semantic,
+  };
 }

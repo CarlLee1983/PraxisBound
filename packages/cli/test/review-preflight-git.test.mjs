@@ -96,8 +96,28 @@ async function statusPorcelain(root) {
   return stdout;
 }
 
-async function writeSemanticReportFile(root) {
-  await writeFile(join(root, "semantic-report.json"), "{}");
+/** A valid, current Semantic Report covering the fixture's one Story (`RF-001`) with `none` conclusions in every category (R6). */
+async function writeSemanticReportFile(root, batchId, fingerprint) {
+  const none = { result: "none" };
+  const report = {
+    schemaVersion: "1.0.0",
+    batchId,
+    fingerprint,
+    agent: "test-fixture-agent 1.0",
+    observedAt: "2026-09-01T00:00:00Z",
+    stories: [
+      {
+        story: "RF-001",
+        categories: {
+          "missing-split": none,
+          contradiction: none,
+          "insufficient-acceptance": none,
+          "open-question": none,
+        },
+      },
+    ],
+  };
+  await writeFile(join(root, "semantic-report.json"), JSON.stringify(report));
   return "semantic-report.json";
 }
 
@@ -143,7 +163,11 @@ test("AC-004: a clean committed batch with matching HEAD yields REVIEW_READY wit
     const head = await headCommit(root);
     const data = await indexData(root, manifestPath);
     await writeConfirmation(root, batchId, data);
-    const semanticReport = await writeSemanticReportFile(root);
+    const semanticReport = await writeSemanticReportFile(
+      root,
+      batchId,
+      data.fingerprint,
+    );
 
     const execution = await run(root, [
       manifestPath,

@@ -193,6 +193,16 @@ export type {
   PreflightReportSemanticReportRef,
   PreflightReportValidationResult,
 } from "./review/preflight-report.js";
+export {
+  evaluateSemanticReport,
+  MAX_TOTAL_ISSUES,
+} from "./review/semantic-report.js";
+export type {
+  SemanticDiagnostic,
+  SemanticDiagnosticCode,
+  SemanticReportContext,
+  SemanticReportEvaluation,
+} from "./review/semantic-report.js";
 export type {
   AdrIndex,
   IndexReviewBatchResult,
