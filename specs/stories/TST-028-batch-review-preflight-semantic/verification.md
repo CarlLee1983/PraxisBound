@@ -8,7 +8,7 @@
 * integration: pass — `review-preflight-semantic.test.mjs and review-semantic-report.test.mjs drive the Core validator and review preflight against temporary repositories, reading the written Preflight Report; review-render-command.test.mjs covers the swept --output path fix`
 * contract: pass — `cli-contract.md documents Semantic Report reading, the path rule, the gate and observation codes, and BLOCK/NOTE labels; the §9 Semantic Report rows and the R-007 out-of-batch row are what the tests assert`
 * e2e: pass — `the built binary ran on a scratch batch with a Semantic Report written by a real Agent following agent-workflow.md §2; see Semantic Preflight Rehearsal below`
-* architecture: blocked — `awaiting Human Review of feat/tst-028-preflight-semantic; one independent code and security review round found a CRITICAL path escape and more, all fixed in c3cec3c and checked by make verify and the rehearsal, not by a second review`
+* architecture: pass — `Human Review: carl accepted TST-028 in a Claude Code session on 2026-09-23, reviewing feat/tst-028-preflight-semantic at 1240002 after one independent code and security review round whose findings, including a CRITICAL path escape, were fixed in c3cec3c and checked by make verify and the rehearsal, not by a second review`
 
 ## Evidence
 
