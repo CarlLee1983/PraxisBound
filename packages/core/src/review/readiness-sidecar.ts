@@ -16,6 +16,7 @@
 import { sha256Hex } from "./fingerprint.js";
 import {
   JSON_SAFETY_DEPTH_EXCEEDED_MESSAGE,
+  JSON_SAFETY_DUPLICATE_KEY_MESSAGE,
   scanJsonSafety,
 } from "./json-safety.js";
 import {
@@ -530,17 +531,26 @@ export function parseReadinessSidecar(
   // property once this scan has ruled out a duplicate hiding it.
   const safetyFailure = scanJsonSafety(text, MAX_NESTING_DEPTH);
   if (safetyFailure !== undefined) {
-    // The scan's own message may quote a duplicated key's name; never
-    // surfaced verbatim (HIGH-1). Only "exceeds the supported depth" is a
-    // fixed, content-free string, and the one case §13 treats as a size
-    // limit rather than an ordinary invalidity.
-    const tooLarge = safetyFailure === JSON_SAFETY_DEPTH_EXCEEDED_MESSAGE;
+    // Every message `scanJsonSafety` can return is now a fixed, content-free
+    // string (round 3 LOW: it never quotes a duplicated key's own name), so
+    // each is classified into its own specific, still field-path-free
+    // wording rather than one generic catch-all.
+    if (safetyFailure === JSON_SAFETY_DEPTH_EXCEEDED_MESSAGE)
+      return {
+        ok: false,
+        tooLarge: true,
+        message: `readiness.json nesting depth exceeds ${MAX_NESTING_DEPTH}`,
+      };
+    if (safetyFailure === JSON_SAFETY_DUPLICATE_KEY_MESSAGE)
+      return {
+        ok: false,
+        tooLarge: false,
+        message: "readiness.json has a duplicate JSON key",
+      };
     return {
       ok: false,
-      tooLarge,
-      message: tooLarge
-        ? `readiness.json nesting depth exceeds ${MAX_NESTING_DEPTH}`
-        : "readiness.json is not valid JSON",
+      tooLarge: false,
+      message: "readiness.json is not valid JSON",
     };
   }
 

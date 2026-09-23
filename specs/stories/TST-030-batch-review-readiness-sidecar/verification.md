@@ -10,6 +10,14 @@
 * e2e: pass — `the built packages/cli/dist/bin.js was rehearsed twice: once (pre-existing, historical) on a scratch batch showing the base command wiring — see Rehearsal below; once (this round) against the code reviewer's own repro fixtures under the reviewer's scratchpad r2/ directory (never this repository's own Stories or work tree) — see Round-2 Rehearsal below, run under a constrained 512 MiB V8 heap (--max-old-space-size=512) against the reviewer's 268 MB huge/readiness.json and confirming no crash, a correctly streamed sha256, and REVIEW_INPUT_TOO_LARGE from every command that evaluates it`
 * architecture: blocked — `this diff has had two code-review rounds in this session (3 HIGH + several MEDIUM/LOW in round 1, all fixed; 2 HIGH + 1 MEDIUM + 3 LOW in round 2, all fixed below) but no round has yet reached full acceptance. Human Review by carl approved the TST-030 Story itself for execution on 2026-09-23 (recorded in the Story's Dependencies), which is authorization to implement, not acceptance of this implementation. Blocked on a human/reviewer action outside this session, not on any failing check.`
 
+## Code Review Follow-up — Round 3 (2026-09-23)
+
+The third review found the branch mergeable with one MEDIUM and two LOW items, fixed here:
+
+* MEDIUM: a Sidecar that grows after `fstat` could still be read whole. `readReadinessSidecarObservation` (`packages/cli/src/review.ts`) now reads at most 1 MiB + 1 bytes through the open handle with positioned reads; a full buffer classifies it `oversized` and the remainder is streamed into the hash, never buffered. Covered by a new test in `packages/cli/test/review-readiness.test.mjs` that injects a read seam simulating growth.
+* LOW: `json-safety.ts` never quotes a duplicated key's name, matching its docstring; a duplicate key now reports a specific, content-free Readiness Sidecar message (`packages/core/test/review-readiness-sidecar.test.mjs`).
+* `make verify`: exit 0 on this tree (850 Node tests pass, 0 fail), run by the main agent after the implementer stalled before running it.
+
 ## Code Review Follow-up — Round 2 (2026-09-23)
 
 Every finding below was reproduced against the built CLI before the fix, using the reviewer's own fixtures (`.../scratchpad/r2/{hostile,proto,huge,big,mid,unr,rd,none}`); each fix is TDD'd with a new, named, failing-then-passing test, and the two size/prototype fixes are additionally re-verified against the reviewer's real fixtures with the built binary (see Round-2 Rehearsal).

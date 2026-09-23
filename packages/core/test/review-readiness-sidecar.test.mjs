@@ -512,11 +512,11 @@ test("MEDIUM: a duplicate JSON key anywhere in the document is rejected as inval
   );
   assert.equal(parsed.ok, false);
   assert.equal(parsed.tooLarge, false);
-  // HIGH-1 (round 2): the generic scanner's own message may quote the
-  // duplicated key's name, so parseReadinessSidecar re-words every non-depth
-  // safety failure to this fixed, content-free string rather than surfacing
-  // it verbatim.
-  assert.equal(parsed.message, "readiness.json is not valid JSON");
+  // round 3 LOW: scanJsonSafety's own duplicate-key message is now a fixed,
+  // content-free string (it never quotes the key's name), so
+  // parseReadinessSidecar gives it its own specific, still field-path-free
+  // wording instead of the generic "not valid JSON" catch-all.
+  assert.equal(parsed.message, "readiness.json has a duplicate JSON key");
 });
 
 test("HIGH-2: a __proto__ key (top-level and inside a criterion) is rejected as an unknown field, never repointing the object's prototype", () => {

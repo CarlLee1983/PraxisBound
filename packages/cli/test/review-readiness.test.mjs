@@ -14,7 +14,11 @@ import test from "node:test";
 
 import { validateResultEnvelope } from "@praxisbound/core";
 
-import { runReviewIndex, runReviewRender } from "../dist/review.js";
+import {
+  readReadinessSidecarObservation,
+  runReviewIndex,
+  runReviewRender,
+} from "../dist/review.js";
 import {
   renderReviewPreflightHuman,
   runReviewPreflight,
@@ -1189,6 +1193,47 @@ test("LOW: readiness-digests re-checks the symlink/unsafe path before staging an
       "utf8",
     );
     assert.equal(after, before);
+  } finally {
+    await cleanupWorkspace(root);
+  }
+});
+
+test("MEDIUM (round 3): fstat's reported size is never trusted alone — a file that grows after fstat is still classified oversized, bounded by the actual bytes read", async () => {
+  const batchId = "TST-9928-growth";
+  const { root } = await readyFixtureRepoWithReadiness(batchId, undefined);
+  const readinessPath = "specs/stories/RF-001-fixture/readiness.json";
+  const absolutePath = join(root, readinessPath);
+  try {
+    // The real file on disk is tiny: fstat/lstat both report well under the
+    // 1 MiB bound.
+    await writeFile(absolutePath, "x".repeat(1000));
+    const realSize = (await stat(absolutePath)).size;
+    assert.ok(realSize < 1024 * 1024, "sanity: the real file is small");
+
+    // An injected low-level `read` that claims the file supplies every byte
+    // the bounded buffer asks for, regardless of the real file's actual
+    // size — simulating a file that grew between `fstat` and the read loop,
+    // which is impractical to force as a genuine filesystem race.
+    const growingRead = async (_handle, _buffer, _offset, length) => ({
+      bytesRead: length,
+    });
+
+    const observation = await readReadinessSidecarObservation(
+      root,
+      readinessPath,
+      growingRead,
+    );
+    assert.equal(observation.kind, "oversized");
+    assert.match(observation.sha256, /^[a-f0-9]{64}$/);
+
+    // The un-injected path still classifies the same (genuinely small) file
+    // as `file`, so the difference above is attributable only to the
+    // simulated growth, not some other change in behavior.
+    const normalObservation = await readReadinessSidecarObservation(
+      root,
+      readinessPath,
+    );
+    assert.equal(normalObservation.kind, "file");
   } finally {
     await cleanupWorkspace(root);
   }

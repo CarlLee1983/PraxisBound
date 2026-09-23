@@ -6,6 +6,7 @@ import {
   realpath,
   rename,
   unlink,
+  type FileHandle,
 } from "node:fs/promises";
 import { createHash, randomUUID } from "node:crypto";
 import {
@@ -343,18 +344,48 @@ async function readSourceObservation(
 const READINESS_SIDECAR_MAX_BYTES = 1024 * 1024;
 
 /**
- * Reads one Readiness Sidecar the same safe way `readSourceObservation`
- * does, but checks its size via `fstat` on the already-`O_NOFOLLOW`-opened
- * handle *before* reading any content (Story TST-030 HIGH-1, code review
- * round 2): over the §13/§21 1 MiB bound, its bytes are never loaded into
- * memory at all — only streamed through a hash so the fingerprint still
- * covers it — and the observation is `oversized`, carrying that digest. A
- * batch author's readiness.json can be arbitrarily large without `review
- * index`/`review render` ever risking a heap allocation proportional to it.
+ * One low-level positioned read against an open handle, the shape of
+ * `FileHandle.prototype.read`. Kept injectable (code review round 3
+ * MEDIUM) so a test can simulate a file that grows after `fstat` without
+ * needing a real, timing-dependent race: `fstat`'s reported size is never
+ * trusted as the bound on its own, only the number of bytes an actual read
+ * returns.
  */
-async function readReadinessSidecarObservation(
+export type BoundedRead = (
+  handle: FileHandle,
+  buffer: Buffer,
+  offset: number,
+  length: number,
+  position: number,
+) => Promise<{ readonly bytesRead: number }>;
+
+const defaultBoundedRead: BoundedRead = (
+  handle,
+  buffer,
+  offset,
+  length,
+  position,
+) => handle.read(buffer, offset, length, position);
+
+/**
+ * Reads one Readiness Sidecar the same safe way `readSourceObservation`
+ * does, but never buffers more than `READINESS_SIDECAR_MAX_BYTES + 1` bytes
+ * regardless of what `fstat` reported (Story TST-030 HIGH-1, code review
+ * round 3 MEDIUM): `fstat`'s size is read once, before opening, but a file
+ * can grow between that check and the read that follows, so the actual
+ * bound is enforced by the read loop itself, not by trusting a stat result.
+ * At or under the §13/§21 1 MiB bound, the exact bytes read are returned as
+ * `file`; over it, those bytes already read are hashed, then the remainder
+ * of the file is streamed through the same hash without ever being
+ * buffered, and the observation is `oversized`, carrying only that digest.
+ * A batch author's readiness.json can be arbitrarily large, or grow after
+ * this function starts reading it, without `review index`/`review render`
+ * ever risking a heap allocation proportional to it.
+ */
+export async function readReadinessSidecarObservation(
   root: string,
   path: string,
+  boundedRead: BoundedRead = defaultBoundedRead,
 ): Promise<SourceObservation> {
   const absolute = resolve(root, path);
   let pathStats;
@@ -383,17 +414,45 @@ async function readReadinessSidecarObservation(
   try {
     const openedStats = await handle.stat();
     if (!openedStats.isFile()) return { kind: "unreadable" };
-    if (openedStats.size > READINESS_SIDECAR_MAX_BYTES) {
-      const hash = createHash("sha256");
-      for await (const chunk of handle.createReadStream({
-        autoClose: false,
-      })) {
-        hash.update(chunk as Uint8Array);
-      }
-      return { kind: "oversized", sha256: hash.digest("hex") };
+
+    // Bounded read: fill at most MAX+1 bytes, at explicit positions (never
+    // relying on the handle's own position), so a buffer that fills all the
+    // way is the one and only signal for "over the bound" — not `fstat`'s
+    // (possibly stale) `size`.
+    const buffer = Buffer.alloc(READINESS_SIDECAR_MAX_BYTES + 1);
+    let totalRead = 0;
+    for (;;) {
+      const { bytesRead } = await boundedRead(
+        handle,
+        buffer,
+        totalRead,
+        buffer.length - totalRead,
+        totalRead,
+      );
+      if (bytesRead === 0) break;
+      totalRead += bytesRead;
+      if (totalRead >= buffer.length) break;
     }
-    const bytes = await handle.readFile();
-    return { kind: "file", bytes };
+
+    if (totalRead <= READINESS_SIDECAR_MAX_BYTES) {
+      return {
+        kind: "file",
+        bytes: new Uint8Array(buffer.subarray(0, totalRead)),
+      };
+    }
+
+    // The buffer filled: this file is over the bound (whatever `fstat` may
+    // have reported earlier). The bytes already read are hashed; the rest
+    // of the file is streamed through the same hash, never buffered.
+    const hash = createHash("sha256");
+    hash.update(buffer.subarray(0, totalRead));
+    for await (const chunk of handle.createReadStream({
+      autoClose: false,
+      start: totalRead,
+    })) {
+      hash.update(chunk as Uint8Array);
+    }
+    return { kind: "oversized", sha256: hash.digest("hex") };
   } catch {
     return { kind: "unreadable" };
   } finally {

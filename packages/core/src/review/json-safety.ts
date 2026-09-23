@@ -20,10 +20,13 @@
 
 /**
  * `undefined` when `text` is safe to hand to `JSON.parse`; otherwise a
- * fixed, static failure reason. The reason never quotes `text` itself (a
- * duplicated key's name included) — callers that must never echo untrusted
- * document content (Story TST-030 HIGH-1) should not surface this message
- * verbatim; see `readiness-sidecar.ts`'s own generic re-wording.
+ * fixed, static failure reason, one of a small closed set of literal
+ * strings. None of them ever quotes `text` itself (a duplicated key's name
+ * included) — callers that must never echo untrusted document content
+ * (Story TST-030 HIGH-1) can surface these messages directly, or classify
+ * `JSON_SAFETY_DUPLICATE_KEY_MESSAGE`/`JSON_SAFETY_DEPTH_EXCEEDED_MESSAGE`
+ * for a more specific, still field-path-free wording; see
+ * `readiness-sidecar.ts`'s own re-wording.
  */
 export function scanJsonSafety(
   text: string,
@@ -119,7 +122,11 @@ export function scanJsonSafety(
       while (index < text.length) {
         const key = readString();
         if (key === undefined) return false;
-        if (keys.has(key)) return fail(`JSON object key is duplicated: ${key}`);
+        // A fixed, static message (code review round 3 LOW): the docstring
+        // above promises the duplicated key's own name is never quoted, so
+        // the code must not quote it either, however harmless a single
+        // instance might look.
+        if (keys.has(key)) return fail(JSON_SAFETY_DUPLICATE_KEY_MESSAGE);
         keys.add(key);
         skipWhitespace();
         if (text[index] !== ":") return fail("JSON object key lacks a colon");
@@ -189,3 +196,7 @@ export function scanJsonSafety(
 /** The one fixed failure reason `scanJsonSafety` returns for exceeding `maxDepth`, so a caller can classify it (a size/complexity limit) without matching on any other message. */
 export const JSON_SAFETY_DEPTH_EXCEEDED_MESSAGE =
   "JSON nesting exceeds the supported depth";
+
+/** The one fixed failure reason `scanJsonSafety` returns for a duplicate object key — never the key's own name — so a caller can classify it for a more specific, still content-free message. */
+export const JSON_SAFETY_DUPLICATE_KEY_MESSAGE =
+  "JSON object key is duplicated";
