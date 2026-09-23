@@ -170,6 +170,7 @@ export { indexReviewBatch } from "./review/index.js";
 export { planReviewBatch } from "./review/manifest.js";
 export { renderReviewProjection } from "./review/render.js";
 export { computeFingerprint, sha256Hex } from "./review/fingerprint.js";
+export { findDependencyCycles } from "./review/dependency-graph.js";
 export type {
   AdrIndex,
   IndexReviewBatchResult,
