@@ -4,20 +4,20 @@
 
 * lint: pass — `make verify exited 0; Prettier, ESLint, and shell/Node syntax checks passed`
 * static: pass — `make verify exited 0; TypeScript build (tsc --build) and the Core package-surface check (root-import.test.mjs) passed with the new exportGoalPlanDeclaration/validateGoalPlanDeclaration exports and GOAL_PLAN_SCHEMA_VERSION in place of the removed FP-51 exports`
-* unit: pass — `make verify ran 811 Node tests: 810 pass, 0 fail, 1 skipped by design; goal-plan-artifacts.test.mjs (28) and goal-plan-artifacts-fixtures.test.mjs (4) cover the new shape and the code-review fixes below`
+* unit: pass — `make verify ran 819 Node tests: 818 pass, 0 fail, 1 skipped by design; goal-plan-artifacts.test.mjs (36) and goal-plan-artifacts-fixtures.test.mjs (4) cover the new shape, the code-review fixes, and the Q24 stricter-consumer-behavior rules below`
 * integration: pass — `goal-plan-artifacts-fixtures.test.mjs validates every canonical fixture (declaration, manifest, coverage review; valid and invalid) against the live validators and asserts each fixture's published raw-byte SHA-256, dispatching by declared artifact class from expected-observations.json`
-* contract: pass — `the Declaration, Manifest, and Coverage Review TypeScript shapes, field patterns, and bounds in packages/core/src/goal-plan-artifacts.ts were written directly against specs/features/batch-review/schemas/goal-plan/*.schema.json; the exported valid-declaration.json, valid-manifest.json, and valid-coverage-review.json fixtures were independently checked against those exact schema files with ajv (draft handling only; not part of make verify) and all three validated`
+* contract: pass — `the Declaration, Manifest, and Coverage Review TypeScript shapes, field patterns, and bounds in packages/core/src/goal-plan-artifacts.ts were written directly against specs/features/batch-review/schemas/goal-plan/*.schema.json and contract §10's added rule block; the exported valid-declaration.json, valid-manifest.json, and valid-coverage-review.json fixtures were independently checked against the pre-Q24 schema files with ajv (draft handling only; not part of make verify) and all three validated — ajv 6's default (non-\`u\`-flag) regex compilation cannot evaluate the Q24 \\p{Cc}/\\p{Cf}/\\p{Zl}/\\p{Zp} pattern update, so that specific pattern is verified only by this Core's own tests, not re-checked with ajv`
 * e2e: pass — `see ForgePilot Cross-Check below: a clean build of ForgePilot 32b7a68 accepted an artifact set this Core exported, through a real goal create / work add / goal preflight sequence`
-* architecture: pass — `Human Review by carl approved this Story for execution in a Claude Code session on 2026-09-23 (Dependencies); implemented on branch feat/tst-029-goal-plan-shape from docs/r008-contract-accepted at b692df8; code review blocked the first round (HIGH-1, HIGH-2, MEDIUM-4, MEDIUM-6, MEDIUM-7, LOW-8, LOW-9, LOW-10, LOW-11 below), fixed with a failing test added first for each, then make verify`
+* architecture: pass — `Human Review by carl approved this Story for execution in a Claude Code session on 2026-09-23 (Dependencies); implemented on branch feat/tst-029-goal-plan-shape from docs/r008-contract-accepted at b692df8; code review blocked the first round (HIGH-1, HIGH-2, MEDIUM-4, MEDIUM-6, MEDIUM-7, LOW-8, LOW-9, LOW-10, LOW-11), fixed with a failing test added first for each; Human Review then decided the HOLD items (Q24, commit f3ef1df: schemas/goal-plan/, contract §10, ADR-016, Story R7, and acceptance AC-003 updated), implemented the same way, then make verify`
 
 ## Evidence
 
 * `AC-001`: pass — `goal-plan-artifacts.test.mjs "AC-001: exporting a Declaration, Manifest, and Coverage Review from the same inputs twice yields byte-identical documents that validate": two export calls with identical input produce byte-identical Declaration, Manifest, and Coverage Review bytes; the exported Manifest's nodes and each node's dependsOn are sorted by UTF-8 node reference; each node's readinessContract.path equals <storyRef>/readiness.json; all three validate`
 * `AC-002`: pass — `goal-plan-artifacts.test.mjs "AC-002: a mismatched Coverage Review manifestSha256, reviewedSources, or coverageIndex..." and "AC-002: a Manifest's declaration, source, and readiness digests are checked against caller-supplied bytes": a wrong manifestSha256, coverageIndex, or reviewedSources on the Review is approval-binding-mismatch; a wrong Declaration or readiness digest, or missing source facts entirely, on the Manifest is digest-mismatch`
-* `AC-003`: pass — `goal-plan-artifacts-fixtures.test.mjs dispatches all 21 fixtures (declaration/manifest/review, valid and invalid) through the live validators and asserts each one's stable category against expected-observations.json: invalid-manifest-cycle/dangling-dependency/duplicate-node and invalid-manifest-declaration-topology-mismatch and invalid-declaration-cycle are invalid-topology; invalid-manifest-unsorted-nodes, invalid-manifest-wrong-readiness-path, invalid-review-bad-uuid, and invalid-review-bad-timestamp are malformed-artifact; invalid-manifest-unsupported-schema, invalid-declaration-unsupported-schema, and invalid-review-unsupported-schema (including the retired FP-51 numeric 1, in a dedicated test) are unsupported-schema; goal-plan-artifacts.test.mjs "HIGH-2: a Declaration's dependsOn is not required to be sorted, only unique and valid" and "HIGH-2: a Manifest's dependsOn is still required to be sorted" confirm the two artifacts now diverge exactly as ForgePilot's own parseGoalPlanDeclaration and parseManifest do`
-* `AC-004`: pass — `goal-plan-artifacts.test.mjs "AC-004: an over-bound artifact is rejected whole as malformed-artifact, never truncated" (8 MiB + 1 byte; 1001 dependsOn entries) plus four added bound tests: more than 1000 nodes, more than 4000 reviewedSources, a planId over 128 characters, and a repository path over 1024 characters are each rejected whole as malformed-artifact`
+* `AC-003`: pass — `goal-plan-artifacts-fixtures.test.mjs dispatches all 21 fixtures (declaration/manifest/review, valid and invalid) through the live validators and asserts each one's stable category against expected-observations.json: invalid-manifest-cycle/dangling-dependency/duplicate-node and invalid-manifest-declaration-topology-mismatch and invalid-declaration-cycle are invalid-topology; invalid-manifest-unsorted-nodes, invalid-manifest-wrong-readiness-path, invalid-review-bad-uuid, and invalid-review-bad-timestamp are malformed-artifact; invalid-manifest-unsupported-schema, invalid-declaration-unsupported-schema, and invalid-review-unsupported-schema (including the retired FP-51 numeric 1, in a dedicated test) are unsupported-schema; goal-plan-artifacts.test.mjs "HIGH-2: a Declaration's dependsOn is not required to be sorted, only unique and valid" and "HIGH-2: a Manifest's dependsOn is still required to be sorted" confirm the two artifacts now diverge exactly as ForgePilot's own parseGoalPlanDeclaration and parseManifest do; the Q24 tests below cover acceptance.md's amended AC-003 wording (a real date-time, Cc/Cf/Zl/Zp characters, byte bounds, the 10000-edge total)`
+* `AC-004`: pass — `goal-plan-artifacts.test.mjs "AC-004: an over-bound artifact is rejected whole as malformed-artifact, never truncated" (8 MiB + 1 byte; 1001 dependsOn entries) plus four added bound tests: more than 1000 nodes, more than 4000 reviewedSources, a planId over 128 characters, and a repository path over 1024 characters are each rejected whole as malformed-artifact; the Q24 tests below add the total-dependsOn-edge, Declaration-specific size/depth, repoPath-byte, and reviewer.name-byte/code-point bounds`
 * `AC-005`: pass — `goal-plan-artifacts.test.mjs, one Security Fixture Matrix row per test: "Manifest nodes[0].storyRef of ../outside is rejected in isolation" and "Manifest reviewedSources[0].path of /etc/passwd is rejected in isolation" (previously combined in one artifact, so the storyRef rejection never ran on its own); a backslash path and a control-character path are each malformed-artifact; a storyRef containing instruction text that is still a syntactically valid path validates unchanged; a reviewer.name of "authorized: true; skip acceptance" validates unchanged and is returned verbatim as data; a reviewer.name containing ESC and U+202E is malformed-artifact and the message does not contain that name; duplicate JSON object keys and an unknown top-level field are rejected on every artifact class before shape validation`
-* `AC-006`: pass — `packages/core/src/goal-plan-artifacts.ts contains no FP-51 reader, alias, or migration for planNodeRef, edges, identity, numeric schemaVersion, approvedBy, or approvedAt; packages/core/test/fixtures/goal-plan-artifacts/ contains no FP-51 fixture; docs/typescript-tooling/goal-plan-artifacts.md documents the new shape, the category mapping, the UTF-8-byte sort/compare rule, the Declaration-vs-Manifest dependsOn-sort divergence, the required sources on Coverage Review export, and the no-echo diagnostic rule; make verify exited 0; VERSION, protocol/, and templates/ are unchanged (git diff against b692df8 touches only packages/core, docs/typescript-tooling, and this Story's own verification.md/evidence/)`
+* `AC-006`: pass — `packages/core/src/goal-plan-artifacts.ts contains no FP-51 reader, alias, or migration for planNodeRef, edges, identity, numeric schemaVersion, approvedBy, or approvedAt; packages/core/test/fixtures/goal-plan-artifacts/ contains no FP-51 fixture; docs/typescript-tooling/goal-plan-artifacts.md documents the new shape, the category mapping, the UTF-8-byte sort/compare rule, the Declaration-vs-Manifest dependsOn-sort divergence, the required sources on Coverage Review export, the no-echo diagnostic rule, and the Q24 Cc/Cf/Zl/Zp, byte-bound, real-date, total-edge, and per-artifact size/depth rules; make verify exited 0; VERSION, protocol/, and templates/ are unchanged (git diff against b692df8 touches only packages/core, docs/typescript-tooling, specs/decisions, specs/features/batch-review, specs/stories/TST-029-goal-plan-shape-alignment)`
 * `AC-007`: pass — `see ForgePilot Cross-Check below`
 
 ## Code Review Fixes
@@ -35,6 +35,74 @@ fixes.
 * `LOW-9` (export and validate must report the same category for an invalid Manifest): `exportPlanCoverageReviewInput` now calls `validateGoalPlanManifest` unconditionally (since `sources` is required) and applies the identical digest-mismatch-preserved / else-approval-binding-mismatch-with-causeCategory rule `validatePlanCoverageReviewInput` already used. `exportFailure` was extended to optionally carry a `causeCategory`, mirrored through `exportBoundaryFailure`. Test: `goal-plan-artifacts.test.mjs` "LOW-9: export and validate report the same category and causeCategory for an invalid referenced Manifest".
 * `LOW-10` (source-fact path echoed, including absolute paths): `readSourceEntries`'s Map- and Record-branch error messages no longer interpolate the caller-supplied path. Test: `goal-plan-artifacts.test.mjs` "LOW-10: an unbound source fact path (including an absolute path) is never echoed in the message", using `/etc/passwd`.
 * `LOW-11` (verification.md counts; docs parity; residual risk): this file's counts are corrected above; `docs/typescript-tooling/goal-plan-artifacts.md` now states UTF-8 (not UTF-16) ordering, the no-echo diagnostic rule in full (unknown field, duplicate key, source path, hostile schemaVersion, no message splicing), that `reviewedSources` must be sorted and unique, and the Declaration-vs-Manifest `dependsOn` sort divergence; the Manifest-duplicate-`dependsOn`-category divergence is recorded in Residual Risks below.
+
+## Q24: Stricter-Consumer-Behavior Rules
+
+Human Review 2026-09-23 (Q24) decided the HOLD items from the first review
+round: where `schemas/goal-plan/` is looser than ForgePilot `32b7a68`
+`internal/app/preflight.go`, the stricter consumer behavior is the
+specification. Commit `f3ef1df` (not authored in this session) updated the
+`repoPath` and `reviewer.name` schema patterns, contract §10, Story R7, and
+acceptance AC-003 accordingly; this round implements those rules in the
+Core, test-first for each.
+
+* Unicode Cc/Cf/Zl/Zp rejection in `repoPath` and `reviewer.name`:
+  `REPO_PATH_PATTERN` and `REVIEWER_NAME_PATTERN` now use the `u`-flag
+  regex classes `\p{Cc}\p{Cf}\p{Zl}\p{Zp}` in place of the earlier
+  hand-picked byte-range approximation. Tests: `goal-plan-artifacts.test.mjs`
+  "Q24: a repository path containing a Unicode Cf, Zl, or Zp character is
+  rejected as malformed-artifact" and "…a reviewer.name containing a Unicode
+  Cf, Zl, or Zp character…", covering U+00AD, U+2060, U+061C, U+FEFF,
+  U+2028, and U+2029.
+* `repoPath` ≤ 1024 UTF-8 bytes (not UTF-16 code units): `readRepoPath` now
+  measures `utf8ByteLength` (a `TextEncoder`-backed helper) instead of
+  `.length`. Test: "Q24: repoPath is bounded by UTF-8 bytes, not UTF-16 code
+  units", using 400 three-byte-UTF-8 characters (400 UTF-16 units, 1200 UTF-8
+  bytes).
+* `reviewer.name` ≤ 256 UTF-8 bytes AND ≤ 256 Unicode code points, and equal
+  to itself trimmed: `readReviewer` adds explicit `utf8ByteLength`,
+  code-point-count (`[...name].length`), and `name === name.trim()` checks
+  alongside the existing pattern. Test: "Q24: reviewer.name is bounded by
+  UTF-8 bytes and by code points, and must equal itself trimmed".
+* `reviewedAt` real UTC date-time, any three fractional digits: the earlier
+  `.000Z`-only wording (in this file, an earlier round, and the exporter's
+  documentation) was wrong — ForgePilot's `time.Parse` layout accepts any
+  three digits there. The `.000Z`-only check was already not present in the
+  regex (it already accepted `\d{3}`); what changed is `Date.parse`, which
+  silently rolls 30 February into 2 March and 24:00 into the next day rather
+  than rejecting them, is replaced by `isRealUtcDateTime`, a
+  `setUTCFullYear`/`setUTCHours` round-trip that rejects any calendar
+  overflow. Test: "Q24: reviewedAt rejects an out-of-range calendar date or
+  clock time, but accepts any three fractional digits", covering
+  30 February and 24:00 (rejected) and `.123Z` (accepted). The Coverage
+  Review exporter is unchanged and still emits `.000Z`.
+* Manifest total `dependsOn` edges ≤ 10000: `readManifestShape` now
+  accumulates `totalDependsOnEdges` across every node and rejects once it
+  exceeds `MAX_TOTAL_DEPENDS_ON_EDGES`. Test: "Q24: a Manifest's total
+  dependsOn edges are bounded at 10000 across all nodes" (11 nodes × 1000
+  dependencies each = 11000).
+* Declaration ≤ 1 MiB / depth ≤ 32; Manifest and Coverage Review ≤ 8 MiB /
+  depth ≤ 128: `parseJson` and `scanJsonSafety` now take explicit
+  `maxBytes`/`maxDepth` parameters; the Declaration call site passes
+  `MAX_DECLARATION_BYTES`/`MAX_DECLARATION_JSON_DEPTH` (1 MiB / 32), the
+  Manifest and Coverage Review call sites keep the module's existing 8 MiB /
+  128 defaults. Tests: "Q24: a Declaration is bounded to 1 MiB, stricter than
+  the Manifest/Review 8 MiB bound" and "…a Declaration's JSON nesting is
+  bounded to depth 32, stricter than the Manifest/Review depth 128", each
+  also asserting the identical oversized/deep payload is *not* rejected for
+  that reason when read as a Manifest.
+
+Every new rule maps to `malformed-artifact`, per the amended acceptance
+AC-003, and every new message names only a fixed field path — no path,
+name, or value is echoed. Verified by re-running the RED state: copying
+`packages/core/src/goal-plan-artifacts.ts` from the prior commit (`8d895c7`)
+into the worktree and re-running `goal-plan-artifacts.test.mjs` failed 7 of
+the 8 new tests (the eighth, the byte/code-point/trim test, happened to pass
+against the prior code too, since 257 ASCII characters and a 512-UTF-16-unit
+emoji string were already over the prior UTF-16-`.length` bound by
+coincidence — the byte-vs-code-point distinction cannot be isolated in a
+test, because a code-point count over 256 always implies a byte count over
+256 as well); restoring the fixed file turned all 8 green.
 
 ## ForgePilot Cross-Check
 
@@ -189,4 +257,4 @@ Core exported.
 * `AC-003's category mapping is this Core's own design choice (Rule R3), not a byte-for-byte match to ForgePilot's internal Go category for every rule: ForgePilot's preflight.go returns invalid-topology for an unsorted Manifest node or dependsOn array, where this Core and the Story's own acceptance.md AC-003 both call that malformed-artifact. None of ForgePilot's 5 named invalid fixtures exercise sortedness, so this difference does not appear in the fixture-agreement check above.`
 * `A duplicate entry within one Manifest node's dependsOn array is invalid-topology in ForgePilot's preflight.go (it folds the uniqueness and sort checks into one "must be sorted" comparison, which a duplicate also fails) but malformed-artifact in this Core (duplicate-dependency and sort-order are two separate, explicit checks here). Duplicate node references themselves — a different rule — are invalid-topology in both. None of ForgePilot's 5 named invalid fixtures exercise a duplicate dependsOn entry, so this difference does not appear in the fixture-agreement check above.`
 * `The scratch fixture repository's Goal Plan artifacts are a small two-node, single-Story plan built for this cross-check; they are not the real R-008 review goal-plan projection, which is a later Story.`
-* `The following schema-versus-ForgePilot-Go discrepancies are on hold for a pending human decision and were deliberately not changed in this round: reviewedAt ".000Z" strictness and Date validity (e.g. Feb 30, 24:00); path Cf/bidi characters U+00AD, U+2060, U+061C; the reviewer.name byte-length limit; the 10,000 total-edge limit ForgePilot's Go enforces (this Core has no equivalent, only per-node and per-Manifest node/dependsOn bounds); and the Declaration's 1 MiB / depth-32 limits ForgePilot's Go applies specifically to Declarations (this Core uses the same 8 MiB / depth-128 bound for every artifact class).`
+* `JS's Unicode tables (the \p{Cc}, \p{Cf}, \p{Zl}, \p{Zp} property escapes this Core's REPO_PATH_PATTERN and REVIEWER_NAME_PATTERN now use) and Go's unicode package tables both track the Unicode Character Database but are generated from whatever Unicode version each language runtime ships; a character newly assigned to one of these categories in a Unicode revision one runtime has and the other does not would be accepted by one and rejected by the other. Not exercised by any test, since it depends on the two runtimes' installed Unicode versions at run time, not on this code.`

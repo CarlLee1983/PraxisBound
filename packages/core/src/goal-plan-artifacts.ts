@@ -182,27 +182,44 @@ const BATCH_ID_PATTERN =
   /^[A-Z][A-Z0-9]*(?:-[A-Z0-9]+)*-[0-9]+(?:-[a-z0-9]+(?:-[a-z0-9]+)*)?$/;
 const PLAN_OR_NODE_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
 // Copied verbatim from schemas/goal-plan/goal-plan-defs.schema.json `repoPath`.
-// The excluded control/format/bidi ranges are deliberate (repoPath schema pattern).
-/* eslint-disable no-control-regex */
+// Human Review 2026-09-23 (Q24, Story TST-029 R7): the schema (and this
+// pattern) excludes Unicode Cc (control), Cf (format, e.g. U+00AD, U+2060,
+// U+061C, U+FEFF), Zl (line separator), and Zp (paragraph separator) \u2014 the
+// same categories Go's `unicode` tables use \u2014 because that is what
+// ForgePilot `32b7a68` `internal/app/preflight.go` actually accepts, which
+// is stricter than the byte-range approximation this pattern used before.
 const REPO_PATH_PATTERN =
-  /^(?!\/)(?![A-Za-z]:)(?!.*(?:^|\/)\.\.?(?:\/|$))(?!.*\/\/)(?!.*\/$)(?!.*\\)(?!.*[\u0000-\u001f\u007f-\u009f\u2028\u2029\u200b-\u200f\u202a-\u202e\u2066-\u2069\ufeff]).+$/;
+  /^(?!\/)(?![A-Za-z]:)(?!.*(?:^|\/)\.\.?(?:\/|$))(?!.*\/\/)(?!.*\/$)(?!.*\\)(?!.*[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]).+$/u;
 const REVIEW_ID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
-// The excluded control/format/bidi ranges are deliberate (reviewer.name schema pattern).
+// Same Unicode-category rationale as REPO_PATH_PATTERN above.
 const REVIEWER_NAME_PATTERN =
-  /^(?!.*[\u0000-\u001f\u007f-\u009f\u2028\u2029\u200b-\u200f\u202a-\u202e\u2066-\u2069\ufeff])\S(?:[\s\S]*\S)?$/;
-/* eslint-enable no-control-regex */
-const REVIEWED_AT_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
+  /^(?!.*[\p{Cc}\p{Cf}\p{Zl}\p{Zp}])\S(?:[\s\S]*\S)?$/u;
+const REVIEWED_AT_PATTERN =
+  /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})\.\d{3}Z$/;
 
 const MAX_NODES = 1000;
 const MAX_DEPENDS_ON = 1000;
+/** ForgePilot preflight.go's total dependency-edge bound across a Manifest. */
+const MAX_TOTAL_DEPENDS_ON_EDGES = 10000;
 const MAX_REVIEWED_SOURCES = 4000;
-const MAX_REPO_PATH_LENGTH = 1024;
+const MAX_REPO_PATH_BYTES = 1024;
 const MAX_BATCH_ID_LENGTH = 128;
-const MAX_REVIEWER_NAME_LENGTH = 256;
+const MAX_REVIEWER_NAME_BYTES = 256;
+const MAX_REVIEWER_NAME_CODEPOINTS = 256;
 /** Bound untrusted JSON before parsing opaque node metadata and review data. */
 const MAX_ARTIFACT_BYTES = 8 * 1024 * 1024;
 const MAX_JSON_DEPTH = 128;
+/** ForgePilot preflight.go applies a stricter bound to the Declaration alone. */
+const MAX_DECLARATION_BYTES = 1024 * 1024;
+const MAX_DECLARATION_JSON_DEPTH = 32;
+
+const utf8Encoder = new TextEncoder();
+
+/** The exact UTF-8 byte length of a string, without allocating full bytes. */
+function utf8ByteLength(value: string): number {
+  return utf8Encoder.encode(value).byteLength;
+}
 
 type JsonRecord = Record<string, unknown>;
 
@@ -349,7 +366,7 @@ function snapshotUint8Array(
  * pathological nesting cannot be hidden by the host parser. The scanner is
  * deliberately only a safety check; JSON.parse remains the syntax authority.
  */
-function scanJsonSafety(text: string): string | undefined {
+function scanJsonSafety(text: string, maxDepth: number): string | undefined {
   let index = 0;
   let scanFailure: string | undefined;
 
@@ -425,7 +442,7 @@ function scanJsonSafety(text: string): string | undefined {
   };
 
   const readValue = (depth: number): boolean => {
-    if (depth > MAX_JSON_DEPTH)
+    if (depth > maxDepth)
       return fail("JSON nesting exceeds the supported depth");
     skipWhitespace();
     const character = text[index];
@@ -507,12 +524,16 @@ function scanJsonSafety(text: string): string | undefined {
   return scanFailure;
 }
 
-function parseJson(bytes: Uint8Array): ParsedJsonResult {
+function parseJson(
+  bytes: Uint8Array,
+  maxBytes: number = MAX_ARTIFACT_BYTES,
+  maxDepth: number = MAX_JSON_DEPTH,
+): ParsedJsonResult {
   const byteLength = byteLengthOf(bytes);
   if (byteLength === undefined) {
     return { ok: false, message: "artifact bytes must be a Uint8Array" };
   }
-  if (byteLength > MAX_ARTIFACT_BYTES)
+  if (byteLength > maxBytes)
     return {
       ok: false,
       message: "artifact bytes exceed the supported size",
@@ -520,7 +541,7 @@ function parseJson(bytes: Uint8Array): ParsedJsonResult {
 
   try {
     const text = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
-    const safetyFailure = scanJsonSafety(text);
+    const safetyFailure = scanJsonSafety(text, maxDepth);
     if (safetyFailure !== undefined)
       return { ok: false, message: safetyFailure };
     return { ok: true, value: JSON.parse(text) as unknown };
@@ -560,6 +581,36 @@ function describeType(value: unknown): string {
   if (value === null) return "null";
   if (Array.isArray(value)) return "array";
   return typeof value;
+}
+
+/**
+ * A real UTC calendar date-time with exactly three fractional-second
+ * digits (any value 000-999; ForgePilot's `time.Parse` with layout
+ * `2006-01-02T15:04:05.000Z` accepts any three digits there, not only
+ * `.000Z`). Rejects an out-of-range calendar date (e.g. 30 February) or
+ * clock time (e.g. 24:00) that `Date.parse` would otherwise silently roll
+ * over into the next day or month.
+ */
+function isRealUtcDateTime(value: string): boolean {
+  const match = REVIEWED_AT_PATTERN.exec(value);
+  if (match === null) return false;
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const hour = Number(match[4]);
+  const minute = Number(match[5]);
+  const second = Number(match[6]);
+  const date = new Date(0);
+  date.setUTCFullYear(year, month - 1, day);
+  date.setUTCHours(hour, minute, second, 0);
+  return (
+    date.getUTCFullYear() === year &&
+    date.getUTCMonth() === month - 1 &&
+    date.getUTCDate() === day &&
+    date.getUTCHours() === hour &&
+    date.getUTCMinutes() === minute &&
+    date.getUTCSeconds() === second
+  );
 }
 
 function readSchemaVersion(
@@ -634,7 +685,7 @@ function readRepoPath(value: unknown): value is string {
   return (
     typeof value === "string" &&
     value.length > 0 &&
-    value.length <= MAX_REPO_PATH_LENGTH &&
+    utf8ByteLength(value) <= MAX_REPO_PATH_BYTES &&
     REPO_PATH_PATTERN.test(value)
   );
 }
@@ -1008,7 +1059,11 @@ function validateDeclarationStructure(
 ):
   | { readonly ok: true; readonly declaration: GoalPlanDeclaration }
   | GoalPlanValidationFailure {
-  const parsed = parseJson(bytes);
+  const parsed = parseJson(
+    bytes,
+    MAX_DECLARATION_BYTES,
+    MAX_DECLARATION_JSON_DEPTH,
+  );
   if (!parsed.ok)
     return failure(
       "goal-plan-declaration",
@@ -1117,6 +1172,7 @@ function readManifestShape(
   const nodes: GoalPlanManifestNode[] = [];
   const seenRefs = new Set<string>();
   let previousRef: string | undefined;
+  let totalDependsOnEdges = 0;
   for (const [index, entry] of value.nodes.entries()) {
     const nodePath = `nodes[${index}]`;
     if (!isRecord(entry))
@@ -1193,6 +1249,14 @@ function readManifestShape(
       true,
     );
     if (!dependsOnResult.ok) return dependsOnResult;
+    totalDependsOnEdges += dependsOnResult.dependsOn.length;
+    if (totalDependsOnEdges > MAX_TOTAL_DEPENDS_ON_EDGES)
+      return failure(
+        artifact,
+        "malformed-artifact",
+        "Manifest exceeds the supported total dependency-edge count",
+        { path: "nodes" },
+      );
 
     nodes.push({
       nodeRef: entry.nodeRef,
@@ -1501,7 +1565,9 @@ function readReviewer(
   if (
     typeof value.name !== "string" ||
     value.name.length === 0 ||
-    value.name.length > MAX_REVIEWER_NAME_LENGTH ||
+    value.name !== value.name.trim() ||
+    utf8ByteLength(value.name) > MAX_REVIEWER_NAME_BYTES ||
+    [...value.name].length > MAX_REVIEWER_NAME_CODEPOINTS ||
     !REVIEWER_NAME_PATTERN.test(value.name)
   )
     return failure(artifact, "malformed-artifact", "reviewer.name is invalid", {
@@ -1588,13 +1654,12 @@ function readReviewShape(
   if (!reviewerResult.ok) return reviewerResult;
   if (
     typeof value.reviewedAt !== "string" ||
-    !REVIEWED_AT_PATTERN.test(value.reviewedAt) ||
-    !Number.isFinite(Date.parse(value.reviewedAt))
+    !isRealUtcDateTime(value.reviewedAt)
   )
     return failure(
       artifact,
       "malformed-artifact",
-      "reviewedAt must be an ISO 8601 UTC timestamp with exactly .000Z",
+      "reviewedAt must be a real UTC date-time with exactly three fractional-second digits",
       { path: "reviewedAt" },
     );
 

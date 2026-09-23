@@ -4,12 +4,23 @@ PraxisBound exposes three pure Core artifacts in the shape ForgePilot's
 `goal preflight` consumes: a Goal Plan Declaration, a Goal Plan Manifest, and a
 Plan Coverage Review, exactly as defined by
 [`specs/features/batch-review/schemas/goal-plan/`](../../specs/features/batch-review/schemas/goal-plan/)
-(copied byte-for-byte from ForgePilot
-`32b7a68ebf96d74b55acec8f1cd9408f2ba70dab`). The 0.3.0 `@praxisbound/core`
-shape (FP-51: numeric `schemaVersion`, `planNodeRef`, `edges`, `identity`,
-`approvedBy`/`approvedAt`) is removed with no reader, alias, or migration
-(Story TST-029, ADR-016). Where this module and those schemas ever disagree,
-the schemas are authoritative; that is a contract defect, not an
+(copied from ForgePilot `32b7a68ebf96d74b55acec8f1cd9408f2ba70dab`, with the
+amendments below). The 0.3.0 `@praxisbound/core` shape (FP-51: numeric
+`schemaVersion`, `planNodeRef`, `edges`, `identity`, `approvedBy`/
+`approvedAt`) is removed with no reader, alias, or migration (Story TST-029,
+ADR-016).
+
+Human Review 2026-09-23 (Q24, Story TST-029 R7) decided that the
+specification is what ForgePilot `32b7a68`'s `internal/app/preflight.go`
+actually accepts, not the literal text of its testdata schema, wherever the
+two differ: `schemas/goal-plan/`'s `repoPath` and `reviewer.name` patterns
+were tightened to exclude Unicode categories Cc (control), Cf (format, e.g.
+U+00AD soft hyphen, U+2060 word joiner, U+061C Arabic letter mark, U+FEFF
+BOM), Zl (line separator), and Zp (paragraph separator) — the same
+categories Go's `unicode` tables use — and contract §10 adds the byte-length,
+real-date, total-edge, and per-artifact size/depth rules below, which JSON
+Schema cannot express. Elsewhere, where this module and those schemas
+disagree, the schemas are authoritative; that is a contract defect, not an
 implementation choice.
 
 These artifacts make a reviewed planning input explicit and keep the reviewed
@@ -70,7 +81,10 @@ A **Goal Plan Manifest** is a JSON object with:
 (`[A-Za-z0-9][A-Za-z0-9._:-]{0,127}`); `plan.revision` is a positive safe
 integer. `storyRef` and every path in a source binding are repository-relative
 paths: no leading `/`, no drive letter, no `..` or empty segment, no `//`, no
-backslash, and no control, format, or bidirectional-override character.
+backslash, no Unicode Cc/Cf/Zl/Zp character (soft hyphens, word joiners,
+BOMs, bidi overrides, line/paragraph separators, and similar), and at most
+1024 UTF-8 bytes (not UTF-16 code units, which undercount a path built from
+multi-byte characters).
 A Manifest's `nodes` and each node's `dependsOn`, and its `reviewedSources`,
 are sorted and unique, compared by UTF-8 byte order (not UTF-16 code-unit
 order, which can disagree with UTF-8 order for characters outside the Basic
@@ -79,10 +93,16 @@ Multilingual Plane); an out-of-order or duplicate array, a wrong
 unknown field is `malformed-artifact`. A Declaration's `dependsOn` has no
 sort requirement — only uniqueness and a valid node reference — matching
 both the schema and ForgePilot's own `parseGoalPlanDeclaration`; only a
-Manifest enforces sort order (Story TST-029 review HIGH-2). Duplicate node
-references, dangling `dependsOn` references, self-dependency, a dependency
-cycle, and a Declaration whose identity or node topology does not match its
-Manifest are `invalid-topology`.
+Manifest enforces sort order (Story TST-029 review HIGH-2). The total number
+of `dependsOn` entries across every node in one Manifest is bounded at 10000
+(ForgePilot `preflight.go`'s total edge bound); exceeding it is
+`malformed-artifact`. Duplicate node references, dangling `dependsOn`
+references, self-dependency, a dependency cycle, and a Declaration whose
+identity or node topology does not match its Manifest are `invalid-topology`
+— except a duplicate entry within one node's own `dependsOn` array, which is
+`malformed-artifact` here (see Residual Risks in
+`specs/stories/TST-029-goal-plan-shape-alignment/verification.md` for how
+this differs from ForgePilot's own category for that one case).
 
 Validating a Manifest with caller-supplied source facts checks three digest
 bindings against the exact raw bytes supplied: the referenced Declaration
@@ -109,10 +129,15 @@ A **Plan Coverage Review** is a JSON object with:
 }
 ```
 
-`reviewId` is a UUIDv4. `reviewedAt` is an ISO 8601 UTC timestamp with exactly
-three fractional-second digits (`.000Z`). `reviewer.name` is free-form text
-with no control, format, or bidirectional-override character; it is data, not
-an authenticated identity claim, and it never changes a validation result.
+`reviewId` is a UUIDv4. `reviewedAt` is a real UTC calendar date-time (30
+February and 24:00 are rejected, not silently rolled over into the next
+month or day) with exactly three fractional-second digits — any three
+digits, not only `.000Z`: ForgePilot's `time.Parse` layout
+`2006-01-02T15:04:05.000Z` accepts any value there (Human Review 2026-09-23,
+Q24; the exporter still emits `.000Z`). `reviewer.name` is free-form text
+with no Unicode Cc/Cf/Zl/Zp character, at most 256 UTF-8 bytes and at most
+256 Unicode code points, and equal to itself trimmed; it is data, not an
+authenticated identity claim, and it never changes a validation result.
 `reviewer.assurance` is always the literal `"self-asserted"`.
 
 A Review's `manifestSha256`, `reviewedSources`, and `coverageIndex` are
@@ -125,11 +150,15 @@ recorded in `causeCategory`, for every other Manifest failure.
 Every artifact's top-level shape, and every nested object shape (`plan`,
 source bindings, `coverageIndex`, `reviewer`), is closed: an unknown field is
 `malformed-artifact`. Duplicate JSON object keys are rejected before shape
-validation. Untrusted artifact input is bounded to 8 MiB and 128 JSON nesting
-levels before parsing, and to the schema's structural bounds (≤ 1000 nodes,
-≤ 1000 `dependsOn` entries per node, ≤ 4000 `reviewedSources`, `planId` and
-`nodeRef` ≤ 128 characters, repository paths ≤ 1024 characters); an
-over-bound artifact is rejected whole, never truncated.
+validation. Untrusted artifact input is bounded before parsing: a Manifest or
+Coverage Review to 8 MiB and 128 JSON nesting levels, a Declaration to a
+stricter 1 MiB and 32 JSON nesting levels (ForgePilot `preflight.go` applies
+that stricter bound to the Declaration alone). Artifacts are also bounded to
+the schema's structural limits (≤ 1000 nodes, ≤ 1000 `dependsOn` entries per
+node, ≤ 10000 total `dependsOn` entries per Manifest, ≤ 4000
+`reviewedSources`, `planId` and `nodeRef` ≤ 128 characters, repository paths
+≤ 1024 UTF-8 bytes, `reviewer.name` ≤ 256 UTF-8 bytes and ≤ 256 code points);
+an over-bound artifact is rejected whole, never truncated.
 
 ## Core API
 
@@ -187,7 +216,7 @@ that map to them, are:
 | Category                    | Meaning                                                                                                                                    |
 | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
 | `unsupported-schema`         | `schemaVersion` is not the supported `"1.0.0"` value (including the retired FP-51 numeric `1`).                                             |
-| `malformed-artifact`         | JSON, a required field, sort order, a readiness path, a UUID, a timestamp, or an unknown field has an invalid shape.                        |
+| `malformed-artifact`         | JSON, a required field, sort order, a readiness path, a UUID, a timestamp (including one that is not a real calendar date-time), a hostile or over-bound path or reviewer name, more than 10000 total `dependsOn` entries, or an unknown field has an invalid shape.                        |
 | `invalid-topology`           | A cycle, a duplicate or dangling node reference, or a Declaration whose identity or node set does not match its Manifest.                   |
 | `digest-mismatch`            | A declared Declaration, reviewed-source, or readiness digest differs from the supplied raw bytes, or the bytes are absent.                  |
 | `approval-binding-mismatch`  | A Coverage Review's `manifestSha256`, `reviewedSources`, or `coverageIndex` does not equal the referenced Manifest's own fields.             |

@@ -952,3 +952,256 @@ test("LOW-9: export and validate report the same category and causeCategory for 
       error.causeCategory === "invalid-topology",
   );
 });
+
+// -- Human Review 2026-09-23 (Q24): stricter-consumer-behavior rules ------
+
+test("Q24: a repository path containing a Unicode Cf, Zl, or Zp character is rejected as malformed-artifact", () => {
+  const hostileChars = [
+    "­", // soft hyphen (Cf)
+    "⁠", // word joiner (Cf)
+    "؜", // Arabic letter mark (Cf)
+    "﻿", // BOM (Cf)
+    " ", // line separator (Zl)
+    " ", // paragraph separator (Zp)
+  ];
+  for (const char of hostileChars) {
+    const manifestShape = baseManifestShape();
+    manifestShape.reviewedSources[0].path = `specs/decisions/ADR${char}001.md`;
+    const result = validateGoalPlanManifest(
+      encoder.encode(JSON.stringify(manifestShape)),
+      new Map(),
+    );
+    assert.equal(result.ok, false, JSON.stringify(char));
+    assert.equal(result.category, "malformed-artifact", JSON.stringify(char));
+  }
+});
+
+test("Q24: a reviewer.name containing a Unicode Cf, Zl, or Zp character is rejected as malformed-artifact", () => {
+  const manifestBytes = testManifestInput();
+  const manifestShape = JSON.parse(Buffer.from(manifestBytes).toString("utf8"));
+  const declarationBytes = exportGoalPlanDeclaration(
+    testDeclarationInput([
+      {
+        nodeRef: "node-a",
+        storyRef: "specs/stories/EX-001-first",
+        dependsOn: [],
+      },
+    ]),
+  );
+  const facts = new Map([
+    [manifestShape.declaration.path, declarationBytes],
+    [readinessA.path, readinessA.bytes],
+  ]);
+  const validReview = JSON.parse(
+    Buffer.from(
+      exportPlanCoverageReview({
+        manifestBytes,
+        reviewId: "00000000-0000-4000-8000-000000000007",
+        conclusion: "approved",
+        reviewer: { name: "Safe Reviewer", assurance: "self-asserted" },
+        reviewedAt: "2026-01-02T03:04:05.000Z",
+        sources: facts,
+      }),
+    ).toString("utf8"),
+  );
+  for (const char of ["­", "⁠", "؜", "﻿"]) {
+    const reviewBytes = encoder.encode(
+      JSON.stringify({
+        ...validReview,
+        reviewer: { ...validReview.reviewer, name: `Review${char}er` },
+      }),
+    );
+    const result = validatePlanCoverageReview(
+      reviewBytes,
+      manifestBytes,
+      facts,
+    );
+    assert.equal(result.ok, false, JSON.stringify(char));
+    assert.equal(result.category, "malformed-artifact", JSON.stringify(char));
+  }
+});
+
+test("Q24: repoPath is bounded by UTF-8 bytes, not UTF-16 code units", () => {
+  // 400 three-byte-UTF-8 characters: 400 UTF-16 code units (well under 1024)
+  // but 1200 UTF-8 bytes (over the 1024-byte bound).
+  const manifestShape = baseManifestShape();
+  manifestShape.reviewedSources[0].path = `specs/${"中".repeat(400)}.md`;
+  assert.ok(manifestShape.reviewedSources[0].path.length < 1024);
+  const result = validateGoalPlanManifest(
+    encoder.encode(JSON.stringify(manifestShape)),
+    new Map(),
+  );
+  assert.equal(result.ok, false);
+  assert.equal(result.category, "malformed-artifact");
+});
+
+test("Q24: reviewer.name is bounded by UTF-8 bytes and by code points, and must equal itself trimmed", () => {
+  const manifestBytes = testManifestInput();
+  const manifestShape = JSON.parse(Buffer.from(manifestBytes).toString("utf8"));
+  const declarationBytes = exportGoalPlanDeclaration(
+    testDeclarationInput([
+      {
+        nodeRef: "node-a",
+        storyRef: "specs/stories/EX-001-first",
+        dependsOn: [],
+      },
+    ]),
+  );
+  const facts = new Map([
+    [manifestShape.declaration.path, declarationBytes],
+    [readinessA.path, readinessA.bytes],
+  ]);
+  const validReview = JSON.parse(
+    Buffer.from(
+      exportPlanCoverageReview({
+        manifestBytes,
+        reviewId: "00000000-0000-4000-8000-000000000008",
+        conclusion: "approved",
+        reviewer: { name: "Safe Reviewer", assurance: "self-asserted" },
+        reviewedAt: "2026-01-02T03:04:05.000Z",
+        sources: facts,
+      }),
+    ).toString("utf8"),
+  );
+  const cases = [
+    ["257 ASCII characters", "a".repeat(257)],
+    ["256 four-byte emoji code points (1024 bytes)", "\u{1F600}".repeat(256)],
+    ["a trailing tab", "Reviewer\t"],
+  ];
+  for (const [label, name] of cases) {
+    const reviewBytes = encoder.encode(
+      JSON.stringify({
+        ...validReview,
+        reviewer: { ...validReview.reviewer, name },
+      }),
+    );
+    const result = validatePlanCoverageReview(
+      reviewBytes,
+      manifestBytes,
+      facts,
+    );
+    assert.equal(result.ok, false, label);
+    assert.equal(result.category, "malformed-artifact", label);
+  }
+});
+
+test("Q24: reviewedAt rejects an out-of-range calendar date or clock time, but accepts any three fractional digits", () => {
+  const manifestBytes = testManifestInput();
+  const manifestShape = JSON.parse(Buffer.from(manifestBytes).toString("utf8"));
+  const declarationBytes = exportGoalPlanDeclaration(
+    testDeclarationInput([
+      {
+        nodeRef: "node-a",
+        storyRef: "specs/stories/EX-001-first",
+        dependsOn: [],
+      },
+    ]),
+  );
+  const facts = new Map([
+    [manifestShape.declaration.path, declarationBytes],
+    [readinessA.path, readinessA.bytes],
+  ]);
+  const validReview = JSON.parse(
+    Buffer.from(
+      exportPlanCoverageReview({
+        manifestBytes,
+        reviewId: "00000000-0000-4000-8000-000000000009",
+        conclusion: "approved",
+        reviewer: { name: "Safe Reviewer", assurance: "self-asserted" },
+        reviewedAt: "2026-01-02T03:04:05.123Z",
+        sources: facts,
+      }),
+    ).toString("utf8"),
+  );
+  assert.equal(
+    validatePlanCoverageReview(
+      encoder.encode(JSON.stringify(validReview)),
+      manifestBytes,
+      facts,
+    ).ok,
+    true,
+    "any three fractional digits, not only .000Z, must be accepted",
+  );
+
+  for (const reviewedAt of [
+    "2026-02-30T00:00:00.000Z",
+    "2026-01-01T24:00:00.000Z",
+  ]) {
+    const reviewBytes = encoder.encode(
+      JSON.stringify({ ...validReview, reviewedAt }),
+    );
+    const result = validatePlanCoverageReview(
+      reviewBytes,
+      manifestBytes,
+      facts,
+    );
+    assert.equal(result.ok, false, reviewedAt);
+    assert.equal(result.category, "malformed-artifact", reviewedAt);
+  }
+});
+
+test("Q24: a Manifest's total dependsOn edges are bounded at 10000 across all nodes", () => {
+  const nodeCount = 11;
+  const nodes = Array.from({ length: nodeCount }, (_, i) => ({
+    nodeRef: `node-${String(i).padStart(3, "0")}`,
+    storyRef: "specs/stories/EX-001-first",
+    readinessContract: {
+      path: "specs/stories/EX-001-first/readiness.json",
+      sha256: "0".repeat(64),
+    },
+    dependsOn: Array.from(
+      { length: 1000 },
+      (_, j) => `dep-${String(j).padStart(4, "0")}`,
+    ),
+  }));
+  const manifestShape = baseManifestShape();
+  manifestShape.nodes = nodes;
+  const result = validateGoalPlanManifest(
+    encoder.encode(JSON.stringify(manifestShape)),
+    new Map(),
+  );
+  assert.equal(result.ok, false);
+  assert.equal(result.category, "malformed-artifact");
+});
+
+test("Q24: a Declaration is bounded to 1 MiB, stricter than the Manifest/Review 8 MiB bound", () => {
+  const oversizedDeclaration = new Uint8Array(1024 * 1024 + 1);
+  oversizedDeclaration.fill(0x20);
+  const declarationResult = validateGoalPlanDeclaration(oversizedDeclaration);
+  assert.equal(declarationResult.ok, false);
+  assert.equal(declarationResult.category, "malformed-artifact");
+  assert.match(declarationResult.message, /exceed/);
+
+  // The same byte count is well under the Manifest's 8 MiB bound: it must
+  // fail for a different reason (invalid JSON), not the size bound.
+  const manifestResult = validateGoalPlanManifest(
+    oversizedDeclaration,
+    new Map(),
+  );
+  assert.equal(manifestResult.ok, false);
+  assert.equal(manifestResult.category, "malformed-artifact");
+  assert.doesNotMatch(manifestResult.message, /exceed/);
+});
+
+test("Q24: a Declaration's JSON nesting is bounded to depth 32, stricter than the Manifest/Review depth 128", () => {
+  const innerDeclaration = JSON.stringify({
+    schemaVersion: "1.0.0",
+    plan: { id: "a", revision: 1 },
+    nodes: [{ nodeRef: "n", storyRef: "s", dependsOn: [] }],
+  });
+  let nested = innerDeclaration;
+  for (let i = 0; i < 33; i += 1) nested = `[${nested}]`;
+  const nestedBytes = encoder.encode(nested);
+
+  const declarationResult = validateGoalPlanDeclaration(nestedBytes);
+  assert.equal(declarationResult.ok, false);
+  assert.equal(declarationResult.category, "malformed-artifact");
+  assert.match(declarationResult.message, /nesting/);
+
+  // The identical 33-deep payload is well under the Manifest's 128-level
+  // bound: it must fail for a different reason (the top level is an array,
+  // not a Manifest object), not the nesting bound.
+  const manifestResult = validateGoalPlanManifest(nestedBytes, new Map());
+  assert.equal(manifestResult.ok, false);
+  assert.doesNotMatch(manifestResult.message, /nesting/);
+});
