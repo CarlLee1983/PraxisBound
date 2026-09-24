@@ -15,11 +15,13 @@
  */
 
 import { constants } from "node:fs";
-import { mkdir, open } from "node:fs/promises";
-import { resolve } from "node:path";
+import { link, mkdir, open, unlink } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
+import { dirname, resolve } from "node:path";
 
 import {
   projectGoalPlan,
+  sha256Hex,
   type GoalPlanProjectionStory,
   type ReviewIndex,
 } from "@praxisbound/core";
@@ -184,8 +186,79 @@ type WriteArtifactsResult =
       readonly code: "REVIEW_PATH_UNSAFE" | "REVIEW_GOAL_PLAN_CONFLICT";
       readonly message: string;
       readonly path: string;
+      /** Every artifact this run already created or found byte-identical, before this failure (LOW, code review). */
+      readonly written: readonly string[];
     }
-  | { readonly ok: false; readonly code: "ERROR"; readonly message: string };
+  | {
+      readonly ok: false;
+      readonly code: "ERROR";
+      readonly message: string;
+      readonly written: readonly string[];
+    };
+
+/**
+ * Writes one artifact exclusively via a same-directory temporary file plus
+ * `link` (M-4, code review): `O_EXCL|O_NOFOLLOW` creates the temp file, its
+ * bytes are written and `fsync`ed, and only then is it linked to the final
+ * name — `link` never overwrites an existing destination (file or symlink),
+ * so this is still exclusive, but a write failure now leaves the temp file
+ * short, never the artifact itself. The temp file is always unlinked
+ * afterward, whichever path is taken.
+ */
+async function writeArtifactExclusive(
+  artifact: PlannedArtifact,
+): Promise<
+  | { readonly kind: "created" }
+  | { readonly kind: "matched" }
+  | { readonly kind: "symlink" }
+  | { readonly kind: "conflict" }
+  | { readonly kind: "error" }
+> {
+  const tempAbsolute = resolve(
+    dirname(artifact.absolute),
+    `.${randomUUID()}.goal-plan.tmp`,
+  );
+
+  let handle;
+  try {
+    handle = await open(
+      tempAbsolute,
+      constants.O_WRONLY |
+        constants.O_CREAT |
+        constants.O_EXCL |
+        constants.O_NOFOLLOW,
+      0o644,
+    );
+  } catch {
+    return { kind: "error" };
+  }
+  try {
+    await handle.writeFile(artifact.bytes);
+    await handle.sync();
+  } catch {
+    await handle.close().catch(() => undefined);
+    await unlink(tempAbsolute).catch(() => undefined);
+    return { kind: "error" };
+  }
+  await handle.close().catch(() => undefined);
+
+  try {
+    await link(tempAbsolute, artifact.absolute);
+    await unlink(tempAbsolute).catch(() => undefined);
+    return { kind: "created" };
+  } catch (error) {
+    await unlink(tempAbsolute).catch(() => undefined);
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code !== "EEXIST") return { kind: "error" };
+    const existing = await readExistingArtifact(artifact.absolute);
+    if (existing.kind === "symlink") return { kind: "symlink" };
+    if (existing.kind === "file")
+      return bytesEqual(existing.bytes, artifact.bytes)
+        ? { kind: "matched" }
+        : { kind: "conflict" };
+    return { kind: "error" };
+  }
+}
 
 /**
  * Contract §10 step 4: every artifact is created exclusively; an existing
@@ -209,6 +282,7 @@ async function writeGoalPlanArtifacts(
       code: "REVIEW_PATH_UNSAFE",
       message: "the Goal Plan directory has a symlinked segment",
       path: directory,
+      written: [],
     };
   }
 
@@ -219,17 +293,22 @@ async function writeGoalPlanArtifacts(
       ok: false,
       code: "ERROR",
       message: "unable to create the Goal Plan directory",
+      written: [],
     };
   }
 
   // TOCTOU: re-check after mkdir, in case a symlink was substituted for a
-  // segment concurrently with directory creation.
+  // segment concurrently with directory creation. This still leaves a
+  // window between this check and each artifact's own open/link below —
+  // Node has no `openat`-style path-relative primitive to close it fully
+  // (residual risk, code review).
   if ((await findUnsafeSourcePath(root, [directory])) !== undefined) {
     return {
       ok: false,
       code: "REVIEW_PATH_UNSAFE",
       message: "the Goal Plan directory has a symlinked segment",
       path: directory,
+      written: [],
     };
   }
 
@@ -241,67 +320,39 @@ async function writeGoalPlanArtifacts(
         code: "REVIEW_PATH_UNSAFE",
         message: "an artifact path has a symlinked segment",
         path: artifact.path,
+        written: [...written],
       };
     }
 
-    let handle;
-    try {
-      handle = await open(
-        artifact.absolute,
-        constants.O_WRONLY |
-          constants.O_CREAT |
-          constants.O_EXCL |
-          constants.O_NOFOLLOW,
-        0o644,
-      );
-    } catch (error) {
-      const code = (error as NodeJS.ErrnoException).code;
-      if (code !== "EEXIST") {
-        return {
-          ok: false,
-          code: "ERROR",
-          message: `unable to write ${artifact.path}`,
-        };
-      }
-      const existing = await readExistingArtifact(artifact.absolute);
-      if (existing.kind === "symlink") {
-        return {
-          ok: false,
-          code: "REVIEW_PATH_UNSAFE",
-          message: "an artifact path has a symlinked segment",
-          path: artifact.path,
-        };
-      }
-      if (existing.kind === "file") {
-        if (bytesEqual(existing.bytes, artifact.bytes)) {
-          written.push(artifact.path);
-          continue;
-        }
-        return {
-          ok: false,
-          code: "REVIEW_GOAL_PLAN_CONFLICT",
-          message: "an existing Goal Plan artifact has different bytes",
-          path: artifact.path,
-        };
-      }
+    const result = await writeArtifactExclusive(artifact);
+    if (result.kind === "created" || result.kind === "matched") {
+      written.push(artifact.path);
+      continue;
+    }
+    if (result.kind === "symlink") {
       return {
         ok: false,
-        code: "ERROR",
-        message: `unable to write ${artifact.path}`,
+        code: "REVIEW_PATH_UNSAFE",
+        message: "an artifact path has a symlinked segment",
+        path: artifact.path,
+        written: [...written],
       };
     }
-    try {
-      await handle.writeFile(artifact.bytes);
-    } catch {
+    if (result.kind === "conflict") {
       return {
         ok: false,
-        code: "ERROR",
-        message: `unable to write ${artifact.path}`,
+        code: "REVIEW_GOAL_PLAN_CONFLICT",
+        message: "an existing Goal Plan artifact has different bytes",
+        path: artifact.path,
+        written: [...written],
       };
-    } finally {
-      await handle.close().catch(() => undefined);
     }
-    written.push(artifact.path);
+    return {
+      ok: false,
+      code: "ERROR",
+      message: `unable to write ${artifact.path}`,
+      written: [...written],
+    };
   }
 
   return { ok: true, written };
@@ -373,7 +424,8 @@ export async function runReviewGoalPlan(
     // evaluation performs, including REVIEW_READINESS_MISSING, has already
     // passed, so every Story has a present, schema-valid Sidecar and a
     // Definition Confirmation applies to the current fingerprint.
-    const { loadedBatch, confirmationLoad } = gathered.gathered;
+    const { loadedBatch, confirmationLoad, confirmationRef } =
+      gathered.gathered;
     const { manifestPath, observations } = loadedBatch;
 
     if (confirmationLoad.applicability?.applies !== true) {
@@ -393,13 +445,28 @@ export async function runReviewGoalPlan(
       };
     }
     const confirmation = confirmationLoad.applicability.confirmation;
+    // M-6 (code review): the fingerprint (and so REVIEW_READY itself) was
+    // computed from the bytes `gatherReviewPreflightEvaluation` read a
+    // moment ago, not from what is read again here. Re-reading batch.json
+    // and the confirmation record a second time reopens a TOCTOU window; it
+    // is closed by verifying each re-read's sha256 against the digest the
+    // evaluation itself already computed (`index.manifestSha256`,
+    // `confirmationRef.sha256`) before either is projected into an
+    // artifact — a mismatch is `ERROR`, never a silently different Goal
+    // Plan than the one just evaluated.
     const confirmationBytes = await readRecordBytes(
       resolve(root, confirmation.path),
     );
     const manifestBytes = await readRecordBytes(resolve(root, manifestPath));
-    if (confirmationBytes === undefined || manifestBytes === undefined) {
+    if (
+      confirmationBytes === undefined ||
+      manifestBytes === undefined ||
+      confirmationRef === null ||
+      sha256Hex(confirmationBytes) !== confirmationRef.sha256 ||
+      sha256Hex(manifestBytes) !== index.manifestSha256
+    ) {
       process.stderr.write(
-        "praxisbound review goal-plan: internal error: could not re-read a required source\n",
+        "praxisbound review goal-plan: internal error: a required source changed or could not be re-read since evaluation\n",
       );
       return {
         mode: parsed.mode,
@@ -417,9 +484,19 @@ export async function runReviewGoalPlan(
       return observation?.kind === "file" ? observation.bytes : undefined;
     };
 
-    const dependencyIdsByStory = new Map(
-      index.dependencies.map((entry) => [entry.story, entry.dependsOn]),
-    );
+    // HIGH-1 (code review): manifest validation allows more than one
+    // dependency entry for the same Story (`indexReviewBatch` unions them
+    // for cycle detection); a plain `new Map` here would keep only the last
+    // entry's `dependsOn` and silently drop edges. Every entry for a Story
+    // is unioned and deduplicated instead — Core's exporter itself rejects
+    // a `dependsOn` array with a repeated entry, so deduplication also
+    // keeps that invariant.
+    const dependencyIdsByStory = new Map<string, Set<string>>();
+    for (const entry of index.dependencies) {
+      const set = dependencyIdsByStory.get(entry.story) ?? new Set<string>();
+      for (const dependsOn of entry.dependsOn) set.add(dependsOn);
+      dependencyIdsByStory.set(entry.story, set);
+    }
 
     const stories: GoalPlanProjectionStory[] = [];
     for (const story of index.stories) {
@@ -461,7 +538,7 @@ export async function runReviewGoalPlan(
       stories.push({
         nodeRef: story.id,
         storyRef: story.path,
-        dependsOn: dependencyIdsByStory.get(story.id) ?? [],
+        dependsOn: [...(dependencyIdsByStory.get(story.id) ?? [])],
         readiness: { path: story.readinessPath, bytes: readinessBytes },
         storyMd: { path: `${story.path}/story.md`, bytes: storyMdBytes },
         acceptanceMd: {
@@ -571,22 +648,62 @@ export async function runReviewGoalPlan(
           ]),
         };
       }
+      // LOW/M-5 (code review): baseData carries the preflight evaluation's
+      // own diagnostics/preflightRecord; both failure branches below still
+      // report data.preflightRecord (the report was written regardless of
+      // this failure) and data.files (every artifact this run already
+      // created or found byte-identical before the failure, R5).
+      const baseData = (written.result.data ?? {}) as {
+        readonly preflightRecord?: string;
+        readonly diagnostics?: readonly unknown[];
+        readonly [key: string]: unknown;
+      };
       if (writeResult.code === "REVIEW_PATH_UNSAFE") {
         return {
           mode: parsed.mode,
-          result: envelope("error", "configuration-error", 2, [
-            issue(writeResult.code, writeResult.message, writeResult.path),
-          ]),
+          result: envelope(
+            "error",
+            "configuration-error",
+            2,
+            [issue(writeResult.code, writeResult.message, writeResult.path)],
+            {
+              ...(baseData.preflightRecord === undefined
+                ? {}
+                : { preflightRecord: baseData.preflightRecord }),
+              files: toDataValue(writeResult.written),
+            },
+          ),
         };
       }
+      // M-5 (code review): contract §12's issues[] <-> data.diagnostics[]
+      // one-to-one correspondence still holds on REVIEW_GOAL_PLAN_CONFLICT
+      // — the preflight evaluation's own issues/diagnostics are carried
+      // through unchanged, with the conflict itself appended to both, in
+      // the same order.
+      const conflictIssue = issue(
+        writeResult.code,
+        writeResult.message,
+        writeResult.path,
+      );
+      const conflictDiagnostic = {
+        code: writeResult.code,
+        severity: "blocking" as const,
+      };
       return {
         mode: parsed.mode,
         result: envelope(
           "fail",
           "failure",
           1,
-          [issue(writeResult.code, writeResult.message, writeResult.path)],
-          written.result.data,
+          [...written.result.issues, conflictIssue],
+          {
+            ...baseData,
+            diagnostics: toDataValue([
+              ...(baseData.diagnostics ?? []),
+              conflictDiagnostic,
+            ]),
+            files: toDataValue(writeResult.written),
+          },
         ),
       };
     }

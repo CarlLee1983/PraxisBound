@@ -12,7 +12,9 @@
  * one of those decisions; it only collects input, projects the result, and
  * writes the Preflight Report (contract §2, §9 R7 deduplication).
  *
- * Out of scope: `review packet`.
+ * `gatherReviewPreflightEvaluation`/`writeReviewPreflightRecord` are also
+ * shared, unchanged, by `review goal-plan` (Story TST-031, contract §10 step
+ * 1) — see `review-goal-plan.ts`.
  */
 
 import { resolve } from "node:path";
@@ -449,8 +451,11 @@ export async function gatherReviewPreflightEvaluation(
         ...batchSourcePaths,
       ]);
       if (observation.kind === "failed") {
+        // Shared by every caller of gatherReviewPreflightEvaluation
+        // (review preflight and review goal-plan): named generically, never
+        // after one specific command (code review LOW).
         process.stderr.write(
-          "praxisbound review preflight: internal error: git observation failed\n",
+          "praxisbound review: internal error: git observation failed\n",
         );
         return {
           ok: false,
