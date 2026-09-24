@@ -387,7 +387,7 @@ Goal Plan 產物不含授權、不是 `protocol/handoff.md` 的 handoff、不含
 
 基準：ForgePilot `32b7a68ebf96d74b55acec8f1cd9408f2ba70dab`，從該 commit 的乾淨副本建置；不使用 PATH 上版本不明的執行檔。
 僅透過 ForgePilot 公開 CLI 並一律帶 `--json`；不讀寫 `.forgepilot`，不解析人類可讀輸出。
-ForgePilot 的 JSON 只在 exit 0 時保證；非 0 exit 一律停止，不嘗試解析。
+ForgePilot 的 JSON 只在 exit 0 時保證；非 0 exit 一律停止，不嘗試解析。唯一例外是步驟 3 的 `work list`（修訂，R-008，TST-032 人類審閱 2026-09-24）。
 
 一次交接分成兩段，由人的 `execution authorize` 隔開。
 
@@ -397,7 +397,10 @@ ForgePilot 的 JSON 只在 exit 0 時保證；非 0 exit 一律停止，不嘗�
 2. 每個 ForgePilot 寫入動作前，重跑 `review preflight <manifest> --semantic-report <goal-plan 所用報告> --expect-fingerprint <coverageIndex.fingerprint>`，
    並確認 `manifest.json` 的 sha256 未變；非 `REVIEW_READY` 或不符即停止（`preflight-not-ready`）。
 3. `work list --goal <goalId> --json`：
-   - `unknown goal` → `goal create --id <goalId> --title <batchId> --review-policy goal --json`。
+   - exit 非 0 → 不解析輸出，直接執行 `goal create --id <goalId> --title <batchId> --review-policy goal --json`；
+     它的 exit 決定結果：exit 0 表示 Goal 原本不存在並已建立；非 0 則停止（`step-failed`）。
+     ForgePilot `32b7a68` 對未知 Goal 的 `work list` 只在 stderr 回報 `unknown goal` 並 exit 1，沒有機器可讀的存在查詢；
+     `goal create` 對已存在的 ID 拒絕（`goal "<id>" already exists`），因此由 ForgePilot 自己把關，Agent 不讀 stderr 判斷原因（修訂，R-008）。
    - Goal 已存在：`review_policy` 必須為 `goal`，既有每個 Work Item 的 `external_ref` 必須是本 plan 的 Story ID，
      其 `story_ref` 與 `depends_on`（對應後）必須和 plan 相符；任一不符即停止（`goal-mismatch`／`work-mismatch`），不續建。
 4. 依 declaration 的拓撲序（同層依 Story ID）對尚未存在的 Story 執行
@@ -745,7 +748,7 @@ Schema：[`schemas/forgepilot-observation.schema.json`](schemas/forgepilot-obser
 - 不合 schema、超過 §13 上限（`REVIEW_INPUT_TOO_LARGE`），或 `batchId` 不等於 manifest。
 - `goalPlan` 指向的檔案不在 `specs/batches/<BATCH-ID>/goal-plan/` 下、不存在，或 sha256 不符；`goalId` 不等於該 manifest 的 `plan.id`。
 - 步驟順序違反 §11：`run` 之前沒有 exit 0 的 `run-dry-run`；`run-dry-run` 或 `run` 與 `goal-create`、`work-add` 出現在同一份紀錄；
-  非最後一步的 exit 不是 0；exit 0 的 `work-add` 缺 `workItemId` 或 `created`。
+  非最後一步的 exit 不是 0（唯一例外：exit 非 0 的 `work-list` 緊接著 `goal-create`，見 §11 步驟 3）；exit 0 的 `work-add` 缺 `workItemId` 或 `created`。
 - `stoppedBecause` 與最後一步不一致：`awaiting-authorization` 的最後一步須為 exit 0 的 `execution-plan`；
   `goal-completed`／`run-needs-human`／`run-limit-reached`／`run-interrupted`／`run-failed` 的最後一步須為 `run`，且 exit 依 §11 對照表；
   `step-failed` 的最後一步 exit 須非 0；`authorization-missing` 須沒有任何步驟。

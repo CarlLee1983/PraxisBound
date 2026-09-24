@@ -29,7 +29,8 @@ installed or called.
   `goalPlan.path` outside `goal-plan/`, missing, or with a wrong sha256;
   `goalId` not equal to the manifest's `plan.id`; `run` without an earlier
   exit-0 `run-dry-run`; `run` in a record with `goal-create` or `work-add`; a
-  non-last step with a non-zero exit; an exit-0 `work-add` without
+  non-last step with a non-zero exit other than a `work-list` followed
+  immediately by `goal-create`, which is accepted; an exit-0 `work-add` without
   `workItemId` or `created`; and each `stoppedBecause` inconsistent with its
   last step, including `goal-completed` ending in `work-add`, `run-failed`
   ending in `run` exit 0, and `authorization-missing` with steps.
