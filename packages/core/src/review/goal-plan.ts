@@ -76,7 +76,22 @@ export interface GoalPlanProjectionFailure {
 export type GoalPlanProjectionResult =
   GoalPlanProjectionSuccess | GoalPlanProjectionFailure;
 
-const CONFIRMED_AT_PATTERN = /^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})(\.\d+)?Z$/;
+// [Tt] mirrors revision-limits.ts's UTC_TIME_PATTERN, which `review confirm`
+// validates a Definition Confirmation's `confirmedAt` against and accepts a
+// lowercase `t`; rejecting it here would turn an otherwise-valid, already
+//-confirmed record into `ERROR` (M-3, code review). The output always emits
+// uppercase `T`, matching the Goal Plan artifact schema's own `reviewedAt`
+// pattern (`goal-plan-artifacts.ts`'s `REVIEWED_AT_PATTERN`), which requires
+// it. A `:60` leap second is intentionally left unhandled: it is a real,
+// confirmable `confirmedAt` value, but the artifact schema's `reviewedAt`
+// has no leap-second allowance, so `toGoalPlanReviewedAt` passes it through
+// unchanged and the exporter's own self-validation rejects the result —
+// surfacing as `ERROR`, exit 3, from `review goal-plan` (a human decision:
+// `review confirm` itself never writes a leap-second `confirmedAt`; only a
+// forged record could, and it is treated as an internal error rather than a
+// silently wrong reviewedAt).
+const CONFIRMED_AT_PATTERN =
+  /^(\d{4}-\d{2}-\d{2})[Tt](\d{2}:\d{2}:\d{2})(\.\d+)?Z$/;
 
 /**
  * Contract §10 step 3's `reviewedAt`: the confirmation's own `confirmedAt`
@@ -87,9 +102,9 @@ export function toGoalPlanReviewedAt(confirmedAt: string): string {
   const match = CONFIRMED_AT_PATTERN.exec(confirmedAt);
   if (match === null)
     throw new TypeError("confirmedAt is not a valid UTC date-time");
-  const fractionDigits = (match[2] ?? ".").slice(1);
+  const fractionDigits = (match[3] ?? ".").slice(1);
   const milliseconds = (fractionDigits + "000").slice(0, 3);
-  return `${match[1]}.${milliseconds}Z`;
+  return `${match[1]}T${match[2]}.${milliseconds}Z`;
 }
 
 /**
