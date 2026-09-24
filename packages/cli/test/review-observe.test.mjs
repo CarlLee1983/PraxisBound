@@ -623,7 +623,7 @@ test("N1/out-of-repo-path-missing-file: a missing file at an absolute, outside-t
   }
 });
 
-test("N1/out-of-repo-path-r2-violation: an R2 step-order violation at an absolute, outside-the-repository path still yields a valid envelope, with a field pointer, not the file, in data.diagnostics", async () => {
+test("N1/out-of-repo-path-r2-violation: an R2 step-order violation at an absolute, outside-the-repository path still yields a valid envelope, with a {code, severity}-only diagnostic (no path leaked)", async () => {
   const batchId = "TST-9819-fixture";
   const fixture = await buildBatchWithGoalPlan(batchId);
   const outsideDir = await mkdtemp(join(tmpdir(), "review-observe-n1-"));
@@ -652,8 +652,16 @@ test("N1/out-of-repo-path-r2-violation: an R2 step-order violation at an absolut
       (entry) => entry.code === "REVIEW_OBSERVATION_INVALID",
     );
     assert.ok(diagnostic, JSON.stringify(envelope));
-    assert.equal(diagnostic.path, undefined);
-    assert.equal(diagnostic.pointer, "/steps/0");
+    // N4 (code review round 4): a consistency rejection's diagnostic
+    // carries only {code, severity} — no path (contract §12's locator?
+    // names defs.schema.json's {path, anchor, blockSha256} source-document
+    // shape, which does not fit a field inside the observation's own
+    // JSON, and review observe follows review goal-plan's own precedent of
+    // omitting locator entirely rather than inventing one).
+    assert.deepEqual(diagnostic, {
+      code: "REVIEW_OBSERVATION_INVALID",
+      severity: "blocking",
+    });
     assert.ok(!raw.stdout.includes(outsideDir));
     assert.ok(!raw.stderr.includes(outsideDir));
   } finally {
