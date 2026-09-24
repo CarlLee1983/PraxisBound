@@ -84,7 +84,7 @@ export const reviewPreflightHelp = `PraxisBound Batch Review Preflight
 
 Usage:
   praxisbound review preflight <manifest> [--semantic-report <file>]
-    [--expect-fingerprint <sha256> --expect-revision <commit>] [--json]
+    [--expect-fingerprint <sha256>] [--expect-revision <commit>] [--json]
   praxisbound review preflight --help
 
 A read-only evaluation of every contract §9 check: missing sources, Story
@@ -165,9 +165,9 @@ function parsePreflightArguments(
     valid = false;
   }
 
-  // Both `--expect-*` flags, or neither: contract §9's usage row.
-  if ((expectFingerprint === undefined) !== (expectRevision === undefined))
-    valid = false;
+  // Contract §9 as amended (R-008): --expect-fingerprint and
+  // --expect-revision are independent; either alone, both, or neither is
+  // valid argv (each flag itself already rejects being given twice, above).
   if (
     expectFingerprint !== undefined &&
     !FINGERPRINT_PATTERN.test(expectFingerprint)
@@ -780,14 +780,20 @@ export async function gatherReviewPreflightEvaluation(
       }
     }
 
+    // Contract §9 as amended (R-008): expect records exactly the flags
+    // given — either field alone, both, or null when neither was given.
     const expectRef: PreflightReportExpect | null =
-      parsed.expectFingerprint !== undefined &&
-      parsed.expectRevision !== undefined
-        ? {
-            fingerprint: parsed.expectFingerprint,
-            revision: parsed.expectRevision,
-          }
-        : null;
+      parsed.expectFingerprint === undefined &&
+      parsed.expectRevision === undefined
+        ? null
+        : {
+            ...(parsed.expectFingerprint === undefined
+              ? {}
+              : { fingerprint: parsed.expectFingerprint }),
+            ...(parsed.expectRevision === undefined
+              ? {}
+              : { revision: parsed.expectRevision }),
+          };
 
     return {
       ok: true,
@@ -1039,7 +1045,7 @@ export function renderReviewPreflightHuman(
       stderr:
         "ERROR Invalid arguments\n" +
         "Usage: praxisbound review preflight <manifest> [--semantic-report <file>]\n" +
-        "         [--expect-fingerprint <sha256> --expect-revision <commit>] [--json]\n" +
+        "         [--expect-fingerprint <sha256>] [--expect-revision <commit>] [--json]\n" +
         "       praxisbound review preflight --help\n",
     };
   }
