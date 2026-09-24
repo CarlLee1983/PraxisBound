@@ -396,6 +396,8 @@ ForgePilot 的 JSON 只在 exit 0 時保證；非 0 exit 一律停止，不嘗�
 1. 解析本段的 Execution Authorization（建立 Goal／Work Item 的效果）；不足即停止（`authorization-missing`）。
 2. 每個 ForgePilot 寫入動作前，重跑 `review preflight <manifest> --semantic-report <goal-plan 所用報告> --expect-fingerprint <coverageIndex.fingerprint>`，
    並確認 `manifest.json` 的 sha256 未變；非 `REVIEW_READY` 或不符即停止（`preflight-not-ready`）。
+   （修訂，R-008，TST-032 人類審閱 2026-09-24）步驟 3 開始前的這次重查同時涵蓋步驟 3 可能執行的 `goal create`：
+   `work list` 與其後的 `goal create` 之間不再重查，因此紀錄中兩者相鄰。`work add` 等其他寫入仍各自先重查。
 3. `work list --goal <goalId> --json`：
    - exit 非 0 → 不解析輸出，直接執行 `goal create --id <goalId> --title <batchId> --review-policy goal --json`；
      它的 exit 決定結果：exit 0 表示 Goal 原本不存在並已建立；非 0 則停止（`step-failed`）。
@@ -748,7 +750,7 @@ Schema：[`schemas/forgepilot-observation.schema.json`](schemas/forgepilot-obser
 - 不合 schema、超過 §13 上限（`REVIEW_INPUT_TOO_LARGE`），或 `batchId` 不等於 manifest。
 - `goalPlan` 指向的檔案不在 `specs/batches/<BATCH-ID>/goal-plan/` 下、不存在，或 sha256 不符；`goalId` 不等於該 manifest 的 `plan.id`。
 - 步驟順序違反 §11：`run` 之前沒有 exit 0 的 `run-dry-run`；`run-dry-run` 或 `run` 與 `goal-create`、`work-add` 出現在同一份紀錄；
-  非最後一步的 exit 不是 0（唯一例外：exit 非 0 的 `work-list` 緊接著 `goal-create`，見 §11 步驟 3）；exit 0 的 `work-add` 缺 `workItemId` 或 `created`。
+  非最後一步的 exit 不是 0（唯一例外：exit 為非 0 整數的 `work-list` 緊接著 `goal-create`，見 §11 步驟 2–3；exit 為 `null` 的 `work-list` 不適用，因為未觀察到的 exit 不等於非 0，須以 `step-failed` 停止——TST-032 人類審閱 2026-09-24）；exit 0 的 `work-add` 缺 `workItemId` 或 `created`。
 - `stoppedBecause` 與最後一步不一致：`awaiting-authorization` 的最後一步須為 exit 0 的 `execution-plan`；
   `goal-completed`／`run-needs-human`／`run-limit-reached`／`run-interrupted`／`run-failed` 的最後一步須為 `run`，且 exit 依 §11 對照表；
   `step-failed` 的最後一步 exit 須非 0；`authorization-missing` 須沒有任何步驟。
