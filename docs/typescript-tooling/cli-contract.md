@@ -1123,14 +1123,6 @@ list`'s stderr; the re-check before step 3 also covers this
    text — `stdout`, `stderr`, or any other field value (R6): text in the
    observation, including `authorized: true`, an instruction, or an ESC
    sequence, is data, never changes the outcome, and is never echoed.
-   `validateForgepilotObservationConsistency` also returns a `pointer` — a
-   JSON Pointer (RFC 6901) naming the offending field, e.g. `/steps/3/exit`
-   or `/goalPlan/path` — for every §22 binding/R2/R3 rejection (code review
-   round 2 N1): this locates the field _inside the observation document_,
-   never the caller's file path, and it is carried only in
-   `data.diagnostics[]`'s own `pointer` field (see `data` below), never on
-   the `issue()` itself, since a JSON Pointer's leading `/` would itself
-   fail `ResultIssue.path`/`.subject`'s validation.
 
 Once accepted, the observation's own bytes — exactly as read, never
 re-serialized — are written create-new, exclusive, to
@@ -1156,22 +1148,28 @@ uses. A `records/` symlink discovered at write time is `configuration-error`,
 `buildRespondSuccessEnvelope` pattern `review respond` uses: `review
 index`'s own diagnostics for the current batch (e.g. `REVIEW_SOURCE_MISSING`
 for a source removed after the Goal Plan was written) are surfaced in
-`issues[]`, one-to-one with `data.diagnostics[]`, alongside — never instead
-of — the write's own success. Every rejection (`usage-error`,
-`configuration-error`, `failure`) instead carries a minimal
-`data.diagnostics` of exactly one entry matching its one `issues[]` entry
-one-to-one (contract §12's `{code, severity, locator?}` shape, `locator?`
-here realized as an _optional_ `path` and/or `pointer` — never both a
-repository-relative `path` and a document-internal `pointer` for the same
-rejection): `path` only when the offending path is genuinely repository-
-relative (`goalPlan.path`, `records/`'s own path) or the observation
-input's own argument happens to already be one; `pointer` only for a
-consistency-stage (§22 binding/R2/R3) rejection, naming the field inside
-the observation document. Neither is invented when unavailable — the
-diagnostic then carries only `{code, severity}`, the same minimal shape
-`review goal-plan`'s own failure diagnostics use (code review round 2 N4).
-The command never spawns any process, never reads `.forgepilot`, and never
-treats `goal-completed` as Human Review acceptance or `DONE`.
+`issues[]`, one-to-one with `data.diagnostics[]` (each of _those_ entries
+carries contract §12's `locator?`, the `defs.schema.json` `{path, anchor,
+blockSha256}` shape, exactly as `review index`/`review import`/`review
+respond` already do), alongside — never instead of — the write's own
+success. Every rejection (`usage-error`, `configuration-error`, `failure`)
+instead carries a minimal `data.diagnostics` of exactly one `{code,
+severity}` entry matching its one `issues[]` entry one-to-one (contract
+§12's `{code, severity, locator?}` shape, with `locator?` omitted rather
+than invented — the `{path, anchor, blockSha256}` shape names a location in
+a _source document_, which does not fit a field inside the observation's
+own JSON payload; `review observe` follows `review goal-plan`'s own
+precedent here, code review round 2 N4). The `issue()` itself still carries
+a repository-relative `path` when one is genuinely available and safe
+(`isSyntacticallySafeRepoPath` — `goalPlan.path`, `records/`'s own path, or
+an observation-input argument that happens to already be repository-
+relative): an absolute or control-character-bearing caller-supplied
+argument (accepted as the observation input since M3) is never placed
+there, since doing so once made `assertResultEnvelope` reject the envelope
+and `serializeResultEnvelope` throw instead of returning one (code review
+round 2 N1 HIGH). The command never spawns any process, never reads
+`.forgepilot`, and never treats `goal-completed` as Human Review acceptance
+or `DONE`.
 
 ## `review preflight` and `review goal-plan` outcomes
 
