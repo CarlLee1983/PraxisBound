@@ -1010,17 +1010,37 @@ import`/`review respond`'s own input file does (`review-input.ts`'s
 `--semantic-report` applies to itself (code review round 1 M3: a path
 outside the repository is not itself unsafe, and is never rejected with a
 "symlinked segment" message). It is resolved (`isAbsolute(argument) ?
-argument : resolve(root, argument)`), `lstat`ed (a symlinked leaf is
+argument : resolve(root, argument)`); only its own last path segment (the
+leaf) is `lstat`-checked for a symlink — consistent with `review
+import`/`review respond`'s own input handling and with R5's wording (a
+_symlinked observation input_ is unsafe; a path that merely passes
+_through_ a symlinked directory on its way there is not, the same
+distinction contract §2 draws for `records/`). A symlinked leaf is
 `configuration-error`, `REVIEW_PATH_UNSAFE`, exit 2; a missing or
 non-regular file is `failure`, `REVIEW_OBSERVATION_INVALID`, exit 1, the
-same as `review import`/`review respond` treat their own missing input),
-opened `O_NOFOLLOW`, and re-checked by `dev`/`ino` identity against the
-initial `lstat` after opening, closing the TOCTOU window between the two.
+same as `review import`/`review respond` treat their own missing input.
+The file is then opened `O_NOFOLLOW` and re-checked by `dev`/`ino` identity
+against the initial `lstat`, closing the TOCTOU window between the two.
 Its size is bounded at the same 1 MiB contract §13 uses for every
 `records/` JSON document; over the bound, or a JSON nesting depth over 32,
 is `failure`, `REVIEW_INPUT_TOO_LARGE`, exit 1, before the document is
 otherwise inspected. Invalid UTF-8 or malformed JSON is `failure`,
 `REVIEW_OBSERVATION_INVALID`, exit 1.
+
+Because the observation input accepts any path, including one absolute or
+outside the repository, that caller-supplied argument is **never** placed
+into an `issue()`'s own `path` (or `data.diagnostics[]`'s `path`) unless it
+is independently a syntactically safe, repository-relative path
+(`isSyntacticallySafeRepoPath` — the same test result-envelope validation
+itself applies to `ResultIssue.path`, which rejects a leading `/`, a `..`
+segment, or a control character). Before this rule, an absolute or
+control-character-bearing argument reaching that field made
+`validateResultEnvelope`/`assertResultEnvelope` reject the envelope, and
+`serializeResultEnvelope` (used by every `--json` invocation) throw instead
+of returning one — printing nothing to stdout and a stack trace naming the
+absolute path to stderr (code review round 2 N1 HIGH). An unsafe or absent
+path simply means the diagnostic carries only `{code, severity}` (see
+`data` below).
 
 `goalPlan.path`, named _inside_ the observation, is treated the stricter
 way `--semantic-report` treats its own path (`review-semantic-report.ts`,
@@ -1073,18 +1093,20 @@ as `REVIEW_RECORD_INVALID` if ever found under `records/`, contract §2):
    - Step order (contract §11/§22, R2): no `run` without an earlier exit-0
      `run-dry-run`; `run-dry-run`/`run` never share a record with
      `goal-create`/`work-add`; every step but the last exits `0` — with one
-     exception (Human Review 2026-09-24, H2): a non-zero, non-`null`
-     `work-list` exit is allowed as a non-last step only when the very next
-     step is `goal-create` (contract §11 step 3: ForgePilot has no
-     machine-readable Goal-existence query, so the Agent tries `goal
-create` unconditionally after a non-zero `work list` and lets
-     ForgePilot's own exit — 0 for "did not exist, now created", non-zero
-     for "already exists" — decide, never parsing `work list`'s stderr). A
-     `null` `work-list` exit is not covered by this exception (a
-     coordinating-agent reading of "exit 非 0" pending Human Review — see
-     verification.md); `goal-create` itself never gets this exception,
-     whatever its own exit or position. An exit-0 `work-add` has both
-     `workItemId` and `created`.
+     exception (Human Review 2026-09-24, H2, amended 2026-09-24): a
+     non-zero, non-`null` `work-list` exit is allowed as a non-last step
+     only when the very next step is `goal-create` (contract §11 steps
+     2–3: ForgePilot has no machine-readable Goal-existence query, so the
+     Agent tries `goal create` unconditionally after a non-zero `work
+list` and lets ForgePilot's own exit — 0 for "did not exist, now
+     created", non-zero for "already exists" — decide, never parsing `work
+list`'s stderr; the re-check before step 3 also covers this
+     `goal create`, so there is no re-check between the two steps and they
+     stay adjacent — a Human Review decision, not merely a coordinating-
+     agent one). A `null` `work-list` exit does not qualify for the
+     exception (also a Human Review decision, 2026-09-24); `goal-create`
+     itself never gets this exception, whatever its own exit or position.
+     An exit-0 `work-add` has both `workItemId` and `created`.
    - `stoppedBecause` consistency with the last step (R3):
      `awaiting-authorization` ends with an exit-0 `execution-plan`;
      `goal-completed`/`run-needs-human`/`run-limit-reached`/
@@ -1101,6 +1123,14 @@ create` unconditionally after a non-zero `work list` and lets
    text — `stdout`, `stderr`, or any other field value (R6): text in the
    observation, including `authorized: true`, an instruction, or an ESC
    sequence, is data, never changes the outcome, and is never echoed.
+   `validateForgepilotObservationConsistency` also returns a `pointer` — a
+   JSON Pointer (RFC 6901) naming the offending field, e.g. `/steps/3/exit`
+   or `/goalPlan/path` — for every §22 binding/R2/R3 rejection (code review
+   round 2 N1): this locates the field _inside the observation document_,
+   never the caller's file path, and it is carried only in
+   `data.diagnostics[]`'s own `pointer` field (see `data` below), never on
+   the `issue()` itself, since a JSON Pointer's leading `/` would itself
+   fail `ResultIssue.path`/`.subject`'s validation.
 
 Once accepted, the observation's own bytes — exactly as read, never
 re-serialized — are written create-new, exclusive, to
@@ -1129,13 +1159,19 @@ for a source removed after the Goal Plan was written) are surfaced in
 `issues[]`, one-to-one with `data.diagnostics[]`, alongside — never instead
 of — the write's own success. Every rejection (`usage-error`,
 `configuration-error`, `failure`) instead carries a minimal
-`data.diagnostics` of exactly one entry (`{code, severity: "blocking",
-path?}`) matching its one `issues[]` entry one-to-one (contract §12,
-Story's own Error Projection: a repository-relative locator, the offending
-path — the observation input's own argument, `goalPlan.path`, or
-`records/`'s own path — named wherever one is available). The command never
-spawns any process, never reads `.forgepilot`, and never treats
-`goal-completed` as Human Review acceptance or `DONE`.
+`data.diagnostics` of exactly one entry matching its one `issues[]` entry
+one-to-one (contract §12's `{code, severity, locator?}` shape, `locator?`
+here realized as an _optional_ `path` and/or `pointer` — never both a
+repository-relative `path` and a document-internal `pointer` for the same
+rejection): `path` only when the offending path is genuinely repository-
+relative (`goalPlan.path`, `records/`'s own path) or the observation
+input's own argument happens to already be one; `pointer` only for a
+consistency-stage (§22 binding/R2/R3) rejection, naming the field inside
+the observation document. Neither is invented when unavailable — the
+diagnostic then carries only `{code, severity}`, the same minimal shape
+`review goal-plan`'s own failure diagnostics use (code review round 2 N4).
+The command never spawns any process, never reads `.forgepilot`, and never
+treats `goal-completed` as Human Review acceptance or `DONE`.
 
 ## `review preflight` and `review goal-plan` outcomes
 
