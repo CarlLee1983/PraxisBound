@@ -1,0 +1,79 @@
+{
+  "schemaVersion": "1.0.0",
+  "plan": {
+    "id": "BR-001-goal-plan-fixture-abc123456789",
+    "revision": 1
+  },
+  "declaration": {
+    "path": "specs/batches/BR-001-goal-plan-fixture/goal-plan/BR-001-goal-plan-fixture-abc123456789/declaration.json",
+    "sha256": "6f2cabb23a10ae001044ceed924002848777aa2f24f72cd2e865fc80e9462844"
+  },
+  "nodes": [
+    {
+      "nodeRef": "EX-001-first",
+      "storyRef": "specs/stories/EX-001-first",
+      "readinessContract": {
+        "path": "specs/stories/EX-001-first/readiness.json",
+        "sha256": "d6a81f64a2c54e4ff937ac28eeccbac4c68c78f6d288c022ffb9690308fafc40"
+      },
+      "dependsOn": []
+    },
+    {
+      "nodeRef": "EX-002-second",
+      "storyRef": "specs/stories/EX-002-second",
+      "readinessContract": {
+        "path": "specs/stories/EX-002-second/readiness.json",
+        "sha256": "e9825600d17652b1a0d596a74a4626c87036df71bd25d47c4edbc4c5cf191495"
+      },
+      "dependsOn": [
+        "EX-001-first"
+      ]
+    }
+  ],
+  "reviewedSources": [
+    {
+      "path": "specs/batches/BR-001-goal-plan-fixture/batch.json",
+      "sha256": "030dc8a4ea366b695b22093dd18603641e167bc0b0c5136925f48c09a0bf9fb9"
+    },
+    {
+      "path": "specs/batches/BR-001-goal-plan-fixture/goal-plan/BR-001-goal-plan-fixture-abc123456789/declaration.json",
+      "sha256": "6f2cabb23a10ae001044ceed924002848777aa2f24f72cd2e865fc80e9462844"
+    },
+    {
+      "path": "specs/decisions/ADR-001-example.md",
+      "sha256": "8429f306dbe21c4979f4230bc4d9d169b8e22293632975d0cf186f7ac03b2208"
+    },
+    {
+      "path": "specs/features/example/spec.md",
+      "sha256": "4d77c414b66fa5c18a24a733c71da146859f2f131fd9b3094801cfe8f329becc"
+    },
+    {
+      "path": "specs/stories/EX-001-first/acceptance.md",
+      "sha256": "9cc0e828c5279d1a733a1f5013b51442bda88bab9b2fe2cee6122c593d3f94f3"
+    },
+    {
+      "path": "specs/stories/EX-001-first/readiness.json",
+      "sha256": "d6a81f64a2c54e4ff937ac28eeccbac4c68c78f6d288c022ffb9690308fafc40"
+    },
+    {
+      "path": "specs/stories/EX-001-first/story.md",
+      "sha256": "580a0f0562c6a9dce4deea16a7002f2d53a53178239e4a5677520a59093ba724"
+    },
+    {
+      "path": "specs/stories/EX-002-second/acceptance.md",
+      "sha256": "4c4c7a2aaa7d6eea818ba14b2bfd622907fceba6e9477bfb2173136cf353d287"
+    },
+    {
+      "path": "specs/stories/EX-002-second/readiness.json",
+      "sha256": "e9825600d17652b1a0d596a74a4626c87036df71bd25d47c4edbc4c5cf191495"
+    },
+    {
+      "path": "specs/stories/EX-002-second/story.md",
+      "sha256": "7172f55129a5e1f7b810d6b92f1a5f3f4843d9daa58d5eb84ed481b3e6ee5c61"
+    }
+  ],
+  "coverageIndex": {
+    "batchId": "BR-001-goal-plan-fixture",
+    "fingerprint": "7cc082593adf00fe141410aaeb24974dd4750db3b4e0f54be636f05651ec5019"
+  }
+}

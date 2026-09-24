@@ -376,3 +376,17 @@ export type {
   PlanCoverageReviewValidationSuccess,
   PlanIdentity,
 } from "./goal-plan-artifacts.js";
+
+export {
+  deriveGoalPlanReviewId,
+  projectGoalPlan,
+  toGoalPlanReviewedAt,
+} from "./review/goal-plan.js";
+export type {
+  GoalPlanProjectionConfirmation,
+  GoalPlanProjectionFailure,
+  GoalPlanProjectionInput,
+  GoalPlanProjectionResult,
+  GoalPlanProjectionStory,
+  GoalPlanProjectionSuccess,
+} from "./review/goal-plan.js";

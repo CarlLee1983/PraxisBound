@@ -64,7 +64,7 @@ built_cli_help_and_version_are_exact() {
   praxisbound_empty="$praxisbound_test_dir/empty"
 
   : >"$praxisbound_empty"
-  printf 'PraxisBound CLI v%s\n\nUsage:\n  praxisbound [command]\n\nCommands:\n  init               Plan or apply PraxisBound initialization\n  codex activate     Preview or apply project-local Codex activation\n  doctor             Inspect the static Repository Contract\n  verify             Run the canonical repository verification target\n  handoff check      Check immutable Handoff evidence\n  release check      Inspect local Git release readiness\n  story check        Check the static Story contract\n  review index       Report the batch review source index\n  review render      Write an offline batch review HTML projection\n  review import      Record an exported Revision Sheet\n  review respond     Record a Revision Response file\n  review confirm     Record an explicit terminal Definition Confirmation\n  review preflight   Evaluate every mechanical batch review check\n  review readiness-digests Refresh Readiness Sidecar digests\n  verification check Resolve plans and check recorded results\n  help, --help       Show this help\n  version, --version Print the CLI version\n\nOther migration commands are unavailable.\n' \
+  printf 'PraxisBound CLI v%s\n\nUsage:\n  praxisbound [command]\n\nCommands:\n  init               Plan or apply PraxisBound initialization\n  codex activate     Preview or apply project-local Codex activation\n  doctor             Inspect the static Repository Contract\n  verify             Run the canonical repository verification target\n  handoff check      Check immutable Handoff evidence\n  release check      Inspect local Git release readiness\n  story check        Check the static Story contract\n  review index       Report the batch review source index\n  review render      Write an offline batch review HTML projection\n  review import      Record an exported Revision Sheet\n  review respond     Record a Revision Response file\n  review confirm     Record an explicit terminal Definition Confirmation\n  review preflight   Evaluate every mechanical batch review check\n  review readiness-digests Refresh Readiness Sidecar digests\n  review goal-plan   Project Goal Plan artifacts for ForgePilot handoff\n  verification check Resolve plans and check recorded results\n  help, --help       Show this help\n  version, --version Print the CLI version\n\nOther migration commands are unavailable.\n' \
     "$praxisbound_version" >"$praxisbound_help"
   printf '%s\n' "$praxisbound_version" >"$praxisbound_version_output"
 
@@ -145,6 +145,8 @@ packed_packages_have_the_bounded_public_contract() {
     './dist/review/dependency-graph.js' \
     './dist/review/fingerprint.d.ts' \
     './dist/review/fingerprint.js' \
+    './dist/review/goal-plan.d.ts' \
+    './dist/review/goal-plan.js' \
     './dist/review/html.d.ts' \
     './dist/review/html.js' \
     './dist/review/index.d.ts' \
@@ -279,6 +281,8 @@ packed_packages_have_the_bounded_public_contract() {
     './dist/review-evidence.js' \
     './dist/review-git.d.ts' \
     './dist/review-git.js' \
+    './dist/review-goal-plan.d.ts' \
+    './dist/review-goal-plan.js' \
     './dist/review-import.d.ts' \
     './dist/review-import.js' \
     './dist/review-input.d.ts' \
