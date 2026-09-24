@@ -428,7 +428,7 @@ ForgePilot 的 JSON 只在 exit 0 時保證；非 0 exit 一律停止，不嘗�
 | 130、143 | `run-interrupted` | 被中斷或終止 |
 | 其他 | `run-failed` | 錯誤 |
 
-- 任一步 exit 非 0 → 停止（`step-failed`）；exit 0 但 JSON 不合 `forgepilot.cli/v1` 或缺必要欄位 → 停止（`result-unknown`）。
+- 任一步 exit 非 0 → 停止（`step-failed`），唯一例外是步驟 3 的 `work list`（見步驟 2–3）；exit 0 但 JSON 不合 `forgepilot.cli/v1` 或缺必要欄位 → 停止（`result-unknown`）。
   停止後不啟動 Runner。恢復一律從步驟 1 重來：`work list` 讀現況、`--external-ref` 冪等續建；
   只有人放棄舊 Goal 時才以 `--attempt` 產生新的 Goal Plan。
 - 每段結束（無論成功或停止）都以 `review observe` 寫一份外部整合觀察紀錄（§22）。不寫 VERIFIED／DONE、不核准 review、不略過 Gate。
