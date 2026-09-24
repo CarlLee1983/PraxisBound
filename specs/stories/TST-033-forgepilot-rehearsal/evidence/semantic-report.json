@@ -1,0 +1,60 @@
+{
+  "schemaVersion": "1.0.0",
+  "batchId": "BR-900-rehearsal",
+  "fingerprint": "4b4c807c88c2ece00291fda87a18cb425111101c21ac5cd4662067e609597046",
+  "agent": "Claude Code (claude-opus-5-5) TST-033 rehearsal agent",
+  "observedAt": "2026-09-24T10:00:00Z",
+  "stories": [
+    {
+      "story": "FX-001",
+      "categories": {
+        "missing-split": {
+          "result": "none"
+        },
+        "contradiction": {
+          "result": "none"
+        },
+        "insufficient-acceptance": {
+          "result": "none"
+        },
+        "open-question": {
+          "result": "none"
+        }
+      }
+    },
+    {
+      "story": "FX-002",
+      "categories": {
+        "missing-split": {
+          "result": "none"
+        },
+        "contradiction": {
+          "result": "none"
+        },
+        "insufficient-acceptance": {
+          "result": "none"
+        },
+        "open-question": {
+          "result": "none"
+        }
+      }
+    },
+    {
+      "story": "FX-003",
+      "categories": {
+        "missing-split": {
+          "result": "none"
+        },
+        "contradiction": {
+          "result": "none"
+        },
+        "insufficient-acceptance": {
+          "result": "none"
+        },
+        "open-question": {
+          "result": "none"
+        }
+      }
+    }
+  ]
+}

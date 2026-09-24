@@ -1,0 +1,5 @@
+$ ../bin/forgepilot execution authorize --request specs/batches/BR-900-rehearsal/goal-plan/BR-900-rehearsal-4b4c807c88c2/execution-request.json --approval-token <token> --by carl --json
+forgepilot: process image is not an absolute clean path
+
+$ <tst033>/bin/forgepilot execution authorize --request specs/batches/BR-900-rehearsal/goal-plan/BR-900-rehearsal-4b4c807c88c2/execution-request.json --approval-token <token> --by carl --json
+forgepilot: resolve managed ForgePilot generation: ForgePilot process image is outside the managed Bootstrap root

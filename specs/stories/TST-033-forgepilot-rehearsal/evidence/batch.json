@@ -1,0 +1,41 @@
+{
+  "schemaVersion": "1.1.0",
+  "batchId": "BR-900-rehearsal",
+  "title": "Greeting rehearsal batch",
+  "sources": {
+    "adrs": [],
+    "specs": [
+      "specs/features/greeting/spec.md"
+    ],
+    "stories": [
+      "specs/stories/FX-001-greet-function",
+      "specs/stories/FX-002-greet-test",
+      "specs/stories/FX-003-greet-readme"
+    ]
+  },
+  "requirements": [
+    {
+      "spec": "specs/features/greeting/spec.md",
+      "anchor": "R-001",
+      "stories": [
+        "FX-001",
+        "FX-002",
+        "FX-003"
+      ]
+    }
+  ],
+  "dependencies": [
+    {
+      "story": "FX-002",
+      "dependsOn": [
+        "FX-001"
+      ]
+    },
+    {
+      "story": "FX-003",
+      "dependsOn": [
+        "FX-001"
+      ]
+    }
+  ]
+}

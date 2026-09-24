@@ -1,0 +1,33 @@
+{
+  "fixture": "<tst033>/fixture",
+  "forgepilot": "<tst033>/bin/forgepilot",
+  "praxisbound": "<tst033>/bin/praxisbound",
+  "manifest": "specs/batches/BR-900-rehearsal/batch.json",
+  "semanticReport": "semantic-report.json",
+  "goalPlanDir": "specs/batches/BR-900-rehearsal/goal-plan/BR-900-rehearsal-4b4c807c88c2",
+  "forgepilotVersion": "32b7a68ebf96d74b55acec8f1cd9408f2ba70dab",
+  "values": {
+    "workerProfile": {
+      "runtime": "codex",
+      "executablePath": "<HOME>/.codex/packages/standalone/releases/0.155.1-aarch64-apple-darwin/bin/codex",
+      "model": "gpt-5-codex",
+      "effort": "medium",
+      "sandbox": "workspace-write"
+    },
+    "engineGeneration": {
+      "sourceCommit": "0000000000000000000000000000000000000000",
+      "payloadSHA256": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+    },
+    "caps": {
+      "maxSteps": 500,
+      "maxTechnicalAttemptsPerNode": 5,
+      "maxRuns": 20,
+      "maxRecoveries": 2,
+      "maxHandoffBytes": 65536,
+      "maxWriteBytes": 1048576,
+      "maxRunBytes": 16777216,
+      "maxTotalBytes": 134217728
+    },
+    "expiresAt": "2026-10-01T00:00:00Z"
+  }
+}

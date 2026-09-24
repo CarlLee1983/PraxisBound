@@ -1,0 +1,4 @@
+dry-run exit=0
+stoppedBecause=awaiting-authorization
+observe exit=1
+{"schemaVersion":"1.0.0","protocolVersion":"0.10.0","status":"fail","outcome":"failure","exit":1,"subject":"review","data":{"diagnostics":[{"code":"REVIEW_OBSERVATION_INVALID","severity":"blocking"}]},"issues":[{"code":"REVIEW_OBSERVATION_INVALID","message":"awaiting-authorization must end with an exit-0 execution-plan"}]}

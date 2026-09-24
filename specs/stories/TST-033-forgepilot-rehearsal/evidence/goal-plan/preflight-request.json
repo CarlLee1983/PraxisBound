@@ -1,0 +1,20 @@
+{
+  "formatVersion": "forgepilot.goal-preflight-request/v1",
+  "goalId": "BR-900-rehearsal-4b4c807c88c2",
+  "manifestPath": "specs/batches/BR-900-rehearsal/goal-plan/BR-900-rehearsal-4b4c807c88c2/manifest.json",
+  "coverageReviewPath": "specs/batches/BR-900-rehearsal/goal-plan/BR-900-rehearsal-4b4c807c88c2/coverage-review.json",
+  "nodeMappings": [
+    {
+      "planNodeRef": "FX-001",
+      "workItemId": "WI-001"
+    },
+    {
+      "planNodeRef": "FX-002",
+      "workItemId": "WI-002"
+    },
+    {
+      "planNodeRef": "FX-003",
+      "workItemId": "WI-003"
+    }
+  ]
+}
