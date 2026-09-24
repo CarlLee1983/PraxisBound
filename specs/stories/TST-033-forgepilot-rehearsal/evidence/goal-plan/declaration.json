@@ -1,0 +1,28 @@
+{
+  "schemaVersion": "1.0.0",
+  "plan": {
+    "id": "BR-900-rehearsal-4b4c807c88c2",
+    "revision": 1
+  },
+  "nodes": [
+    {
+      "nodeRef": "FX-001",
+      "storyRef": "specs/stories/FX-001-greet-function",
+      "dependsOn": []
+    },
+    {
+      "nodeRef": "FX-002",
+      "storyRef": "specs/stories/FX-002-greet-test",
+      "dependsOn": [
+        "FX-001"
+      ]
+    },
+    {
+      "nodeRef": "FX-003",
+      "storyRef": "specs/stories/FX-003-greet-readme",
+      "dependsOn": [
+        "FX-001"
+      ]
+    }
+  ]
+}

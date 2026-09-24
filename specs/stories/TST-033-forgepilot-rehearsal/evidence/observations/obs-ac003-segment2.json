@@ -1,0 +1,14 @@
+{
+  "schemaVersion": "2.0.0",
+  "batchId": "BR-900-rehearsal",
+  "fingerprint": "4b4c807c88c2ece00291fda87a18cb425111101c21ac5cd4662067e609597046",
+  "goalPlan": {
+    "path": "specs/batches/BR-900-rehearsal/goal-plan/BR-900-rehearsal-4b4c807c88c2/manifest.json",
+    "sha256": "6e37b0ef4a2a0c0562bc0aa381bb4f51bf02864c05de46dabbd13960dcb6b8dd"
+  },
+  "goalId": "BR-900-rehearsal-4b4c807c88c2",
+  "forgepilotVersion": "32b7a68ebf96d74b55acec8f1cd9408f2ba70dab",
+  "observedAt": "2026-09-24T14:24:23Z",
+  "steps": [],
+  "stoppedBecause": "authorization-missing"
+}

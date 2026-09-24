@@ -1,0 +1,6 @@
+ForgePilot source: git archive 32b7a68ebf96d74b55acec8f1cd9408f2ba70dab | tar -x -C <tst033>/fp-src
+Build: (cd <tst033>/fp-src && go build -trimpath -o <tst033>/bin/forgepilot ./cmd/forgepilot)
+Go: go version go1.25.5 darwin/arm64
+Binary sha256: a143df2b61b61c3a4dce05a8c0623347a0842de6326714a520bf6f0cd546ab60
+Codex CLI on PATH: codex-cli 0.155.1
+PraxisBound: 167b11fdf08b1f07632ffcd44d2142813b9d0835 (main), make verify exit 0 before the rehearsal
