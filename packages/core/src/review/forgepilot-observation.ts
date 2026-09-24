@@ -247,6 +247,18 @@ function validateObservationShape(data: unknown): FieldProblem | undefined {
 }
 
 /**
+ * A rejection message paired with a JSON Pointer (RFC 6901) naming the
+ * offending field — never a filesystem path (code review round 2 N1: the
+ * CLI has no safe, schema-conforming place to put a raw JSON Pointer on
+ * `ResultIssue` itself, so it is carried in `data.diagnostics[]` instead;
+ * see `review-observe.ts`).
+ */
+interface FieldRejection {
+  readonly message: string;
+  readonly pointer: string;
+}
+
+/**
  * R2: step order rules, independent of `stoppedBecause`. Contract §11 step
  * 3/§22 (Human Review 2026-09-24, H2): ForgePilot `32b7a68` has no
  * machine-readable Goal existence query — an unknown Goal only makes `work
@@ -261,7 +273,7 @@ function validateObservationShape(data: unknown): FieldProblem | undefined {
  */
 function stepOrderProblem(
   steps: readonly ForgepilotObservationStep[],
-): string | undefined {
+): FieldRejection | undefined {
   let sawDryRunExitZero = false;
   const lifecycleCommands = new Set(["run-dry-run", "run"]);
   const creationCommands = new Set(["goal-create", "work-add"]);
@@ -270,12 +282,19 @@ function stepOrderProblem(
   );
   const hasCreation = steps.some((step) => creationCommands.has(step.command));
   if (hasLifecycle && hasCreation)
-    return "run-dry-run or run cannot share a record with goal-create or work-add";
+    return {
+      message:
+        "run-dry-run or run cannot share a record with goal-create or work-add",
+      pointer: "/steps",
+    };
 
   for (let index = 0; index < steps.length; index += 1) {
     const step = steps[index] as ForgepilotObservationStep;
     if (step.command === "run" && !sawDryRunExitZero)
-      return "run without an earlier exit-0 run-dry-run";
+      return {
+        message: "run without an earlier exit-0 run-dry-run",
+        pointer: `/steps/${index}`,
+      };
     if (step.command === "run-dry-run" && step.exit === 0)
       sawDryRunExitZero = true;
     const isLast = index === steps.length - 1;
@@ -286,14 +305,21 @@ function stepOrderProblem(
         step.exit !== null &&
         next !== undefined &&
         next.command === "goal-create";
-      if (!isWorkListBeforeGoalCreate) return "a non-last step did not exit 0";
+      if (!isWorkListBeforeGoalCreate)
+        return {
+          message: "a non-last step did not exit 0",
+          pointer: `/steps/${index}/exit`,
+        };
     }
     if (
       step.command === "work-add" &&
       step.exit === 0 &&
       (step.workItemId === undefined || step.created === undefined)
     )
-      return "an exit-0 work-add step is missing workItemId or created";
+      return {
+        message: "an exit-0 work-add step is missing workItemId or created",
+        pointer: `/steps/${index}`,
+      };
   }
   return undefined;
 }
@@ -302,37 +328,58 @@ function stepOrderProblem(
 function stoppedBecauseProblem(
   stoppedBecause: StoppedBecause,
   steps: readonly ForgepilotObservationStep[],
-): string | undefined {
+): FieldRejection | undefined {
   const last = steps[steps.length - 1];
+  const lastPointer =
+    steps.length > 0 ? `/steps/${steps.length - 1}` : "/steps";
   switch (stoppedBecause) {
     case "authorization-missing":
       return steps.length === 0
         ? undefined
-        : "authorization-missing must have no steps";
+        : {
+            message: "authorization-missing must have no steps",
+            pointer: "/steps",
+          };
     case "awaiting-authorization":
       return last !== undefined &&
         last.command === "execution-plan" &&
         last.exit === 0
         ? undefined
-        : "awaiting-authorization must end with an exit-0 execution-plan";
+        : {
+            message:
+              "awaiting-authorization must end with an exit-0 execution-plan",
+            pointer: lastPointer,
+          };
     case "goal-completed":
       return last !== undefined && last.command === "run" && last.exit === 0
         ? undefined
-        : "goal-completed must end with an exit-0 run";
+        : {
+            message: "goal-completed must end with an exit-0 run",
+            pointer: lastPointer,
+          };
     case "run-needs-human":
       return last !== undefined && last.command === "run" && last.exit === 2
         ? undefined
-        : "run-needs-human must end with run exit 2";
+        : {
+            message: "run-needs-human must end with run exit 2",
+            pointer: lastPointer,
+          };
     case "run-limit-reached":
       return last !== undefined && last.command === "run" && last.exit === 3
         ? undefined
-        : "run-limit-reached must end with run exit 3";
+        : {
+            message: "run-limit-reached must end with run exit 3",
+            pointer: lastPointer,
+          };
     case "run-interrupted":
       return last !== undefined &&
         last.command === "run" &&
         (last.exit === 130 || last.exit === 143)
         ? undefined
-        : "run-interrupted must end with run exit 130 or 143";
+        : {
+            message: "run-interrupted must end with run exit 130 or 143",
+            pointer: lastPointer,
+          };
     case "run-failed":
       return last !== undefined &&
         last.command === "run" &&
@@ -342,11 +389,18 @@ function stoppedBecauseProblem(
         last.exit !== 130 &&
         last.exit !== 143
         ? undefined
-        : "run-failed must end with run at another exit, including null";
+        : {
+            message:
+              "run-failed must end with run at another exit, including null",
+            pointer: lastPointer,
+          };
     case "step-failed":
       return last !== undefined && last.exit !== 0
         ? undefined
-        : "step-failed must end with a non-zero or null exit";
+        : {
+            message: "step-failed must end with a non-zero or null exit",
+            pointer: lastPointer,
+          };
     default:
       // R3: values not listed above carry no last-step constraint beyond R2
       // (Story TST-032's Human Review decision).
@@ -373,6 +427,15 @@ export type ForgepilotObservationValidation =
       readonly ok: false;
       readonly message: string;
       readonly tooLarge?: boolean;
+      /**
+       * A JSON Pointer (RFC 6901) naming the offending field, for a §22
+       * binding or §11/§22 R2/R3 consistency rejection (never for a shape
+       * rejection, which has no single offending field beyond "the
+       * document"). Never a filesystem path (code review round 2 N1) — the
+       * CLI places this only in `data.diagnostics[]`, never in an
+       * `issue()`'s schema-constrained `path`/`subject`.
+       */
+      readonly pointer?: string;
     };
 
 /**
@@ -440,7 +503,11 @@ export function validateForgepilotObservationConsistency(
   context: ForgepilotObservationContext,
 ): ForgepilotObservationValidation {
   if (record.batchId !== context.batchId)
-    return { ok: false, message: "batchId does not match the manifest" };
+    return {
+      ok: false,
+      message: "batchId does not match the manifest",
+      pointer: "/batchId",
+    };
 
   if (
     !record.goalPlan.path.startsWith(goalPlanDirectoryPrefix(context.batchId))
@@ -449,6 +516,7 @@ export function validateForgepilotObservationConsistency(
       ok: false,
       message:
         "goalPlan.path does not lie under the batch's goal-plan directory",
+      pointer: "/goalPlan/path",
     };
 
   if (context.goalPlanManifestBytes === undefined)
@@ -456,11 +524,13 @@ export function validateForgepilotObservationConsistency(
       ok: false,
       message:
         "goalPlan.path could not be read as the current Goal Plan Manifest",
+      pointer: "/goalPlan/path",
     };
   if (sha256Hex(context.goalPlanManifestBytes) !== record.goalPlan.sha256)
     return {
       ok: false,
       message: "goalPlan.sha256 does not match the current Goal Plan Manifest",
+      pointer: "/goalPlan/sha256",
     };
 
   if (record.goalId !== undefined) {
@@ -471,18 +541,28 @@ export function validateForgepilotObservationConsistency(
       return {
         ok: false,
         message: "goalId does not match the Goal Plan Manifest's plan.id",
+        pointer: "/goalId",
       };
   }
 
   const orderProblem = stepOrderProblem(record.steps);
-  if (orderProblem !== undefined) return { ok: false, message: orderProblem };
+  if (orderProblem !== undefined)
+    return {
+      ok: false,
+      message: orderProblem.message,
+      pointer: orderProblem.pointer,
+    };
 
   const stoppedProblem = stoppedBecauseProblem(
     record.stoppedBecause,
     record.steps,
   );
   if (stoppedProblem !== undefined)
-    return { ok: false, message: stoppedProblem };
+    return {
+      ok: false,
+      message: stoppedProblem.message,
+      pointer: stoppedProblem.pointer,
+    };
 
   return { ok: true, record };
 }

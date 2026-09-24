@@ -36,6 +36,7 @@ import { isAbsolute, relative, resolve } from "node:path";
 
 import {
   goalPlanDirectoryPrefix,
+  isSyntacticallySafeRepoPath,
   rawJsonMaxDepth,
   validateForgepilotObservationConsistency,
   validateForgepilotObservationShape,
@@ -240,28 +241,57 @@ function readObservationJson(bytes: Uint8Array): ObservationJsonRead {
 
 /**
  * Story Error Projection ("a JSON-pointer or repository-relative locator in
- * the existing envelope", code review round 1 LOW): every rejection carries
- * its own `path` on the `issue()` and a matching `{code, severity, path?}`
- * diagnostic in `data.diagnostics`, one-to-one with `issues[]` (contract
- * §12), the same pairing `review respond`/`review goal-plan` use.
+ * the existing envelope"). `path` becomes an `issue()`'s own `path` field
+ * *only* when it is a syntactically safe, repository-relative path
+ * (`isSyntacticallySafeRepoPath` — the same test `ResultEnvelope`
+ * validation itself applies): `ResultIssue.path` rejects a leading `/`,
+ * `..` segments, or a control character, so an absolute or
+ * outside-the-repository caller-supplied path (accepted as the observation
+ * input itself since code review round 1 M3) must never reach it — doing
+ * so made `validateResultEnvelope`/`assertResultEnvelope` throw instead of
+ * returning an envelope (code review round 2 N1 HIGH). `pointer` (a JSON
+ * Pointer such as `/steps/3/exit`, from a Core consistency rejection) is
+ * carried only in `data.diagnostics[]`, which has no such schema
+ * constraint, never on the `issue()` itself. Neither field is invented for
+ * a value the caller cannot already see: an unsafe or absent `path` simply
+ * means the diagnostic carries only `{code, severity}` (the same minimal
+ * shape `review goal-plan`'s own failure diagnostics use, code review
+ * round 2 N4).
  */
+function safeRepoIssuePath(candidate: string | undefined): string | undefined {
+  return candidate !== undefined && isSyntacticallySafeRepoPath(candidate)
+    ? candidate
+    : undefined;
+}
+
+interface ObserveLocator {
+  readonly path?: string | undefined;
+  readonly pointer?: string | undefined;
+}
+
 function locatorDiagnostic(
   code: string,
-  path?: string,
+  locator: ObserveLocator = {},
 ): {
   readonly code: string;
   readonly severity: "blocking";
   readonly path?: string;
+  readonly pointer?: string;
 } {
-  return path === undefined
-    ? { code, severity: "blocking" }
-    : { code, severity: "blocking", path };
+  const path = safeRepoIssuePath(locator.path);
+  return {
+    code,
+    severity: "blocking",
+    ...(path === undefined ? {} : { path }),
+    ...(locator.pointer === undefined ? {} : { pointer: locator.pointer }),
+  };
 }
 
 function invalidResult(
   message: string,
-  path?: string,
+  locator: ObserveLocator = {},
 ): ReviewIndexExecution["result"] {
+  const path = safeRepoIssuePath(locator.path);
   return envelope(
     "fail",
     "failure",
@@ -269,7 +299,7 @@ function invalidResult(
     [issue("REVIEW_OBSERVATION_INVALID", message, path)],
     {
       diagnostics: toDataValue([
-        locatorDiagnostic("REVIEW_OBSERVATION_INVALID", path),
+        locatorDiagnostic("REVIEW_OBSERVATION_INVALID", locator),
       ]),
     },
   );
@@ -277,8 +307,9 @@ function invalidResult(
 
 function tooLargeResult(
   message: string,
-  path?: string,
+  locator: ObserveLocator = {},
 ): ReviewIndexExecution["result"] {
+  const path = safeRepoIssuePath(locator.path);
   return envelope(
     "fail",
     "failure",
@@ -286,7 +317,7 @@ function tooLargeResult(
     [issue("REVIEW_INPUT_TOO_LARGE", message, path)],
     {
       diagnostics: toDataValue([
-        locatorDiagnostic("REVIEW_INPUT_TOO_LARGE", path),
+        locatorDiagnostic("REVIEW_INPUT_TOO_LARGE", locator),
       ]),
     },
   );
@@ -296,13 +327,16 @@ function unsafeResult(
   message: string,
   path?: string,
 ): ReviewIndexExecution["result"] {
+  const safePath = safeRepoIssuePath(path);
   return envelope(
     "error",
     "configuration-error",
     2,
-    [issue("REVIEW_PATH_UNSAFE", message, path)],
+    [issue("REVIEW_PATH_UNSAFE", message, safePath)],
     {
-      diagnostics: toDataValue([locatorDiagnostic("REVIEW_PATH_UNSAFE", path)]),
+      diagnostics: toDataValue([
+        locatorDiagnostic("REVIEW_PATH_UNSAFE", { path }),
+      ]),
     },
   );
 }
@@ -387,16 +421,15 @@ export async function runReviewObserve(
         mode: parsed.mode,
         result: tooLargeResult(
           "the observation file exceeds the size limit (1 MiB)",
-          parsed.file,
+          { path: parsed.file },
         ),
       };
     if (observationRead.kind === "missing")
       return {
         mode: parsed.mode,
-        result: invalidResult(
-          "the observation file could not be read",
-          parsed.file,
-        ),
+        result: invalidResult("the observation file could not be read", {
+          path: parsed.file,
+        }),
       };
 
     const parsedJson = readObservationJson(observationRead.bytes);
@@ -405,16 +438,15 @@ export async function runReviewObserve(
         mode: parsed.mode,
         result: tooLargeResult(
           "the observation JSON nesting exceeds the supported depth",
-          parsed.file,
+          { path: parsed.file },
         ),
       };
     if (parsedJson.kind === "malformed")
       return {
         mode: parsed.mode,
-        result: invalidResult(
-          "the observation file is not valid JSON",
-          parsed.file,
-        ),
+        result: invalidResult("the observation file is not valid JSON", {
+          path: parsed.file,
+        }),
       };
 
     // Schema only, no filesystem access yet: goalPlan.path is not resolved
@@ -426,8 +458,8 @@ export async function runReviewObserve(
       return {
         mode: parsed.mode,
         result: shape.tooLarge
-          ? tooLargeResult(shape.message, parsed.file)
-          : invalidResult(shape.message, parsed.file),
+          ? tooLargeResult(shape.message, { path: parsed.file })
+          : invalidResult(shape.message, { path: parsed.file }),
       };
     const record: ForgepilotObservationData = shape.record;
 
@@ -467,9 +499,17 @@ export async function runReviewObserve(
     if (!consistency.ok)
       return {
         mode: parsed.mode,
+        // N1 (code review round 2): a consistency rejection names a field
+        // inside the observation document, never the caller's file path —
+        // the JSON Pointer Core returns (e.g. `/steps/3/exit`) goes only
+        // into data.diagnostics[], never issues[].path.
         result: consistency.tooLarge
-          ? tooLargeResult(consistency.message, parsed.file)
-          : invalidResult(consistency.message, parsed.file),
+          ? tooLargeResult(consistency.message, {
+              pointer: consistency.pointer,
+            })
+          : invalidResult(consistency.message, {
+              pointer: consistency.pointer,
+            }),
       };
 
     // R4: the accepted record is written verbatim (the exact input bytes),
@@ -507,10 +547,9 @@ export async function runReviewObserve(
           ],
           {
             diagnostics: toDataValue([
-              locatorDiagnostic(
-                "REVIEW_RECORD_WRITE_FAILED",
-                recordsDirectory(manifestPath),
-              ),
+              locatorDiagnostic("REVIEW_RECORD_WRITE_FAILED", {
+                path: recordsDirectory(manifestPath),
+              }),
             ]),
           },
         ),
