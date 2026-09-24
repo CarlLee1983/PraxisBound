@@ -385,9 +385,14 @@ Goal Plan 產物不含授權、不是 `protocol/handoff.md` 的 handoff、不含
 
 ## 11. ForgePilot 整合規則（Agent 工作流程，修訂，R-008）
 
-基準：ForgePilot `32b7a68ebf96d74b55acec8f1cd9408f2ba70dab`，從該 commit 的乾淨副本建置；不使用 PATH 上版本不明的執行檔。
+基準：ForgePilot `32b7a68ebf96d74b55acec8f1cd9408f2ba70dab`；不使用 PATH 上版本不明的執行檔，一律以乾淨的絕對路徑呼叫（相對路徑啟動會被 ForgePilot 拒絕：`process image is not an absolute clean path`）。
+（修訂，R-008，TST-034）第一段可用該 commit 的乾淨副本建置的執行檔；第二段（`execution authorize`、不帶 `--dry-run` 的 `run`）
+只接受由 ForgePilot Bootstrap 管理的安裝（`~/.local/share/forgepilot/versions/<commit>/bin/forgepilot`），
+從原始碼建置的執行檔會被拒絕（`outside the managed Bootstrap root`，TST-033 實測）。
 僅透過 ForgePilot 公開 CLI 並一律帶 `--json`；不讀寫 `.forgepilot`，不解析人類可讀輸出。
 ForgePilot 的 JSON 只在 exit 0 時保證；非 0 exit 一律停止，不嘗試解析。唯一例外是步驟 3 的 `work list`（修訂，R-008，TST-032 人類審閱 2026-09-24）。
+（修訂，R-008，TST-034）exit 0 不等於驗證通過：`goal preflight` 與 `execution plan` 在驗證失敗時仍 exit 0，
+失敗只出現在輸出的 `diagnostics`（TST-033 讀原始碼確認）。這兩步 exit 0 後，`diagnostics` 必須為 `null` 或空陣列，否則依步驟 5、6 停止。
 
 一次交接分成兩段，由人的 `execution authorize` 隔開。
 
@@ -403,22 +408,37 @@ ForgePilot 的 JSON 只在 exit 0 時保證；非 0 exit 一律停止，不嘗�
      它的 exit 決定結果：exit 0 表示 Goal 原本不存在並已建立；非 0 則停止（`step-failed`）。
      ForgePilot `32b7a68` 對未知 Goal 的 `work list` 只在 stderr 回報 `unknown goal` 並 exit 1，沒有機器可讀的存在查詢；
      `goal create` 對已存在的 ID 拒絕（`goal "<id>" already exists`），因此由 ForgePilot 自己把關，Agent 不讀 stderr 判斷原因（修訂，R-008）。
-   - Goal 已存在：`review_policy` 必須為 `goal`，既有每個 Work Item 的 `external_ref` 必須是本 plan 的 Story ID，
+   - Goal 已存在：`review_policy` 必須為 `GOAL`（ForgePilot `32b7a68` 以大寫回報 `--review-policy goal`，TST-033 實測；修訂，R-008，TST-034），既有每個 Work Item 的 `external_ref` 必須是本 plan 的 Story ID，
      其 `story_ref` 與 `depends_on`（對應後）必須和 plan 相符；任一不符即停止（`goal-mismatch`／`work-mismatch`），不續建。
 4. 依 declaration 的拓撲序（同層依 Story ID）對尚未存在的 Story 執行
    `work add --goal <goalId> --story <storyRef> --external-ref <Story ID> [--depends-on <WI ID> ...] --json`。
    依賴只用 ForgePilot 回傳的實際 WI ID，不以 Story ID 代替。`created: false` 是冪等重試的正常結果。
 5. 寫 `goal-plan/<plan.id>/preflight-request.json`（`forgepilot.goal-preflight-request/v1`；`nodeMappings` 取自實際 WI ID），
-   執行 `goal preflight --request <path> --json`；非 0 exit 即停止（`goal-preflight-failed`）。
-6. 寫 `goal-plan/<plan.id>/execution-request.json` 並執行 `execution plan --request <path> --json`。
+   執行 `goal preflight --request <path> --json`；非 0 exit 即停止（`step-failed`）；
+   exit 0 但 `diagnostics` 非空即停止（`goal-preflight-failed`）（修訂，R-008，TST-034）。
+6. 寫 `goal-plan/<plan.id>/execution-request.json`（`forgepilot.execution-plan-request/v2`）並執行 `execution plan --request <path> --json`；
+   非 0 exit 即停止（`step-failed`）；exit 0 但 `diagnostics` 非空或沒有 `approvalToken` 即停止（`execution-plan-failed`）（修訂，R-008，TST-034）。
    Worker Profile（Codex 執行檔路徑、模型）、各項上限與 `expiresAt` 只取自人在當前會話明確提供的值，Agent 不選預設值。
+   （修訂，R-008，TST-034）ForgePilot `32b7a68` 對這些值的限制，Agent 據以提醒人、不自行修改：`runtime` 只接受 `codex`、
+   `effort` 只接受 `medium`、`sandbox` 只接受 `workspace-write`；`executablePath` 須為不含 symlink 的絕對路徑（ForgePilot 會解析 symlink 後記錄，
+   步驟 8–9 以同一路徑呼叫）；八個 `caps` 皆為 ≥ 1 的整數且 `maxWriteBytes ≤ maxRunBytes ≤ maxTotalBytes`；
+   `expiresAt` 在未來 14 天內，RFC 3339 且秒以下不帶尾端 0（`2026-10-01T00:00:00Z` 可、`…00.000Z` 不可）。
+   `engineGeneration`（`sourceCommit`、`payloadSHA256`）是 Bootstrap 安裝的世代，取自 `forgepilot-bootstrap generation-v1 current`
+   輸出的 `generation_id`、`payload_digest`；它是事實而非選擇，Agent 讀取後連同其他值交給人確認，不填占位值。
 7. 把預覽與 approval token 交給人，停止（`awaiting-authorization`）。Agent 從不執行 `execution authorize`。
 
 **第二段：人授權之後**
 
-8. 重做步驟 2，再執行 `run --goal <goalId> --runtime codex --snapshot --dry-run`；exit 非 0 即停止（`step-failed`）。
-   未經授權的 Goal 會在這一步被 ForgePilot 拒絕；不以任何檔案或 Agent 記憶推定授權存在。
-9. 執行 `run --goal <goalId> --runtime codex --snapshot`，依 exit 如實回報：
+（修訂，R-008，TST-034，ADR-017）Agent 只在人於當前會話明確表示已執行 `execution authorize` 後才開始第二段；
+ForgePilot `32b7a68` 沒有可查詢授權的機器可讀命令，因此 Agent 無法事先在 ForgePilot 中觀察授權，也不以任何檔案或 Agent 記憶推定授權存在。
+人沒有這樣表示時不開始第二段，也不為此寫觀察紀錄。
+
+8. 重做步驟 2，再執行 `run --goal <goalId> --runtime codex --runtime-command <executablePath> --snapshot --dry-run`；exit 非 0 即停止（`step-failed`）。
+   dry-run 不檢查授權，未授權的 Goal 也會 exit 0（TST-033 實測）；它只預檢範圍與 runtime，不證明授權存在。
+9. 執行 `run --goal <goalId> --runtime codex --runtime-command <executablePath> --snapshot`，依 exit 如實回報。
+   授權的真正關卡在這一步：沒有有效授權時 ForgePilot 拒絕並 exit 1，依下表回報為 `run-failed`。
+   `<executablePath>` 是步驟 6 請求中的同一值；不帶 `--runtime-command` 時 ForgePilot 以 PATH 解析 `codex`，
+   PATH 上的 symlink 會與授權記錄的解析後路徑不符（修訂，R-008，TST-034）。
 
 | exit | `stoppedBecause` | 回報 |
 | --- | --- | --- |
@@ -502,6 +522,8 @@ ForgePilot 輸出是觀察而非輸入：每個 stdout／stderr 保存前 1 MiB�
 - （修訂，R-008）以 Goal Plan 產物取代 Execution Packet：`review packet` 尚未實作，移除它不影響任何已發布命令。
   Goal Plan 格式改以 `schemas/goal-plan/` 為準，對 `@praxisbound/core`／`cli` 0.3.0 的 Goal Plan API 屬 **Breaking**，由獨立的發布 Story 附 migration guidance；Protocol 不變。
   Readiness Sidecar 納入指紋屬 **Additive**，但已有 Sidecar 的批次指紋會改變、既有確認不再適用。
+- （修訂，R-008，TST-034）§11／§22 依 TST-033 演練結果修正，外部整合觀察新增 `execution-plan-failed`、`goal-preflight-failed` 與它綁定最後一步。
+  `review goal-plan`、`review observe` 與 Agent 工作流程皆尚未發布，屬 **Corrective**：修正未發布契約中與 ForgePilot `32b7a68` 實際行為不符之處。
 
 ## 15. 安全：Trust Boundary Fields
 
@@ -754,6 +776,8 @@ Schema：[`schemas/forgepilot-observation.schema.json`](schemas/forgepilot-obser
 - `stoppedBecause` 與最後一步不一致：`awaiting-authorization` 的最後一步須為 exit 0 的 `execution-plan`；
   `goal-completed`／`run-needs-human`／`run-limit-reached`／`run-interrupted`／`run-failed` 的最後一步須為 `run`，且 exit 依 §11 對照表；
   `step-failed` 的最後一步 exit 須非 0；`authorization-missing` 須沒有任何步驟。
+  （修訂，R-008，TST-034）`goal-preflight-failed` 的最後一步須為 exit 0 的 `goal-preflight`；`execution-plan-failed` 的最後一步須為 exit 0 的 `execution-plan`
+  （兩者都是 exit 0 但 `diagnostics` 非空，§11 步驟 5–6）。工具不解析 `stdout` 判斷 `diagnostics`，只檢查步驟形狀。
 
 紀錄是當次觀察的歷史 Evidence：工具只驗證它內部一致，不驗證 ForgePilot 真的這樣輸出過；現況一律以 ForgePilot 為準。
 
