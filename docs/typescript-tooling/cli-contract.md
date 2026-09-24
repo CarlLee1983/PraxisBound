@@ -68,6 +68,7 @@ verify             = execute make verify
 | `praxisbound review preflight <manifest>`                | none (new capability)                 | Evaluates every contract §9 check — mechanical (including git, `ADR-015`) and the Semantic Report's own — and writes one Preflight Report (Stories TST-027/TST-028). |
 | `praxisbound review readiness-digests <manifest>`        | none (new capability)                 | Rewrites only the `story_md_digest`/`acceptance_md_digest` fields of every batch Story's existing `readiness.json` whose digests are stale; creates none (contract §21, Story TST-030). |
 | `praxisbound review goal-plan <manifest> --semantic-report <file>` | none (new capability)       | Projects `declaration.json`/`manifest.json`/`coverage-review.json` under `specs/batches/<BATCH-ID>/goal-plan/<plan.id>/` on `REVIEW_READY`; replaces the unimplemented `review packet` (contract §10, Story TST-031). |
+| `praxisbound review observe <manifest> <observation.json>` | none (new capability)      | Validates one Agent observation of a contract §11 ForgePilot handoff segment and, only when internally consistent, records it create-new under `records/forgepilot-<fp12>-<n>.json` (contract §22, Story TST-032). |
 | `praxisbound codex activate <repo>`                      | `scripts/codex-activate`              | Preview by default; supports `--apply`; stays a late migration wave.                                                                                                 |
 
 Global options may appear after the selected command path and before or among
@@ -635,23 +636,25 @@ in this command's own output as a claim of authorization or completion.
 ## `praxisbound review preflight` contract
 
 `praxisbound review preflight <manifest> [--semantic-report <file>]
-[--expect-fingerprint <sha256> --expect-revision <commit>] [--json]` (Story
-TST-027/TST-028, Additive) evaluates every contract §9 check — mechanical and
+[--expect-fingerprint <sha256>] [--expect-revision <commit>] [--json]` (Story
+TST-027/TST-028, extended by Story TST-032 for independent `--expect-*`,
+Additive) evaluates every contract §9 check — mechanical and
 the Semantic Report's own — writes one Preflight Report
 (`records/preflight-<fp12>-<n>.json`, contract §2), and reports one result
 envelope. Mechanical diagnostics go into `mechanical`; the Semantic Report's
 own diagnostics go into `semantic`, apart from `mechanical`, though both
 count toward the outcome (contract §9 R6, Story TST-028 R1–R6).
 
-Argv: `--expect-fingerprint`/`--expect-revision` must both be given or both
-omitted (`usage-error`); `--expect-fingerprint` must match
-`^[a-f0-9]{64}$` and `--expect-revision` must match `^[a-f0-9]{40}$`, checked
-before either value is used for anything (`usage-error`, exit 2). An unknown
-flag, a repeated flag, a missing flag value, or a missing/extra positional is
-the same `REVIEW_USAGE` `usage-error`, exit 2, every other review command
-uses. An invalid or unreadable manifest, an unsafe path, or an unsupported
-`schemaVersion` is `configuration-error`, exit 2, exactly as `review index`
-reports it.
+Argv (contract §9 as amended, Story TST-032 R7): `--expect-fingerprint` and
+`--expect-revision` are independent — either alone, both, or neither is valid
+argv; only a flag repeated, given twice, is `usage-error`.
+`--expect-fingerprint` must match `^[a-f0-9]{64}$` and `--expect-revision`
+must match `^[a-f0-9]{40}$`, checked before either value is used for anything
+(`usage-error`, exit 2). An unknown flag, a repeated flag, a missing flag
+value, or a missing/extra positional is the same `REVIEW_USAGE` `usage-error`,
+exit 2, every other review command uses. An invalid or unreadable manifest, an
+unsafe path, or an unsupported `schemaVersion` is `configuration-error`, exit
+2, exactly as `review index` reports it.
 
 It gathers, without acting on any of these decisions itself (Core's
 `evaluatePreflight` owns every classification, severity, precedence, and
@@ -778,7 +781,10 @@ the combined `mechanical`/`semantic` diagnostic count exceeds contract
 writes nothing. Otherwise it builds the record (`schemaVersion`, `batchId`,
 `fingerprint`, `outcome`, `checkedAt` from an injectable clock, the
 applicable confirmation's `{path, sha256}` or `null`, `semanticReport`
-(`{sha256}` or `null`, above), `mechanical`, `semantic`, `expect`) and either reuses the
+(`{sha256}` or `null`, above), `mechanical`, `semantic`, `expect` — contract
+§9 as amended (Story TST-032): `expect` records exactly the `--expect-*`
+flags given (`{fingerprint}`, `{revision}`, both, or `null` when neither was
+given) — and either reuses the
 baseline's path (when it is valid and equal to the new record in every
 field but `checkedAt`, `expect` included) or writes a new
 `records/preflight-<fp12>-<n>.json` with `<n>` starting at the baseline's
@@ -979,6 +985,110 @@ ForgePilot; the artifacts carry no authorization, verification result, or
 completion claim, and no source, Sidecar, record, or Semantic Report text —
 including `authorized: true` or an instruction — ever changes the outcome or
 appears in an artifact as an authorization.
+
+## `praxisbound review observe` contract
+
+`praxisbound review observe <manifest> <observation.json>` (contract §22,
+Story TST-032) validates one Agent's observation of a contract §11 ForgePilot
+handoff segment and, only when it is internally consistent, writes it once to
+`records/forgepilot-<fp12>-<n>.json`. It never runs ForgePilot and never
+judges its current state (contract §22, R1): the written record is
+historical Evidence of what one handoff session observed, not a claim about
+ForgePilot's current state.
+
+Argv: `<manifest> <observation.json> [--json]`, the same two-positional
+shape `review import`/`review respond` take
+(`parseManifestAndFileArguments`); a missing positional, an extra one, or an
+unknown flag is `usage-error`, exit 2. An invalid or unreadable manifest, or
+a manifest path with a symlinked segment, is `configuration-error`, exit 2,
+exactly as `review index` reports it.
+
+The observation input file is resolved to a repository-relative path,
+checked for a symlinked segment at any path component, opened `O_NOFOLLOW`,
+and re-checked by `dev`/`ino` identity against a fresh `lstat` after opening
+(the same TOCTOU-closing pattern `--semantic-report` uses, Story TST-028
+security C1/M1); a symlinked path is `configuration-error`,
+`REVIEW_PATH_UNSAFE`, exit 2. Its size is bounded at the same 1 MiB contract
+§13 uses for every `records/` JSON document; over the bound, or a JSON
+nesting depth over 32, is `failure`, `REVIEW_INPUT_TOO_LARGE`, exit 1,
+before the document is otherwise inspected. Invalid UTF-8 or malformed JSON
+is `failure`, `REVIEW_OBSERVATION_INVALID`, exit 1.
+
+The parsed document is validated in two stages by Core's pure
+`packages/core/src/review/forgepilot-observation.ts`, hand-written against
+`schemas/forgepilot-observation.schema.json` (`schemaVersion` `2.0.0`; any
+other value, including `1.0.0`, is rejected — a `1.0.0` record already reads
+as `REVIEW_RECORD_INVALID` if ever found under `records/`, contract §2):
+
+1. `validateForgepilotObservationShape` — schema only, no filesystem access:
+   every field's shape, including `steps[].stdout`/`steps[].stderr`'s own
+   1,048,576-character bound (contract §13's deliberate exemption from the
+   64 KiB text limit) and a `steps` array capped at 2000 entries. Only once
+   this passes is `goalPlan.path` known to be a syntactically safe
+   repository-relative path (no `..`, no absolute leading `/`, no control
+   character) — so a path-traversal payload in `goalPlan.path` is always
+   `REVIEW_OBSERVATION_INVALID` here, never reaching a filesystem check at
+   all, and therefore never `REVIEW_PATH_UNSAFE`.
+2. Only then is `goalPlan.path` resolved and read (bounded at 8 MiB, the
+   same Goal Plan Manifest bound `review goal-plan` uses, `O_NOFOLLOW`,
+   symlink-checked the same way as the observation input); a symlinked
+   segment anywhere on that path is `configuration-error`,
+   `REVIEW_PATH_UNSAFE`, exit 2. `validateForgepilotObservationConsistency`
+   then checks contract §22's binding and step-consistency rules against the
+   manifest's own `batchId` and the Goal Plan Manifest bytes (or `undefined`
+   when the file could not be read at all — missing and wrong-`sha256` fold
+   into the same `REVIEW_OBSERVATION_INVALID` rejection, contract §22):
+   - `batchId` equals the manifest's own `batchId`.
+   - `goalPlan.path` lies under `specs/batches/<BATCH-ID>/goal-plan/`, the
+     named file exists, and its sha256 equals `goalPlan.sha256`.
+   - `goalId`, when present, equals the Goal Plan Manifest's own `plan.id`
+     (parsed directly from its bytes; this check never re-validates the
+     Manifest's own schema, and never compares the observation's
+     `fingerprint` against the Manifest's `coverageIndex.fingerprint` — out
+     of scope for Story TST-032, Human Review 2026-09-24).
+   - Step order (contract §11/§22, R2): no `run` without an earlier exit-0
+     `run-dry-run`; `run-dry-run`/`run` never share a record with
+     `goal-create`/`work-add`; every step but the last exits `0`; an exit-0
+     `work-add` has both `workItemId` and `created`.
+   - `stoppedBecause` consistency with the last step (R3):
+     `awaiting-authorization` ends with an exit-0 `execution-plan`;
+     `goal-completed`/`run-needs-human`/`run-limit-reached`/
+     `run-interrupted`/`run-failed` end with `run` at the exit contract §11's
+     table names for each (`run-failed` accepts any other exit, including
+     `null` — Human Review 2026-09-24); `step-failed` ends with a non-zero
+     or `null` exit; `authorization-missing` has no steps at all; any other
+     `stoppedBecause` value carries no last-step constraint beyond R2 (Human
+     Review 2026-09-24).
+
+   Any rejection at this stage is `failure`, `REVIEW_OBSERVATION_INVALID`,
+   exit 1 (or `REVIEW_INPUT_TOO_LARGE` when the shape stage's own rejection
+   was a size/count bound). No rejection message ever quotes observation
+   text — `stdout`, `stderr`, or any other field value (R6): text in the
+   observation, including `authorized: true`, an instruction, or an ESC
+   sequence, is data, never changes the outcome, and is never echoed.
+
+Once accepted, the observation's own bytes — exactly as read, never
+re-serialized — are written create-new, exclusive, to
+`records/forgepilot-<fp12>-<n>.json` (`<fp12>` the first 12 hex characters
+of the record's own `fingerprint`; `<n>` from 1, incremented past any
+existing name), using the same `createNewRecord` primitive (temp file plus
+`link`, identity-checked by `dev`/`ino`) every other batch review record
+uses. A `records/` symlink discovered at write time is `configuration-error`,
+`REVIEW_PATH_UNSAFE`, exit 2, nothing written; any other write failure is
+`ERROR`, exit 3, `REVIEW_RECORD_WRITE_FAILED`, leaving no partial file.
+
+| Outcome               | Status  | Exit | Meaning                                                                                     |
+| ---------------------- | ------- | ---- | -------------------------------------------------------------------------------------------- |
+| `success`             | `pass`  | `0`  | The observation was internally consistent and written once; `data.record` names the file.    |
+| `failure`             | `fail`  | `1`  | Schema/binding/step-consistency rejection (`REVIEW_OBSERVATION_INVALID`) or over-limit (`REVIEW_INPUT_TOO_LARGE`); nothing written. |
+| `usage-error`         | `error` | `2`  | Invalid or missing argv.                                                                      |
+| `configuration-error` | `error` | `2`  | Invalid/unreadable manifest, or a symlinked path (observation input, `goalPlan.path`, or `records/`). |
+| `ERROR`               | `error` | `3`  | The record write failed, or another unexpected internal error.                                |
+
+`data` is `{ batchId, fingerprint, record }` on success (`record` the
+repo-relative path just written); rejections carry only `issues[]`, no
+`data`. The command never spawns any process, never reads `.forgepilot`, and
+never treats `goal-completed` as Human Review acceptance or `DONE`.
 
 ## `review preflight` and `review goal-plan` outcomes
 
