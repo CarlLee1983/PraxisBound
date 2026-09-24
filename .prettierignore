@@ -1,0 +1,7 @@
+# Golden Goal Plan artifact fixtures (Story TST-031, AC-002): these files are
+# byte-exact copies of what `projectGoalPlan`'s `JSON.stringify(x, null, 2)`
+# actually produces (arrays always expanded, one element per line), which
+# Prettier's own JSON printer would collapse for a short array — reformatting
+# them would silently break the golden-byte comparison in
+# packages/core/test/review-goal-plan.test.mjs.
+packages/core/test/fixtures/goal-plan-artifacts/golden/*.json

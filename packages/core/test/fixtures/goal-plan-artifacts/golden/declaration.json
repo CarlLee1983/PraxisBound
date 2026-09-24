@@ -1,0 +1,21 @@
+{
+  "schemaVersion": "1.0.0",
+  "plan": {
+    "id": "BR-001-goal-plan-fixture-abc123456789",
+    "revision": 1
+  },
+  "nodes": [
+    {
+      "nodeRef": "EX-001-first",
+      "storyRef": "specs/stories/EX-001-first",
+      "dependsOn": []
+    },
+    {
+      "nodeRef": "EX-002-second",
+      "storyRef": "specs/stories/EX-002-second",
+      "dependsOn": [
+        "EX-001-first"
+      ]
+    }
+  ]
+}

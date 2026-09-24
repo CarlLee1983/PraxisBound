@@ -17,9 +17,16 @@ import {
 const fixtureRoot = fileURLToPath(
   new URL("./fixtures/goal-plan-artifacts/sources/", import.meta.url),
 );
+const goldenRoot = fileURLToPath(
+  new URL("./fixtures/goal-plan-artifacts/golden/", import.meta.url),
+);
 
 function bytes(name) {
   return readFileSync(`${fixtureRoot}${name}`);
+}
+
+function golden(name) {
+  return readFileSync(`${goldenRoot}${name}`);
 }
 
 function sha256(value) {
@@ -86,11 +93,24 @@ function goldenInput() {
       // Non-ASCII, on purpose (AC-002: unescaped non-ASCII in the exported
       // reviewer.name — this path text flows straight into it).
       path: "specs/batches/BR-001-goal-plan-fixture/records/confirmation-abcdef123456-測試.json",
-      bytes: Buffer.from('{"claim":"explicit-terminal-confirmation"}', "utf8"),
+      // M-2 (code review): chosen so this exact byte sequence's sha256 has
+      // '3' (binary 0011, top bit 0) as its 17th hex character — in the
+      // 0-7 range the `& 0x3 | 0x8` variant step in
+      // deriveGoalPlanReviewId actually changes (to 'b'), rather than a
+      // character already in 8-b where the step would be a no-op. Verified
+      // once out of band: sha256('{"claim":"explicit-terminal-confirmation","seq":1}')
+      // = f142e8f60ad136213a4d63b25ebc51c9f75920c341c01a708c717a68fd18114d.
+      bytes: Buffer.from(
+        '{"claim":"explicit-terminal-confirmation","seq":1}',
+        "utf8",
+      ),
       confirmedAt: "2026-09-24T01:02:03.456789Z",
     },
   };
 }
+
+/** The literal reviewId `deriveGoalPlanReviewId` must produce for `goldenInput()`'s confirmation bytes (M-2: never computed by calling the function under test). */
+const GOLDEN_REVIEW_ID = "f142e8f6-0ad1-4621-ba4d-63b25ebc51c9";
 
 test("golden-goal-plan-fixture/AC-002: byte-identical-artifacts — declaration node/dependsOn order, storyRef/nodeRef, readinessContract, reviewedSources order, coverageIndex, reviewId, reviewer, reviewedAt, two-space indent, trailing newline, unescaped non-ASCII", () => {
   const input = goldenInput();
@@ -100,6 +120,16 @@ test("golden-goal-plan-fixture/AC-002: byte-identical-artifacts — declaration 
   assert.equal(
     result.directory,
     "specs/batches/BR-001-goal-plan-fixture/goal-plan/BR-001-goal-plan-fixture-abc123456789",
+  );
+
+  // M-2 (code review): a real golden comparison — every artifact's exact
+  // bytes against a fixture file committed to the repository, not merely
+  // against a value this same test (or the implementation) computes.
+  assert.deepEqual(Buffer.from(result.declaration), golden("declaration.json"));
+  assert.deepEqual(Buffer.from(result.manifest), golden("manifest.json"));
+  assert.deepEqual(
+    Buffer.from(result.coverageReview),
+    golden("coverage-review.json"),
   );
 
   // Every artifact ends with exactly one trailing newline and never a CRLF.
@@ -186,10 +216,13 @@ test("golden-goal-plan-fixture/AC-002: byte-identical-artifacts — declaration 
     Buffer.from(result.coverageReview).toString("utf8"),
   );
   assert.equal(review.schemaVersion, "1.0.0");
-  assert.equal(
-    review.reviewId,
-    deriveGoalPlanReviewId(sha256(input.confirmation.bytes)),
-  );
+  // M-2 (code review): checked against a literal, not against calling
+  // deriveGoalPlanReviewId to compute the very expectation being tested.
+  // sha256(input.confirmation.bytes)'s first 32 hex characters are
+  // f142e8f60ad136213a4d63b25ebc51c9 — 17th character '3' (0-7 range), so
+  // this exercises the `& 0x3 | 0x8` step actually changing the value
+  // (to 'b'), not merely confirming an already-in-range character.
+  assert.equal(review.reviewId, GOLDEN_REVIEW_ID);
   assert.match(
     review.reviewId,
     /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
@@ -296,4 +329,45 @@ test("toGoalPlanReviewedAt pads and truncates to exactly three fractional-second
     toGoalPlanReviewedAt("2026-09-24T01:02:03.123456789Z"),
     "2026-09-24T01:02:03.123Z",
   );
+});
+
+test("M-3/lowercase-t: toGoalPlanReviewedAt accepts a lowercase t separator (as revision-limits.ts's UTC_TIME_PATTERN, and so a real Definition Confirmation's confirmedAt, does) and always emits an uppercase T", () => {
+  assert.equal(
+    toGoalPlanReviewedAt("2026-09-24t01:02:03Z"),
+    "2026-09-24T01:02:03.000Z",
+  );
+  assert.equal(
+    toGoalPlanReviewedAt("2026-09-24t01:02:03.5Z"),
+    "2026-09-24T01:02:03.500Z",
+  );
+});
+
+test("M-3/lowercase-t: projectGoalPlan succeeds end to end for a confirmation whose confirmedAt uses a lowercase t", () => {
+  const input = goldenInput();
+  const lowercaseInput = {
+    ...input,
+    confirmation: {
+      ...input.confirmation,
+      confirmedAt: "2026-09-24t01:02:03.456789Z",
+    },
+  };
+  const result = projectGoalPlan(lowercaseInput);
+  assert.equal(result.ok, true, result.ok ? undefined : result.message);
+  const review = JSON.parse(
+    Buffer.from(result.coverageReview).toString("utf8"),
+  );
+  assert.equal(review.reviewedAt, "2026-09-24T01:02:03.456Z");
+});
+
+test("M-3/leap-second: a confirmedAt with a :60 leap second is not a real UTC date-time the Goal Plan artifact schema accepts, so the exporter's own self-validation rejects it (projectGoalPlan returns ok:false, never a silently wrong reviewedAt)", () => {
+  const input = goldenInput();
+  const leapSecondInput = {
+    ...input,
+    confirmation: {
+      ...input.confirmation,
+      confirmedAt: "2026-06-30T23:59:60Z",
+    },
+  };
+  const result = projectGoalPlan(leapSecondInput);
+  assert.equal(result.ok, false);
 });
