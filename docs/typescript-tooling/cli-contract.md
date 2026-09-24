@@ -920,7 +920,8 @@ exported `reviewedAt`; a `:60` leap-second `confirmedAt` (theoretically
 confirmable, though `review confirm` itself never writes one) has no
 corresponding `reviewedAt` the artifact schema accepts, so it is left
 unhandled and surfaces as the same self-validation `ERROR` rather than a
-silently wrong timestamp (code review M-3, a human decision).
+silently wrong timestamp — a coordinating-agent decision made during code
+review round 1 (M-3), pending Human Review, not a settled position.
 
 Immediately before projecting, `batch.json` and the applicable confirmation
 record are re-read and their sha256 re-checked against the digests the
@@ -938,22 +939,24 @@ written to a same-directory temporary file (`O_EXCL|O_NOFOLLOW`, `fsync`ed)
 and then linked to its final name — `link` never overwrites an existing
 destination — so a write failure partway through never leaves a truncated
 artifact at the final path (code review M-4). An existing file with
-identical bytes counts as written and is left untouched (verified by
-`lstat`-based inode/mtime as well as byte content); an existing file with
-different bytes rejects the whole run, `failure`, `REVIEW_GOAL_PLAN_CONFLICT`,
+identical bytes counts as written and is left untouched; an existing file
+with different bytes rejects the whole run, `failure`, `REVIEW_GOAL_PLAN_CONFLICT`,
 exit 1, leaving every already-written file (this run's and any pre-existing
-one) untouched — never rewritten or deleted; that `failure` envelope's
-`issues[]`/`data.diagnostics[]` still correspond one to one (contract §12),
-with the conflict appended to both the preflight evaluation's own issues and
-diagnostics, and `data.files` still lists every artifact this run already
-created or found byte-identical before the conflict (code review M-5, LOW).
-A symlink at the output directory, at `goal-plan/`, at any parent up to the
-repository root, or at an artifact path is `REVIEW_PATH_UNSAFE`,
-`configuration-error`, exit 2 (still reporting `data.preflightRecord` and
-`data.files`, code review LOW), and nothing is written through it. A
-directory, FIFO, or other non-regular file already at an artifact's path is
-neither a match nor a conflict — reading it is never attempted as a byte
-comparison — and is `ERROR`, exit 3.
+one) untouched — never rewritten or deleted. A symlink at the output
+directory, at `goal-plan/`, at any parent up to the repository root, or at
+an artifact path is `REVIEW_PATH_UNSAFE`, `configuration-error`, exit 2, and
+nothing is written through it. Both failures carry the full preflight
+evaluation `data` (`batchId`, `fingerprint`, `sources`, `diagnostics`,
+`preflightRecord`), plus `goalPlanDirectory` and `files` (every artifact
+this run already created or found byte-identical before the failure); the
+failure's own issue is appended to `issues[]` and its matching diagnostic to
+`data.diagnostics[]`, in the same order, so contract §12's `issues[]` <->
+`data.diagnostics[]` one-to-one correspondence holds identically for
+`REVIEW_GOAL_PLAN_CONFLICT` and `REVIEW_PATH_UNSAFE` — never a smaller,
+ad hoc shape for one of the two (code review M-5, LOW). A directory, FIFO,
+or other non-regular file already at an artifact's path is neither a match
+nor a conflict — reading it is never attempted as a byte comparison — and
+is `ERROR`, exit 3.
 
 | Outcome               | Status  | Exit | Meaning                                                                                    |
 | --------------------- | ------- | ---- | ------------------------------------------------------------------------------------------- |
@@ -967,9 +970,11 @@ comparison — and is `ERROR`, exit 3.
 | `ERROR`               | `error` | `3`  | A projection failed its own validator, an artifact write failed, or another internal error. |
 
 `data` extends the `review preflight` shape (`batchId`, `fingerprint`,
-`sources`, `diagnostics`, `preflightRecord`) with, on `REVIEW_READY`,
-`goalPlanDirectory` (the fixed directory) and `files` (every artifact's
-repo-relative path, written or already matching). The command never runs
+`sources`, `diagnostics`, `preflightRecord`) with `goalPlanDirectory` (the
+fixed directory) and `files` (every artifact's repo-relative path, written
+or already matching) — present on `REVIEW_READY` and on both
+`REVIEW_GOAL_PLAN_CONFLICT`/`REVIEW_PATH_UNSAFE` failures, never only on
+success. The command never runs
 ForgePilot; the artifacts carry no authorization, verification result, or
 completion claim, and no source, Sidecar, record, or Semantic Report text —
 including `authorized: true` or an instruction — ever changes the outcome or
