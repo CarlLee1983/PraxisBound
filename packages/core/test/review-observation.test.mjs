@@ -1,5 +1,8 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
+import { readdir, readFile } from "node:fs/promises";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { TextDecoder, TextEncoder } from "node:util";
 import test from "node:test";
 
@@ -7,6 +10,14 @@ import {
   validateForgepilotObservation,
   validateForgepilotObservationShape,
 } from "@praxisbound/core";
+
+const REPO_ROOT = fileURLToPath(
+  new globalThis.URL("../../../", import.meta.url),
+);
+const TST_033_EVIDENCE = join(
+  REPO_ROOT,
+  "specs/stories/TST-033-forgepilot-rehearsal/evidence",
+);
 
 const BATCH_ID = "BR-001-checkout-refunds";
 const GOAL_PLAN_ID = `${BATCH_ID}-8e2b7d4c1a09`;
@@ -712,6 +723,159 @@ test("N3/exception-is-work-list-specific: goal-preflight(1) immediately followed
 // N3 (mutation-verified): no existing test asserted a `step-failed` record
 // is REJECTED when its last step exits 0 — deleting the `step-failed` R3
 // branch entirely (always `undefined`, no rejection) failed 0 tests.
+// TST-034 (contract §11/§22 amendment, R1): `goal preflight` and `execution
+// plan` exit 0 even on failed validation (TST-033 F-1); failures appear only
+// in the response's `diagnostics`, which `review observe` never parses (R2).
+// `goal-preflight-failed`/`execution-plan-failed` bind to an exit-0 last step
+// of the matching command, the same shape-only way every other R3 rule does.
+
+test("TST-034/R1: goal-preflight-failed ending in an exit-0 goal-preflight is accepted", () => {
+  const result = validateForgepilotObservation(
+    observation({
+      steps: [step({ command: "goal-preflight", exit: 0 })],
+      stoppedBecause: "goal-preflight-failed",
+    }),
+    context(),
+  );
+  assert.equal(result.ok, true, JSON.stringify(result));
+});
+
+test("TST-034/R1: execution-plan-failed ending in an exit-0 execution-plan is accepted", () => {
+  const result = validateForgepilotObservation(
+    observation({
+      steps: [
+        step({ command: "goal-preflight" }),
+        step({ command: "execution-plan", exit: 0 }),
+      ],
+      stoppedBecause: "execution-plan-failed",
+    }),
+    context(),
+  );
+  assert.equal(result.ok, true, JSON.stringify(result));
+});
+
+test("TST-034/AC-002: goal-preflight-failed whose last step is a non-zero-exit goal-preflight is rejected", () => {
+  const result = assertRejected(
+    observation({
+      steps: [step({ command: "goal-preflight", exit: 1 })],
+      stoppedBecause: "goal-preflight-failed",
+    }),
+  );
+  assert.match(
+    result.message,
+    /goal-preflight-failed must end with an exit-0 goal-preflight/,
+  );
+});
+
+test("TST-034/AC-002 (security matrix): goal-preflight-failed whose last step is not goal-preflight is rejected", () => {
+  const result = assertRejected(
+    observation({
+      steps: [
+        step({ command: "goal-preflight", exit: 0 }),
+        step({ command: "execution-plan" }),
+      ],
+      stoppedBecause: "goal-preflight-failed",
+    }),
+  );
+  assert.match(
+    result.message,
+    /goal-preflight-failed must end with an exit-0 goal-preflight/,
+  );
+});
+
+test("TST-034/AC-002: execution-plan-failed whose last step is a non-zero-exit execution-plan is rejected", () => {
+  const result = assertRejected(
+    observation({
+      steps: [
+        step({ command: "goal-preflight" }),
+        step({ command: "execution-plan", exit: 1 }),
+      ],
+      stoppedBecause: "execution-plan-failed",
+    }),
+  );
+  assert.match(
+    result.message,
+    /execution-plan-failed must end with an exit-0 execution-plan/,
+  );
+});
+
+test("TST-034/AC-002 (security matrix): execution-plan-failed whose last step is work-add is rejected", () => {
+  const result = assertRejected(
+    observation({
+      steps: [
+        step({
+          command: "work-add",
+          story: "RF-001",
+          workItemId: "WI-001",
+          created: true,
+        }),
+      ],
+      stoppedBecause: "execution-plan-failed",
+    }),
+  );
+  assert.match(
+    result.message,
+    /execution-plan-failed must end with an exit-0 execution-plan/,
+  );
+});
+
+test("TST-034/AC-004: an unknown stoppedBecause value is rejected by the schema", () => {
+  const result = validateForgepilotObservationShape(
+    observation({
+      steps: [step({ command: "goal-preflight", exit: 0 })],
+      stoppedBecause: "goal-preflight-authorization-check",
+    }),
+  );
+  assert.equal(result.ok, false);
+});
+
+test("TST-034/AC-004: goal-preflight-failed with stdout claiming an empty diagnostics array is still accepted — the tool never parses stdout", () => {
+  const result = validateForgepilotObservation(
+    observation({
+      steps: [
+        step({
+          command: "goal-preflight",
+          exit: 0,
+          stdout: JSON.stringify({ diagnostics: [] }),
+        }),
+      ],
+      stoppedBecause: "goal-preflight-failed",
+    }),
+    context(),
+  );
+  assert.equal(result.ok, true, JSON.stringify(result));
+});
+
+// AC-003: every TST-033 rehearsal record that `review observe` actually
+// accepted (against real ForgePilot 32b7a68) still passes Core's consistency
+// validation given its own Goal Plan Manifest context, after this Story's
+// R1 rule addition — every other §22 rule behaves as before. The evidence's
+// own goal-plan/manifest.json is the real, byte-identical manifest every
+// record's goalPlan.sha256 was computed against (each record shares the
+// same goalPlan.path/sha256; verified independently by hand before writing
+// this test), so no synthetic binding is needed here.
+test("AC-003/tst-033-accepted-observations: every accepted TST-033 rehearsal record still passes consistency validation", async () => {
+  const manifestBytes = await readFile(
+    join(TST_033_EVIDENCE, "goal-plan/manifest.json"),
+  );
+  const recordsDir = join(TST_033_EVIDENCE, "records");
+  const names = (await readdir(recordsDir))
+    .filter((name) => name.startsWith("forgepilot-"))
+    .sort();
+  assert.ok(names.length > 0);
+  for (const name of names) {
+    const text = await readFile(join(recordsDir, name), "utf8");
+    const data = JSON.parse(text);
+    const shape = validateForgepilotObservationShape(data);
+    assert.equal(shape.ok, true, `${name}: ${JSON.stringify(shape)}`);
+    const result = validateForgepilotObservation(data, {
+      batchId: data.batchId,
+      goalPlanManifestBytes: manifestBytes,
+    });
+    assert.equal(result.ok, true, `${name}: ${JSON.stringify(result)}`);
+  }
+});
+
 test("N3/step-failed-rejects-exit-0: step-failed whose last step exits 0 is rejected", () => {
   const result = assertRejected(
     observation({
