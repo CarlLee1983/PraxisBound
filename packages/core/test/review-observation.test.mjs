@@ -130,41 +130,63 @@ test("AC-003/step-and-binding-violations: goalId equal to the manifest's plan.id
   assert.equal(result.ok, true);
 });
 
+// M1 (code review round 1): every R2 (step-order) test below deliberately
+// uses `stoppedBecause: "preflight-not-ready"` (or another R3 value with no
+// last-step constraint), never a value like "goal-completed" or
+// "step-failed" whose own R3 constraint the chosen steps might
+// independently satisfy or violate. A mutation test confirmed the previous
+// versions (using "step-failed"/"goal-completed") still reported `ok:
+// false` even with the R2 check deleted, because R3 alone already rejected
+// them — these versions do not have that flaw: deleting the relevant R2
+// check would flip each of these to `ok: true`. Each also asserts the
+// specific rejection message, not just `ok === false`.
+
 test("AC-003/step-and-binding-violations: run without an earlier exit-0 run-dry-run is rejected", () => {
-  assertRejected(
+  const result = assertRejected(
     observation({
       steps: [step({ command: "run" })],
-      stoppedBecause: "goal-completed",
+      stoppedBecause: "preflight-not-ready",
     }),
   );
+  assert.match(result.message, /run without an earlier exit-0 run-dry-run/);
 });
 
 test("AC-003/step-and-binding-violations: a run-dry-run exit non-zero does not count as the earlier exit-0 run-dry-run", () => {
-  assertRejected(
+  // A non-zero-exit run-dry-run as a non-last step is caught first by the
+  // "every step but the last exits 0" rule (it never reaches "run" to prove
+  // the dry-run didn't count) — still a genuine, mutation-sensitive R2
+  // rejection, just via that message rather than the "run without an
+  // earlier exit-0 run-dry-run" one.
+  const result = assertRejected(
     observation({
       steps: [
         step({ command: "run-dry-run", exit: 1 }),
         step({ command: "run" }),
       ],
-      stoppedBecause: "goal-completed",
+      stoppedBecause: "preflight-not-ready",
     }),
   );
+  assert.match(result.message, /a non-last step did not exit 0/);
 });
 
 test("AC-003/step-and-binding-violations: run-dry-run sharing a record with goal-create is rejected", () => {
-  assertRejected(
+  const result = assertRejected(
     observation({
       steps: [
         step({ command: "goal-create" }),
         step({ command: "run-dry-run" }),
       ],
-      stoppedBecause: "step-failed",
+      stoppedBecause: "preflight-not-ready",
     }),
+  );
+  assert.match(
+    result.message,
+    /run-dry-run or run cannot share a record with goal-create or work-add/,
   );
 });
 
 test("AC-003/step-and-binding-violations: run sharing a record with work-add is rejected", () => {
-  assertRejected(
+  const result = assertRejected(
     observation({
       steps: [
         step({
@@ -176,40 +198,53 @@ test("AC-003/step-and-binding-violations: run sharing a record with work-add is 
         step({ command: "run-dry-run" }),
         step({ command: "run" }),
       ],
-      stoppedBecause: "goal-completed",
+      stoppedBecause: "preflight-not-ready",
     }),
+  );
+  assert.match(
+    result.message,
+    /run-dry-run or run cannot share a record with goal-create or work-add/,
   );
 });
 
 test("AC-003/step-and-binding-violations: a non-last step with a non-zero exit is rejected", () => {
-  assertRejected(
+  const result = assertRejected(
     observation({
       steps: [
         step({ command: "preflight", exit: 1 }),
         step({ command: "work-list" }),
       ],
-      stoppedBecause: "step-failed",
+      stoppedBecause: "preflight-not-ready",
     }),
   );
+  assert.match(result.message, /a non-last step did not exit 0/);
 });
 
 test("AC-003/step-and-binding-violations: an exit-0 work-add missing workItemId is rejected", () => {
-  assertRejected(
+  const result = assertRejected(
     observation({
       steps: [step({ command: "work-add", story: "RF-001", created: true })],
-      stoppedBecause: "step-failed",
+      stoppedBecause: "preflight-not-ready",
     }),
+  );
+  assert.match(
+    result.message,
+    /an exit-0 work-add step is missing workItemId or created/,
   );
 });
 
 test("AC-003/step-and-binding-violations: an exit-0 work-add missing created is rejected", () => {
-  assertRejected(
+  const result = assertRejected(
     observation({
       steps: [
         step({ command: "work-add", story: "RF-001", workItemId: "WI-001" }),
       ],
-      stoppedBecause: "step-failed",
+      stoppedBecause: "preflight-not-ready",
     }),
+  );
+  assert.match(
+    result.message,
+    /an exit-0 work-add step is missing workItemId or created/,
   );
 });
 
@@ -247,6 +282,135 @@ test("AC-003/step-and-binding-violations: authorization-missing with steps is re
       steps: [step({ command: "preflight" })],
       stoppedBecause: "authorization-missing",
     }),
+  );
+});
+
+// M1 (code review round 1): positive and negative cases for every R3 value
+// not already covered above (goal-completed, run-failed, step-failed,
+// authorization-missing already have both from the happy-path and
+// AC-003 tests).
+
+test("R3/awaiting-authorization: a last step that is not execution-plan is rejected", () => {
+  const result = assertRejected(
+    observation({
+      steps: [step({ command: "goal-preflight" })],
+      stoppedBecause: "awaiting-authorization",
+    }),
+  );
+  assert.match(
+    result.message,
+    /awaiting-authorization must end with an exit-0 execution-plan/,
+  );
+});
+
+test("R3/awaiting-authorization: a non-zero exit on the last execution-plan step is rejected", () => {
+  const result = assertRejected(
+    observation({
+      steps: [step({ command: "execution-plan", exit: 1 })],
+      stoppedBecause: "awaiting-authorization",
+    }),
+  );
+  assert.match(
+    result.message,
+    /awaiting-authorization must end with an exit-0 execution-plan/,
+  );
+});
+
+test("R3/run-needs-human: last step run exit 2 is accepted", () => {
+  const result = validateForgepilotObservation(
+    observation({
+      steps: [
+        step({ command: "run-dry-run" }),
+        step({ command: "run", exit: 2 }),
+      ],
+      stoppedBecause: "run-needs-human",
+    }),
+    context(),
+  );
+  assert.equal(result.ok, true);
+});
+
+test("R3/run-needs-human: last step run exit other than 2 is rejected", () => {
+  const result = assertRejected(
+    observation({
+      steps: [
+        step({ command: "run-dry-run" }),
+        step({ command: "run", exit: 1 }),
+      ],
+      stoppedBecause: "run-needs-human",
+    }),
+  );
+  assert.match(result.message, /run-needs-human must end with run exit 2/);
+});
+
+test("R3/run-limit-reached: last step run exit 3 is accepted", () => {
+  const result = validateForgepilotObservation(
+    observation({
+      steps: [
+        step({ command: "run-dry-run" }),
+        step({ command: "run", exit: 3 }),
+      ],
+      stoppedBecause: "run-limit-reached",
+    }),
+    context(),
+  );
+  assert.equal(result.ok, true);
+});
+
+test("R3/run-limit-reached: last step run exit other than 3 is rejected", () => {
+  const result = assertRejected(
+    observation({
+      steps: [
+        step({ command: "run-dry-run" }),
+        step({ command: "run", exit: 1 }),
+      ],
+      stoppedBecause: "run-limit-reached",
+    }),
+  );
+  assert.match(result.message, /run-limit-reached must end with run exit 3/);
+});
+
+test("R3/run-interrupted: last step run exit 130 is accepted", () => {
+  const result = validateForgepilotObservation(
+    observation({
+      steps: [
+        step({ command: "run-dry-run" }),
+        step({ command: "run", exit: 130 }),
+      ],
+      stoppedBecause: "run-interrupted",
+    }),
+    context(),
+  );
+  assert.equal(result.ok, true);
+});
+
+test("R3/run-interrupted: last step run exit 143 is accepted", () => {
+  const result = validateForgepilotObservation(
+    observation({
+      steps: [
+        step({ command: "run-dry-run" }),
+        step({ command: "run", exit: 143 }),
+      ],
+      stoppedBecause: "run-interrupted",
+    }),
+    context(),
+  );
+  assert.equal(result.ok, true);
+});
+
+test("R3/run-interrupted: last step run exit other than 130 or 143 is rejected", () => {
+  const result = assertRejected(
+    observation({
+      steps: [
+        step({ command: "run-dry-run" }),
+        step({ command: "run", exit: 137 }),
+      ],
+      stoppedBecause: "run-interrupted",
+    }),
+  );
+  assert.match(
+    result.message,
+    /run-interrupted must end with run exit 130 or 143/,
   );
 });
 
@@ -374,4 +538,139 @@ test("schema/§13: step stdout over 1,048,576 characters is rejected as too larg
   );
   assert.equal(result.ok, false);
   assert.equal(result.tooLarge, true);
+});
+
+test("schema: step story over the storyId 64-character bound is rejected (code review round 1 LOW)", () => {
+  // Matches STORY_ID_PATTERN (^[A-Z][A-Z0-9]*(?:-[A-Z0-9]+)*-[0-9]+$) but is
+  // 65 characters long: "A" + 62 "B"s + "-1".
+  const tooLongStoryId = `A${"B".repeat(62)}-1`;
+  assert.equal(tooLongStoryId.length, 65);
+  const result = validateForgepilotObservationShape(
+    observation({
+      steps: [
+        step({
+          command: "work-add",
+          story: tooLongStoryId,
+          workItemId: "WI-001",
+          created: true,
+        }),
+      ],
+      stoppedBecause: "step-failed",
+    }),
+  );
+  assert.equal(result.ok, false);
+});
+
+// H2 (Human Review 2026-09-24): contract §11 step 3's exception — a
+// non-zero, non-null `work-list` exit is allowed as a non-last step only
+// when the very next step is `goal-create`; every other non-last non-zero
+// step is still rejected, and this is a coordinating-agent reading of "exit
+// 非 0" for a `null` `work-list` exit specifically (treated as NOT covered
+// by the exception — see verification.md).
+
+test("H2/work-list-then-goal-create: a realistic first-segment record (preflight, work-list(1), goal-create(0), work-add(0)x2, execution-plan(0)) with awaiting-authorization is accepted", () => {
+  const result = validateForgepilotObservation(
+    observation({
+      steps: [
+        step({ command: "preflight", exit: 0 }),
+        step({ command: "work-list", exit: 1 }),
+        step({ command: "goal-create", exit: 0 }),
+        step({
+          command: "work-add",
+          story: "RF-001",
+          workItemId: "WI-001",
+          created: true,
+          exit: 0,
+        }),
+        step({
+          command: "work-add",
+          story: "RF-002",
+          workItemId: "WI-002",
+          created: true,
+          exit: 0,
+        }),
+        step({ command: "execution-plan", exit: 0 }),
+      ],
+      stoppedBecause: "awaiting-authorization",
+    }),
+    context(),
+  );
+  assert.equal(result.ok, true, JSON.stringify(result));
+});
+
+test("H2/work-list-then-goal-create: [preflight, work-list(1), goal-create(1)] with step-failed is accepted (goal-create's own exit decides, no stderr parsed)", () => {
+  const result = validateForgepilotObservation(
+    observation({
+      steps: [
+        step({ command: "preflight", exit: 0 }),
+        step({ command: "work-list", exit: 1 }),
+        step({ command: "goal-create", exit: 1 }),
+      ],
+      stoppedBecause: "step-failed",
+    }),
+    context(),
+  );
+  assert.equal(result.ok, true, JSON.stringify(result));
+});
+
+test("H2/work-list-then-goal-create: work-list(1) followed by work-add (not goal-create) is rejected", () => {
+  const result = assertRejected(
+    observation({
+      steps: [
+        step({ command: "work-list", exit: 1 }),
+        step({
+          command: "work-add",
+          story: "RF-001",
+          workItemId: "WI-001",
+          created: true,
+        }),
+      ],
+      stoppedBecause: "preflight-not-ready",
+    }),
+  );
+  assert.match(result.message, /a non-last step did not exit 0/);
+});
+
+test("H2/work-list-then-goal-create: work-list(1) as a non-last step followed by nothing but another preflight is rejected", () => {
+  const result = assertRejected(
+    observation({
+      steps: [
+        step({ command: "work-list", exit: 1 }),
+        step({ command: "preflight", exit: 0 }),
+      ],
+      stoppedBecause: "preflight-not-ready",
+    }),
+  );
+  assert.match(result.message, /a non-last step did not exit 0/);
+});
+
+test("H2/work-list-then-goal-create: goal-create(1) followed by another step is rejected (the exception never covers goal-create itself)", () => {
+  const result = assertRejected(
+    observation({
+      steps: [
+        step({ command: "goal-create", exit: 1 }),
+        step({
+          command: "work-add",
+          story: "RF-001",
+          workItemId: "WI-001",
+          created: true,
+        }),
+      ],
+      stoppedBecause: "preflight-not-ready",
+    }),
+  );
+  assert.match(result.message, /a non-last step did not exit 0/);
+});
+
+test("H2/work-list-then-goal-create: work-list(null) followed by goal-create is rejected — a null exit is not covered by the exception", () => {
+  const result = assertRejected(
+    observation({
+      steps: [
+        step({ command: "work-list", exit: null }),
+        step({ command: "goal-create", exit: 0 }),
+      ],
+      stoppedBecause: "preflight-not-ready",
+    }),
+  );
+  assert.match(result.message, /a non-last step did not exit 0/);
 });

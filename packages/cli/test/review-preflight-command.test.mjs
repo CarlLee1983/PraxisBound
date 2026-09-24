@@ -864,7 +864,7 @@ test("review round 2 H2 (Human Review decision): a supersede after the fact neve
   }
 });
 
-test("TST-032/AC-002: --expect-fingerprint alone matches, runs no git, and records expect: { fingerprint }", async () => {
+test("TST-032/AC-002: --expect-fingerprint alone matches, runs no git (proved by an injected adapter spy), and yields the same outcome/issues as without it, recording expect: { fingerprint }", async () => {
   const batchId = "TST-9718-fixture";
   const { root, manifestPath } = await readyFixtureRepo(batchId);
   try {
@@ -876,24 +876,53 @@ test("TST-032/AC-002: --expect-fingerprint alone matches, runs no git, and recor
       data.fingerprint,
     );
 
-    // The fixture repo (review-import-respond-support.mjs's `workspace`)
-    // is `git init`ed but has no commit, so HEAD has none yet: if
-    // --expect-fingerprint alone ran git, that would surface as
-    // REVIEW_PACKET_REVISION_MISMATCH (STALE). REVIEW_READY here proves no
-    // git observation ran for --expect-fingerprint alone.
-    const withFlag = await run(root, [
+    const withoutFlag = await run(root, [
       manifestPath,
       "--semantic-report",
       semanticReport,
-      "--expect-fingerprint",
-      data.fingerprint,
       "--json",
     ]);
-    assert.equal(withFlag.result.outcome, "REVIEW_READY");
-    assert.ok(!codesOf(withFlag).includes("REVIEW_PACKET_REVISION_MISMATCH"));
+
+    // code review round 1 M1 (verification.md accuracy item): "runs no
+    // git" is proved directly with an injected adapter spy (the same
+    // pattern review-preflight-git.test.mjs's "without --expect-revision,
+    // the git adapter is never called" uses), not indirectly by the
+    // absence of a git-only issue code.
+    let gitAdapterCalled = false;
+    const spyAdapter = {
+      observe: async () => {
+        gitAdapterCalled = true;
+        return { kind: "not-a-repository" };
+      },
+    };
+    const withFlagExecution = await runReviewPreflight(
+      [
+        manifestPath,
+        "--semantic-report",
+        semanticReport,
+        "--expect-fingerprint",
+        data.fingerprint,
+        "--json",
+      ],
+      root,
+      { gitAdapter: spyAdapter },
+    );
+    assert.deepEqual(validateResultEnvelope(withFlagExecution.result), {
+      ok: true,
+      value: withFlagExecution.result,
+    });
+    assert.equal(gitAdapterCalled, false);
+
+    // "the same outcome as without it": an actual comparison, not merely
+    // the presence/absence of one issue code.
+    assert.equal(withFlagExecution.result.outcome, withoutFlag.result.outcome);
+    assert.deepEqual(codesOf(withFlagExecution), codesOf(withoutFlag));
 
     const record = JSON.parse(
-      await readFile(join(root, withFlag.result.data.preflightRecord), "utf8"),
+      await readFile(
+        join(root, withFlagExecution.result.data.preflightRecord),
+        "utf8",
+      ),
     );
     assert.deepEqual(record.expect, { fingerprint: data.fingerprint });
   } finally {
