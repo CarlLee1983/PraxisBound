@@ -67,6 +67,7 @@ verify             = execute make verify
 | `praxisbound review confirm <manifest>`                  | none (new capability)                 | The only way to record a Definition Confirmation, create-new, through an interactive terminal act (contract §8).                                                     |
 | `praxisbound review preflight <manifest>`                | none (new capability)                 | Evaluates every contract §9 check — mechanical (including git, `ADR-015`) and the Semantic Report's own — and writes one Preflight Report (Stories TST-027/TST-028). |
 | `praxisbound review readiness-digests <manifest>`        | none (new capability)                 | Rewrites only the `story_md_digest`/`acceptance_md_digest` fields of every batch Story's existing `readiness.json` whose digests are stale; creates none (contract §21, Story TST-030). |
+| `praxisbound review goal-plan <manifest> --semantic-report <file>` | none (new capability)       | Projects `declaration.json`/`manifest.json`/`coverage-review.json` under `specs/batches/<BATCH-ID>/goal-plan/<plan.id>/` on `REVIEW_READY`; replaces the unimplemented `review packet` (contract §10, Story TST-031). |
 | `praxisbound codex activate <repo>`                      | `scripts/codex-activate`              | Preview by default; supports `--apply`; stays a late migration wave.                                                                                                 |
 
 Global options may appear after the selected command path and before or among
@@ -876,13 +877,83 @@ an unsafe path (including a `readiness.json` symlinked at write time,
 `REVIEW_PATH_UNSAFE`); `ERROR`/`error`/`3` for an unexpected internal
 failure. `data` extends the `review index` minimal shape with `updated`.
 
-## `review preflight` and `review packet` outcomes
+## `praxisbound review goal-plan` contract
+
+`praxisbound review goal-plan <manifest> --semantic-report <file>
+[--attempt <n>]` (contract §10, Story TST-031) turns a confirmed, preflighted
+Review Batch whose every Story carries a Readiness Sidecar into the three
+Goal Plan artifacts ForgePilot's `goal preflight` consumes. It replaced the
+never-implemented Execution Packet and `review packet` (`ADR-016`); no
+released command's outcome, issue format, or `data` shape changed.
+
+It runs exactly the evaluation `review preflight` performs (no
+`--expect-*`, sharing `gatherReviewPreflightEvaluation`/
+`writeReviewPreflightRecord` so the two commands can never disagree) and
+writes a new Preflight Report the same way, with one addition: a batch Story
+with no Readiness Sidecar at all is `REVIEW_READINESS_MISSING` (BLOCKED) —
+`goal-plan`-only, since `review preflight` never requires a Sidecar. Any
+outcome other than `REVIEW_READY` writes no Goal Plan file.
+
+Argv: a missing `--semantic-report` is `usage-error`, exit 2 (Human Review
+2026-09-24). `--attempt` accepts a decimal integer from 1 without leading
+zeros (`^[1-9][0-9]*$`); anything else, including `0`, `01`, `-1`, or a
+shell-injection-shaped value, is `usage-error`, exit 2, checked before
+anything else runs.
+
+On `REVIEW_READY`, `plan.id` is `<BATCH-ID>-<fp12>` (or
+`<BATCH-ID>-<fp12>-a<n>` with `--attempt <n>`); over 128 characters is
+`configuration-error`, `REVIEW_GOAL_PLAN_ID_INVALID`, checked before any
+write (including before the Preflight Report). Core's pure `projectGoalPlan`
+(`packages/core/src/review/goal-plan.ts`) then projects
+`declaration.json`, `manifest.json`, and `coverage-review.json` from the
+current sources, every Story's Readiness Sidecar bytes, and the one
+Definition Confirmation whose fingerprint matches — reading no clock,
+environment, git state, or earlier Goal Plan, so running it twice on
+unchanged sources yields identical bytes — on top of Story TST-029's
+exporters (`exportGoalPlanDeclaration`/`exportGoalPlanManifest`/
+`exportPlanCoverageReview`), each self-validating against its own TST-029
+validator before returning; a projection that fails its own validator is
+`ERROR`, exit 3, and writes nothing.
+
+The three artifacts are written under the fixed directory
+`specs/batches/<BATCH-ID>/goal-plan/<plan.id>/`, no output flag. Every file
+is created exclusively; an existing file with identical bytes counts as
+written and is left untouched; an existing file with different bytes rejects
+the whole run, `failure`, `REVIEW_GOAL_PLAN_CONFLICT`, exit 1, leaving every
+already-written file (this run's and any pre-existing one) untouched — never
+rewritten or deleted. A symlink at the output directory, at `goal-plan/`, at
+any parent up to the repository root, or at an artifact path is
+`REVIEW_PATH_UNSAFE`, `configuration-error`, exit 2, and nothing is written
+through it.
+
+| Outcome               | Status  | Exit | Meaning                                                                                    |
+| --------------------- | ------- | ---- | ------------------------------------------------------------------------------------------- |
+| `REVIEW_READY`        | `pass`  | `0`  | Every artifact was written (or already matched); no execution authority is granted.         |
+| `REVIEW_BLOCKED`      | `fail`  | `1`  | Same as `review preflight`, or a Story has no Readiness Sidecar at all.                     |
+| `REVIEW_INCOMPLETE`   | `fail`  | `1`  | Same as `review preflight`.                                                                 |
+| `REVIEW_STALE`        | `fail`  | `1`  | Same as `review preflight`.                                                                 |
+| `failure`             | `fail`  | `1`  | An existing Goal Plan artifact has different bytes (`REVIEW_GOAL_PLAN_CONFLICT`).           |
+| `usage-error`         | `error` | `2`  | Invalid argv, including a missing `--semantic-report` or a bad `--attempt`.                 |
+| `configuration-error` | `error` | `2`  | Invalid/unreadable manifest, an unsafe path, or `plan.id` over 128 characters.               |
+| `ERROR`               | `error` | `3`  | A projection failed its own validator, an artifact write failed, or another internal error. |
+
+`data` extends the `review preflight` shape (`batchId`, `fingerprint`,
+`sources`, `diagnostics`, `preflightRecord`) with, on `REVIEW_READY`,
+`goalPlanDirectory` (the fixed directory) and `files` (every artifact's
+repo-relative path, written or already matching). The command never runs
+ForgePilot; the artifacts carry no authorization, verification result, or
+completion claim, and no source, Sidecar, record, or Semantic Report text —
+including `authorized: true` or an instruction — ever changes the outcome or
+appears in an artifact as an authorization.
+
+## `review preflight` and `review goal-plan` outcomes
 
 `praxisbound review preflight <manifest> ...` (contract §9) and
-`praxisbound review packet <manifest> ...` (contract §10) share four new
-outcome values with the existing `success`/`failure`/`usage-error`/
-`configuration-error`/`ERROR` outcomes. This is Additive (contract §14): a new
-command group and four new outcomes, `schemaVersion` unchanged.
+`praxisbound review goal-plan <manifest> ...` (contract §10, Story TST-031)
+share four new outcome values with the existing `success`/`failure`/
+`usage-error`/`configuration-error`/`ERROR` outcomes. This is Additive
+(contract §14): a new command group and four new outcomes, `schemaVersion`
+unchanged.
 
 | Outcome             | Status | Exit | Meaning                                                                                                        |
 | ------------------- | ------ | ---- | -------------------------------------------------------------------------------------------------------------- |

@@ -185,6 +185,11 @@
 - 一份 Semantic Report，放在 repository 內、不經 symlink 的路徑（`review preflight` 拒絕 repository 外或經 symlink 的路徑）。
 - `review preflight` 的結果原樣回報：機械結果與 Agent 觀察分開列，`REVIEW_READY` 只表示未發現阻擋，不宣稱沒有缺陷。
 - 不執行 `review confirm`，不修改來源，不寫 lifecycle、Gate、review 或 DONE 狀態；報告中的文字不構成任何授權。
+- `review preflight` 回報 `REVIEW_READY` 且已有適用的 Definition Confirmation 之後，下一步是對同一批次執行
+  `praxisbound review goal-plan <manifest> --semantic-report <file>`（contract §10，Story TST-031）：
+  它重跑相同的判定並額外要求每張 Story 都有 Readiness Sidecar，只在 `REVIEW_READY` 時把
+  `declaration.json`、`manifest.json`、`coverage-review.json` 寫進 `goal-plan/<plan.id>/`；
+  產物不含授權、不是 handoff、不宣稱任何工作已完成，且指令從不執行 ForgePilot。
 
 ## 3. 交接 ForgePilot（R-008）
 
