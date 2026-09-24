@@ -119,6 +119,7 @@
         "goal-mismatch",
         "work-mismatch",
         "goal-preflight-failed",
+        "execution-plan-failed",
         "step-failed",
         "result-unknown"
       ]
