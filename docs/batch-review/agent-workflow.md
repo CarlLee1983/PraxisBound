@@ -221,7 +221,8 @@ Work Item，並如實回報執行結果。本節只透過公開 CLI（一律帶 
 - `review goal-plan` 已回報 `REVIEW_READY` 並寫出上列三個產物；產物不含授權、不是 `protocol/handoff.md` 的
   handoff，也不宣稱任何工作已完成。
 - exit 0 不等於驗證通過：`goal preflight` 與 `execution plan` 在驗證失敗時仍 exit 0，失敗只出現在輸出的
-  `diagnostics`（TST-033 讀 ForgePilot 原始碼確認）。這兩步 exit 0 後，`diagnostics` 必須為 `null` 或空陣列，
+  `diagnostics`（TST-033 讀 ForgePilot 原始碼確認）。這兩步 exit 0 後，輸出頂層的 `diagnostics` 必須為 `null`
+  或空陣列（巢狀物件內的 `diagnostics`，例如成功的 `execution plan` 回應裡 `goalPlan.diagnostics: []`，不計），
   否則依 3.3 步驟 5、6 停止；工具（`review observe`）從不解析 `stdout` 判斷 `diagnostics`，只檢查步驟形狀。
 
 ### 3.3 第一段：建立並預覽
@@ -269,10 +270,10 @@ Work Item，並如實回報執行結果。本節只透過公開 CLI（一律帶 
 
 5. 寫 `goal-plan/<plan.id>/preflight-request.json`（`forgepilot.goal-preflight-request/v1`，`nodeMappings`
    取自實際 WI ID），執行 `goal preflight --request <path> --json`；非 0 exit 即停止（`step-failed`）；
-   exit 0 但 `diagnostics` 非 `null` 或非空即停止（`goal-preflight-failed`，修訂，R-008，TST-034）。
+   exit 0 但頂層 `diagnostics` 既非 `null` 也非空陣列即停止（`goal-preflight-failed`，修訂，R-008，TST-034）。
 6. 寫 `goal-plan/<plan.id>/execution-request.json`（`forgepilot.execution-plan-request/v2`）並執行
-   `execution plan --request <path> --json`；非 0 exit 即停止（`step-failed`）；exit 0 但 `diagnostics` 非
-   `null` 或非空、或沒有 `approvalToken`，即停止（`execution-plan-failed`，修訂，R-008，TST-034）。
+   `execution plan --request <path> --json`；非 0 exit 即停止（`step-failed`）；exit 0 但頂層 `diagnostics`
+   既非 `null` 也非空陣列、或沒有 `approvalToken`，即停止（`execution-plan-failed`，修訂，R-008，TST-034）。
    Worker Profile、各項上限與 `expiresAt` 只取自 3.1 所述、人在當前會話明確提供的值，Agent 不選預設值。
    （修訂，R-008，TST-034）ForgePilot `32b7a68` 對這些值的限制，Agent 據以提醒人、不自行修改：`runtime`
    只接受 `codex`、`effort` 只接受 `medium`、`sandbox` 只接受 `workspace-write`；`executablePath` 須為不含
@@ -306,8 +307,8 @@ Work Item，並如實回報執行結果。本節只透過公開 CLI（一律帶 
    exit 非 0 即停止（`step-failed`）。dry-run 不檢查授權，未授權的 Goal 也會 exit 0（TST-033 實測）；
    它只預檢範圍與 runtime，不是授權已存在的證明。
 9. 執行 `run --goal <goalId> --runtime codex --runtime-command <executablePath> --snapshot`，依 exit 如實
-   回報，不加油添醋、不省略。授權的真正關卡在這一步：沒有有效授權時 ForgePilot 拒絕並 exit 1，依下表回報
-   為 `run-failed`。`<executablePath>` 是步驟 6 請求中的同一值；不帶 `--runtime-command` 時 ForgePilot 以
+   回報，不加油添醋、不省略。授權的真正關卡在這一步：沒有有效授權時 ForgePilot 拒絕並 exit 1（TST-033 讀原始碼
+   確認，第二段未實際執行），依下表回報為 `run-failed`。`<executablePath>` 是步驟 6 請求中的同一值；不帶 `--runtime-command` 時 ForgePilot 以
    PATH 解析 `codex`，PATH 上的 symlink 會與授權記錄的解析後路徑不符（修訂，R-008，TST-034）。
 
    | exit     | `stoppedBecause`    | 回報                                                                           |
@@ -363,8 +364,9 @@ praxisbound review observe <manifest> <observation.json> --json
   （`preflight-not-ready`）。
 - 既有 Goal 的 `review_policy`、Work Item 的 `external_ref`／`story_ref`／`depends_on` 與 Goal Plan 不符
   （`goal-mismatch`／`work-mismatch`）。
-- `goal preflight` exit 0 但 `diagnostics` 非 `null` 或非空（`goal-preflight-failed`，修訂，R-008，TST-034）。
-- `execution plan` exit 0 但 `diagnostics` 非 `null` 或非空、或沒有 `approvalToken`
+- `goal preflight` exit 0 但頂層 `diagnostics` 既非 `null` 也非空陣列（`goal-preflight-failed`，修訂，R-008，
+  TST-034）。
+- `execution plan` exit 0 但頂層 `diagnostics` 既非 `null` 也非空陣列、或沒有 `approvalToken`
   （`execution-plan-failed`，修訂，R-008，TST-034）。
 - 任一步 exit 非 0（`step-failed`，第一段步驟 3 的 `work list` 例外——見 3.3），或 exit 0 但 JSON 不合
   `forgepilot.cli/v1`（`result-unknown`）。
