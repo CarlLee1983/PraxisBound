@@ -36,9 +36,13 @@ import {
   type PreflightReportRecordRef,
   type PreflightReportSemanticReportRef,
   type ReviewDiagnostic,
+  type ReviewIndex,
 } from "@praxisbound/core";
 
-import { loadReviewConfirmationApplicability } from "./review-confirmation-records.js";
+import {
+  loadReviewConfirmationApplicability,
+  type ReviewConfirmationLoad,
+} from "./review-confirmation-records.js";
 import { computeReadinessPreflightFindings } from "./review-readiness.js";
 import { loadSemanticReport } from "./review-semantic-report.js";
 import {
@@ -68,6 +72,7 @@ import {
   runReviewIndexUnsafe,
   sanitizeInternalError,
   toDataValue,
+  type LoadedReviewBatch,
   type ReviewIndexExecution,
   type ReviewOutputMode,
   type ReviewRenderedOutput,
@@ -92,7 +97,7 @@ found — it grants no execution authority and claims no absence of defects.
 const FINGERPRINT_PATTERN = /^[a-f0-9]{64}$/;
 const REVISION_PATTERN = /^[a-f0-9]{40}$/;
 
-interface ParsedPreflightArguments {
+export interface ParsedPreflightArguments {
   readonly mode: ReviewOutputMode;
   readonly manifest: string | undefined;
   readonly semanticReport: string | undefined;
@@ -356,33 +361,77 @@ async function loadPreflightBaseline(
   };
 }
 
-/** Runs `praxisbound review preflight <manifest>`. */
-export async function runReviewPreflight(
-  args: readonly string[],
-  root: string = process.cwd(),
+export interface GatheredReviewPreflight {
+  readonly mode: ReviewOutputMode;
+  readonly loadedBatch: LoadedReviewBatch;
+  readonly manifestPath: string;
+  readonly index: ReviewIndex;
+  readonly recordFindings: PreflightFinding[];
+  readonly evaluateNow: () => ReturnType<typeof evaluatePreflight>;
+  readonly evaluation: ReturnType<typeof evaluatePreflight>;
+  readonly semanticAgent: string | undefined;
+  readonly semanticReportRef: PreflightReportSemanticReportRef | null;
+  readonly confirmationRef: PreflightReportRecordRef | null;
+  readonly expectRef: PreflightReportExpect | null;
+  readonly fp12: string;
+  readonly preflightBaseline: PreflightBaseline;
+  /** The applicable Definition Confirmation, if any (Story TST-031's `review goal-plan` needs its record and bytes to project `coverage-review.json`). */
+  readonly confirmationLoad: ReviewConfirmationLoad;
+}
+
+export type GatherReviewPreflightOutcome =
+  | { readonly ok: true; readonly gathered: GatheredReviewPreflight }
+  | { readonly ok: false; readonly execution: ReviewIndexExecution };
+
+/**
+ * Everything through Core's `evaluatePreflight` (contract §9): loads the
+ * batch and gathers every finding source `review preflight` reports. Shared
+ * by `review preflight` and `review goal-plan` (contract §10 step 1, Story
+ * TST-031 R1) so the two commands can never disagree; `additionalReadinessFindings`
+ * lets a caller fold extra `readinessFindings` in once the index is known
+ * (Story TST-031's `REVIEW_READINESS_MISSING`, `goal-plan`-only) without
+ * duplicating any of the gathering below.
+ */
+export async function gatherReviewPreflightEvaluation(
+  parsed: Pick<
+    ParsedPreflightArguments,
+    | "mode"
+    | "manifest"
+    | "semanticReport"
+    | "expectFingerprint"
+    | "expectRevision"
+  >,
+  root: string,
   options: {
     readonly gitAdapter?: ReviewGitAdapter;
-    readonly now?: () => Date;
-    readonly filesystem?: RecordFilesystem;
   } = {},
-): Promise<ReviewIndexExecution> {
-  const parsed = parsePreflightArguments(args);
-  if (!parsed.valid || parsed.manifest === undefined) {
+  additionalReadinessFindings: (
+    index: ReviewIndex,
+    observations: LoadedReviewBatch["observations"],
+  ) => readonly PreflightFinding[] = () => [],
+): Promise<GatherReviewPreflightOutcome> {
+  if (parsed.manifest === undefined) {
     return {
-      mode: parsed.mode,
-      result: envelope("error", "usage-error", 2, [
-        issue("REVIEW_USAGE", "Invalid arguments"),
-      ]),
+      ok: false,
+      execution: {
+        mode: parsed.mode,
+        result: envelope("error", "usage-error", 2, [
+          issue("REVIEW_USAGE", "Invalid arguments"),
+        ]),
+      },
     };
   }
 
-  try {
+  {
     const loaded = await runReviewIndexUnsafe(
       [parsed.manifest, "--json"],
       root,
     );
     if (loaded.result.outcome !== "success" || loaded.loaded === undefined)
-      return { mode: parsed.mode, result: loaded.result };
+      return {
+        ok: false,
+        execution: { mode: parsed.mode, result: loaded.result },
+      };
     const loadedBatch = loaded.loaded;
     const { manifestPath, index } = loadedBatch;
 
@@ -404,13 +453,16 @@ export async function runReviewPreflight(
           "praxisbound review preflight: internal error: git observation failed\n",
         );
         return {
-          mode: parsed.mode,
-          result: envelope("error", "ERROR", 3, [
-            issue(
-              "REVIEW_INTERNAL_ERROR",
-              "an unexpected internal failure occurred",
-            ),
-          ]),
+          ok: false,
+          execution: {
+            mode: parsed.mode,
+            result: envelope("error", "ERROR", 3, [
+              issue(
+                "REVIEW_INTERNAL_ERROR",
+                "an unexpected internal failure occurred",
+              ),
+            ]),
+          },
         };
       }
       if (observation.kind === "not-a-repository") {
@@ -626,13 +678,16 @@ export async function runReviewPreflight(
     });
     if (semanticLoad.unsafe) {
       return {
-        mode: parsed.mode,
-        result: envelope("error", "configuration-error", 2, [
-          issue(
-            "REVIEW_PATH_UNSAFE",
-            "semantic report path resolves outside the repository root or through a symlink",
-          ),
-        ]),
+        ok: false,
+        execution: {
+          mode: parsed.mode,
+          result: envelope("error", "configuration-error", 2, [
+            issue(
+              "REVIEW_PATH_UNSAFE",
+              "semantic report path resolves outside the repository root or through a symlink",
+            ),
+          ]),
+        },
       };
     }
     // H1/Story Capacity: R1 "gate" diagnostics (missing, size, schema,
@@ -644,15 +699,20 @@ export async function runReviewPreflight(
 
     // Story TST-030, contract §21: every present Readiness Sidecar's own
     // findings, computed from the same `observations` `review index`
-    // already read (no extra filesystem access).
-    const readinessFindings: PreflightFinding[] =
-      computeReadinessPreflightFindings(index, loadedBatch.observations).map(
+    // already read (no extra filesystem access). Story TST-031: a caller
+    // (`review goal-plan`) may fold in extra findings — `REVIEW_READINESS_MISSING`
+    // for a Story with no Sidecar at all — that `review preflight` itself
+    // never supplies (contract §10 step 1).
+    const readinessFindings: PreflightFinding[] = [
+      ...computeReadinessPreflightFindings(index, loadedBatch.observations).map(
         (finding) => ({
           code: finding.code,
           message: finding.message,
           path: finding.path,
         }),
-      );
+      ),
+      ...additionalReadinessFindings(index, loadedBatch.observations),
+    ];
     const semanticReportRef: PreflightReportSemanticReportRef | null =
       semanticLoad.sha256 === undefined
         ? null
@@ -684,13 +744,16 @@ export async function runReviewPreflight(
       MAX_DIAGNOSTICS
     ) {
       return {
-        mode: parsed.mode,
-        result: envelope("error", "ERROR", 3, [
-          issue(
-            "REVIEW_INTERNAL_ERROR",
-            `the preflight diagnostics count exceeds the limit (${MAX_DIAGNOSTICS})`,
-          ),
-        ]),
+        ok: false,
+        execution: {
+          mode: parsed.mode,
+          result: envelope("error", "ERROR", 3, [
+            issue(
+              "REVIEW_INTERNAL_ERROR",
+              `the preflight diagnostics count exceeds the limit (${MAX_DIAGNOSTICS})`,
+            ),
+          ]),
+        },
       };
     }
 
@@ -721,102 +784,180 @@ export async function runReviewPreflight(
           }
         : null;
 
-    const now = options.now ?? ((): Date => new Date());
-    const record = buildPreflightReportRecord({
-      batchId: index.batchId,
-      fingerprint: index.fingerprint,
-      outcome: evaluation.outcome,
-      checkedAt: canonicalUtcTime(now().toISOString()),
-      confirmation: confirmationRef,
-      semanticReport: semanticReportRef,
-      mechanical: evaluation.mechanical,
-      semantic: evaluation.semantic,
-      expect: expectRef,
-    });
-
-    const validatedRecord = validateStoredPreflightReportRecord(
-      record,
-      record.batchId,
-    );
-    const recordBytes = new TextEncoder().encode(JSON.stringify(record));
-
-    // R7: a rerun whose new record equals the highest existing one under
-    // this `fp12` in every field but `checkedAt` (expect included) writes
-    // nothing and names the existing file.
-    if (
-      preflightBaseline.baseline !== undefined &&
-      preflightReportsEqualExceptCheckedAt(
-        preflightBaseline.baseline.record,
-        record,
-      )
-    ) {
-      return {
+    return {
+      ok: true,
+      gathered: {
         mode: parsed.mode,
-        result: buildPreflightEnvelope(
-          index,
-          evaluation,
-          semanticLoad.agent,
-          preflightBaseline.baseline.path,
-        ),
-        loaded: loadedBatch,
-      };
-    }
-
-    // H2 defense in depth (mirroring `buildConfirmationRecordBytes`): a
-    // built record that fails its own validator, or is oversized, is
-    // treated exactly like a genuine write failure below — this should be
-    // unreachable in normal operation.
-    const writeFailed = async (): Promise<ReviewIndexExecution> => {
-      recordFindings.push({
-        code: "REVIEW_RECORD_WRITE_FAILED",
-        message: "unable to write the preflight report",
-      });
-      return {
-        mode: parsed.mode,
-        result: buildPreflightEnvelope(
-          index,
-          evaluateNow(),
-          semanticLoad.agent,
-        ),
-        loaded: loadedBatch,
-      };
-    };
-
-    if (!validatedRecord.ok || recordBytes.length > 1024 * 1024)
-      return await writeFailed();
-
-    const written = await createNewRecord(
-      root,
-      manifestPath,
-      (attempt) =>
-        `preflight-${fp12}-${preflightBaseline.highestN + attempt}.json`,
-      recordBytes,
-      {
-        maxAttempts: 16,
-        ...(options.filesystem ? { filesystem: options.filesystem } : {}),
+        loadedBatch,
+        manifestPath,
+        index,
+        recordFindings,
+        evaluateNow,
+        evaluation,
+        semanticAgent: semanticLoad.agent,
+        semanticReportRef,
+        confirmationRef,
+        expectRef,
+        fp12,
+        preflightBaseline,
+        confirmationLoad,
       },
-    );
-    if (written.ok) {
-      return {
-        mode: parsed.mode,
-        result: buildPreflightEnvelope(
-          index,
-          evaluation,
-          semanticLoad.agent,
-          written.relativePath,
-        ),
-        loaded: loadedBatch,
-      };
-    }
-    if (written.reason === "unsafe") {
-      return {
-        mode: parsed.mode,
-        result: envelope("error", "configuration-error", 2, [
-          issue("REVIEW_PATH_UNSAFE", "records path has a symlinked segment"),
-        ]),
-      };
-    }
+    };
+  }
+}
+
+/**
+ * Writes the Preflight Report for an already-gathered evaluation (contract
+ * §2, §9 R7 deduplication) and builds the result envelope. Shared, unchanged,
+ * by `review preflight` and `review goal-plan`: only the evaluation each
+ * gathers differs (Story TST-031 R1).
+ */
+export async function writeReviewPreflightRecord(
+  root: string,
+  gathered: GatheredReviewPreflight,
+  options: {
+    readonly now?: () => Date;
+    readonly filesystem?: RecordFilesystem;
+  } = {},
+): Promise<ReviewIndexExecution> {
+  const {
+    mode,
+    loadedBatch,
+    manifestPath,
+    index,
+    recordFindings,
+    evaluateNow,
+    evaluation,
+    semanticAgent,
+    semanticReportRef,
+    confirmationRef,
+    expectRef,
+    fp12,
+    preflightBaseline,
+  } = gathered;
+
+  const now = options.now ?? ((): Date => new Date());
+  const record = buildPreflightReportRecord({
+    batchId: index.batchId,
+    fingerprint: index.fingerprint,
+    outcome: evaluation.outcome,
+    checkedAt: canonicalUtcTime(now().toISOString()),
+    confirmation: confirmationRef,
+    semanticReport: semanticReportRef,
+    mechanical: evaluation.mechanical,
+    semantic: evaluation.semantic,
+    expect: expectRef,
+  });
+
+  const validatedRecord = validateStoredPreflightReportRecord(
+    record,
+    record.batchId,
+  );
+  const recordBytes = new TextEncoder().encode(JSON.stringify(record));
+
+  // R7: a rerun whose new record equals the highest existing one under
+  // this `fp12` in every field but `checkedAt` (expect included) writes
+  // nothing and names the existing file.
+  if (
+    preflightBaseline.baseline !== undefined &&
+    preflightReportsEqualExceptCheckedAt(
+      preflightBaseline.baseline.record,
+      record,
+    )
+  ) {
+    return {
+      mode,
+      result: buildPreflightEnvelope(
+        index,
+        evaluation,
+        semanticAgent,
+        preflightBaseline.baseline.path,
+      ),
+      loaded: loadedBatch,
+    };
+  }
+
+  // H2 defense in depth (mirroring `buildConfirmationRecordBytes`): a
+  // built record that fails its own validator, or is oversized, is
+  // treated exactly like a genuine write failure below — this should be
+  // unreachable in normal operation.
+  const writeFailed = async (): Promise<ReviewIndexExecution> => {
+    recordFindings.push({
+      code: "REVIEW_RECORD_WRITE_FAILED",
+      message: "unable to write the preflight report",
+    });
+    return {
+      mode,
+      result: buildPreflightEnvelope(index, evaluateNow(), semanticAgent),
+      loaded: loadedBatch,
+    };
+  };
+
+  if (!validatedRecord.ok || recordBytes.length > 1024 * 1024)
     return await writeFailed();
+
+  const written = await createNewRecord(
+    root,
+    manifestPath,
+    (attempt) =>
+      `preflight-${fp12}-${preflightBaseline.highestN + attempt}.json`,
+    recordBytes,
+    {
+      maxAttempts: 16,
+      ...(options.filesystem ? { filesystem: options.filesystem } : {}),
+    },
+  );
+  if (written.ok) {
+    return {
+      mode,
+      result: buildPreflightEnvelope(
+        index,
+        evaluation,
+        semanticAgent,
+        written.relativePath,
+      ),
+      loaded: loadedBatch,
+    };
+  }
+  if (written.reason === "unsafe") {
+    return {
+      mode,
+      result: envelope("error", "configuration-error", 2, [
+        issue("REVIEW_PATH_UNSAFE", "records path has a symlinked segment"),
+      ]),
+    };
+  }
+  return await writeFailed();
+}
+
+/** Runs `praxisbound review preflight <manifest>`. */
+export async function runReviewPreflight(
+  args: readonly string[],
+  root: string = process.cwd(),
+  options: {
+    readonly gitAdapter?: ReviewGitAdapter;
+    readonly now?: () => Date;
+    readonly filesystem?: RecordFilesystem;
+  } = {},
+): Promise<ReviewIndexExecution> {
+  const parsed = parsePreflightArguments(args);
+  if (!parsed.valid || parsed.manifest === undefined) {
+    return {
+      mode: parsed.mode,
+      result: envelope("error", "usage-error", 2, [
+        issue("REVIEW_USAGE", "Invalid arguments"),
+      ]),
+    };
+  }
+
+  try {
+    const gathered = await gatherReviewPreflightEvaluation(
+      parsed,
+      root,
+      options,
+    );
+    if (!gathered.ok) return gathered.execution;
+    return await writeReviewPreflightRecord(root, gathered.gathered, options);
   } catch (error) {
     process.stderr.write(
       `praxisbound review preflight: internal error: ${sanitizeInternalError(error, root)}\n`,
