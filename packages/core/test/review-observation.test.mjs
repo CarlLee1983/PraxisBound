@@ -674,3 +674,53 @@ test("H2/work-list-then-goal-create: work-list(null) followed by goal-create is 
   );
   assert.match(result.message, /a non-last step did not exit 0/);
 });
+
+// N3 (code review round 2, mutation-verified): the exception's command
+// check (`step.command === "work-list"`) was untested — every accepted
+// case above happens to use `work-list` as the qualifying step, so a
+// mutation deleting that check (making ANY non-last non-zero-exit step
+// followed by goal-create pass) failed 0 tests. These two use a different
+// non-last command (still followed immediately by goal-create) and assert
+// the specific rejection.
+
+test("N3/exception-is-work-list-specific: preflight(1) immediately followed by goal-create is still rejected (only work-list qualifies)", () => {
+  const result = assertRejected(
+    observation({
+      steps: [
+        step({ command: "preflight", exit: 1 }),
+        step({ command: "goal-create", exit: 0 }),
+      ],
+      stoppedBecause: "preflight-not-ready",
+    }),
+  );
+  assert.match(result.message, /a non-last step did not exit 0/);
+});
+
+test("N3/exception-is-work-list-specific: goal-preflight(1) immediately followed by goal-create is still rejected (only work-list qualifies)", () => {
+  const result = assertRejected(
+    observation({
+      steps: [
+        step({ command: "goal-preflight", exit: 1 }),
+        step({ command: "goal-create", exit: 0 }),
+      ],
+      stoppedBecause: "preflight-not-ready",
+    }),
+  );
+  assert.match(result.message, /a non-last step did not exit 0/);
+});
+
+// N3 (mutation-verified): no existing test asserted a `step-failed` record
+// is REJECTED when its last step exits 0 — deleting the `step-failed` R3
+// branch entirely (always `undefined`, no rejection) failed 0 tests.
+test("N3/step-failed-rejects-exit-0: step-failed whose last step exits 0 is rejected", () => {
+  const result = assertRejected(
+    observation({
+      steps: [step({ command: "preflight", exit: 0 })],
+      stoppedBecause: "step-failed",
+    }),
+  );
+  assert.match(
+    result.message,
+    /step-failed must end with a non-zero or null exit/,
+  );
+});

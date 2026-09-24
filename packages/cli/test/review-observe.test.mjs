@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { Buffer } from "node:buffer";
+import { spawnSync } from "node:child_process";
 import {
   mkdir,
   mkdtemp,
@@ -12,6 +13,7 @@ import {
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import test from "node:test";
 
 import { validateResultEnvelope } from "@praxisbound/core";
@@ -247,6 +249,36 @@ async function run(root, args) {
 
 function codesOf(execution) {
   return execution.result.issues.map((entry) => entry.code);
+}
+
+const bin = fileURLToPath(
+  new globalThis.URL("../dist/bin.js", import.meta.url),
+);
+
+/**
+ * Runs the packed `review observe` through the real spawned CLI executable
+ * (code review round 2 N1: the crash this guards against only reproduces
+ * through `serializeResultEnvelope`/`assertResultEnvelope`, which
+ * `runReviewObserve` called directly never exercises). Always asserts a
+ * well-formed envelope on stdout and nothing on stderr — a thrown
+ * `ResultEnvelopeValidationError` prints a stack trace to stderr and
+ * nothing to stdout instead.
+ */
+function runCliObserve(cwd, args) {
+  const result = spawnSync(
+    globalThis.process.execPath,
+    [bin, "review", "observe", ...args, "--json"],
+    { cwd, encoding: "utf8" },
+  );
+  assert.equal(result.stderr, "", result.stderr);
+  let parsed;
+  try {
+    parsed = JSON.parse(result.stdout);
+  } catch {
+    assert.fail(`stdout was not valid JSON: ${JSON.stringify(result.stdout)}`);
+  }
+  assert.deepEqual(validateResultEnvelope(parsed), { ok: true, value: parsed });
+  return { status: result.status, envelope: parsed, raw: result };
 }
 
 /** `lstat` rejecting with `ENOENT`, never `readFile` on the directory (HIGH-2 lesson, TST-031 review round 1). */
@@ -524,6 +556,130 @@ test("missing observation file is failure/REVIEW_OBSERVATION_INVALID, consistent
     assert.ok(codesOf(execution).includes("REVIEW_OBSERVATION_INVALID"));
     await assertNoForgepilotRecords(fixture.root, batchId);
   } finally {
+    await cleanupWorkspace(fixture.root);
+  }
+});
+
+// N1 HIGH (code review round 2, verified via a spawned bin.js): after the
+// M3 change accepting any observation-input path, an absolute or
+// control-character-bearing path reaching issues[].path/data.diagnostics[]
+// made validateResultEnvelope/assertResultEnvelope reject the envelope —
+// serializeResultEnvelope then throws, printing nothing to stdout and a
+// stack trace (naming the absolute path) to stderr, exit 1. Every case here
+// runs the real packed CLI end to end and asserts a valid envelope on
+// stdout, the expected code, exit 1, and no absolute path anywhere in
+// stdout or stderr.
+
+test("N1/out-of-repo-path-malformed-json: malformed content at an absolute, outside-the-repository path still yields a valid envelope", async () => {
+  const batchId = "TST-9817-fixture";
+  const fixture = await buildBatchWithGoalPlan(batchId);
+  const outsideDir = await mkdtemp(join(tmpdir(), "review-observe-n1-"));
+  try {
+    const outsidePath = join(outsideDir, "obs.json");
+    await writeFile(outsidePath, "{bad");
+
+    const { status, envelope, raw } = runCliObserve(fixture.root, [
+      fixture.manifestPath,
+      outsidePath,
+    ]);
+    assert.equal(status, 1);
+    assert.equal(envelope.outcome, "failure");
+    assert.ok(
+      envelope.issues.some(
+        (entry) => entry.code === "REVIEW_OBSERVATION_INVALID",
+      ),
+    );
+    assert.ok(!raw.stdout.includes(outsideDir));
+    assert.ok(!raw.stderr.includes(outsideDir));
+  } finally {
+    await rm(outsideDir, { recursive: true, force: true });
+    await cleanupWorkspace(fixture.root);
+  }
+});
+
+test("N1/out-of-repo-path-missing-file: a missing file at an absolute, outside-the-repository path still yields a valid envelope", async () => {
+  const batchId = "TST-9818-fixture";
+  const fixture = await buildBatchWithGoalPlan(batchId);
+  const outsideDir = await mkdtemp(join(tmpdir(), "review-observe-n1-"));
+  try {
+    const outsidePath = join(outsideDir, "does-not-exist.json");
+
+    const { status, envelope, raw } = runCliObserve(fixture.root, [
+      fixture.manifestPath,
+      outsidePath,
+    ]);
+    assert.equal(status, 1);
+    assert.equal(envelope.outcome, "failure");
+    assert.ok(
+      envelope.issues.some(
+        (entry) => entry.code === "REVIEW_OBSERVATION_INVALID",
+      ),
+    );
+    assert.ok(!raw.stdout.includes(outsideDir));
+    assert.ok(!raw.stderr.includes(outsideDir));
+  } finally {
+    await rm(outsideDir, { recursive: true, force: true });
+    await cleanupWorkspace(fixture.root);
+  }
+});
+
+test("N1/out-of-repo-path-r2-violation: an R2 step-order violation at an absolute, outside-the-repository path still yields a valid envelope, with a field pointer, not the file, in data.diagnostics", async () => {
+  const batchId = "TST-9819-fixture";
+  const fixture = await buildBatchWithGoalPlan(batchId);
+  const outsideDir = await mkdtemp(join(tmpdir(), "review-observe-n1-"));
+  try {
+    const bad = baseObservation(fixture, {
+      // R2: run without an earlier exit-0 run-dry-run.
+      steps: [{ command: "run", exit: 0, stdout: "{}", stderr: "" }],
+      stoppedBecause: "preflight-not-ready",
+    });
+    const outsidePath = join(outsideDir, "obs.json");
+    await writeFile(outsidePath, JSON.stringify(bad));
+
+    const { status, envelope, raw } = runCliObserve(fixture.root, [
+      fixture.manifestPath,
+      outsidePath,
+    ]);
+    assert.equal(status, 1);
+    assert.equal(envelope.outcome, "failure");
+    assert.ok(
+      envelope.issues.some(
+        (entry) => entry.code === "REVIEW_OBSERVATION_INVALID",
+      ),
+    );
+    for (const entry of envelope.issues) assert.equal(entry.path, undefined);
+    const diagnostic = envelope.data?.diagnostics?.find(
+      (entry) => entry.code === "REVIEW_OBSERVATION_INVALID",
+    );
+    assert.ok(diagnostic, JSON.stringify(envelope));
+    assert.equal(diagnostic.path, undefined);
+    assert.equal(diagnostic.pointer, "/steps/0");
+    assert.ok(!raw.stdout.includes(outsideDir));
+    assert.ok(!raw.stderr.includes(outsideDir));
+  } finally {
+    await rm(outsideDir, { recursive: true, force: true });
+    await cleanupWorkspace(fixture.root);
+  }
+});
+
+test("N1/filename-with-esc: an observation filename containing an ESC byte still yields a valid envelope with no raw ESC in stdout/stderr", async () => {
+  const batchId = "TST-9820-fixture";
+  const fixture = await buildBatchWithGoalPlan(batchId);
+  const outsideDir = await mkdtemp(join(tmpdir(), "review-observe-n1-"));
+  try {
+    const outsidePath = join(outsideDir, "obs\u001b.json");
+    await writeFile(outsidePath, "not json");
+
+    const { status, envelope, raw } = runCliObserve(fixture.root, [
+      fixture.manifestPath,
+      outsidePath,
+    ]);
+    assert.equal(status, 1);
+    assert.equal(envelope.outcome, "failure");
+    assert.ok(!raw.stdout.includes("\u001b"));
+    assert.ok(!raw.stderr.includes("\u001b"));
+  } finally {
+    await rm(outsideDir, { recursive: true, force: true });
     await cleanupWorkspace(fixture.root);
   }
 });
