@@ -4,70 +4,73 @@
 
 - lint: pass — `pnpm run lint (eslint packages --max-warnings=0) exits 0`
 - static: pass — `pnpm run typecheck (tsc --build) exits 0 for both packages; tests/typescript-tooling.sh's packed-package-surface check lists packages/core/src/review/forgepilot-observation.{d.ts,js} and packages/cli/src/review-observe.{d.ts,js} in the documented tarball contents, and the CLI help text (root-and-bin.test.mjs and tests/typescript-tooling.sh's built_cli_help_and_version_are_exact) lists review observe`
-- unit: pass — `node --test packages/core/test/*.test.mjs packages/cli/test/*.test.mjs: 938 tests, 937 pass, 0 fail, 1 skipped by design (pre-existing 4 MiB perf smoke gated behind PRAXISBOUND_PERF_SMOKE=1, unrelated to this Story)`
-- integration: pass — `packages/core/test/review-observation.test.mjs drives validateForgepilotObservation/validateForgepilotObservationShape directly (36 cases: happy paths, every §22/R2/R3 rejection named in AC-003, the Human Review decisions on null exit and unlisted stoppedBecause values, the out-of-scope fingerprint/coverageIndex.fingerprint non-comparison, R6 hostile-text-never-echoed, and schema/§13 bounds); packages/cli/test/review-observe.test.mjs drives review observe against isolated temporary git repositories with a real review goal-plan-produced Goal Plan Manifest (review-import-respond-support.mjs's fixtureRepo, plus a local one-Story fixture), covering AC-001 (two segments, verbatim bytes, incrementing <n>), AC-004 (schema-invalid, schemaVersion 1.0.0, and the 1048577-byte Security Fixture Matrix row), and AC-005 (goalPlan.path traversal, a symlinked observation input, a symlinked records/ with no file at the link target, and hostile ESC/authorized:true stderr preserved verbatim with no side effect)`
-- contract: pass — `docs/typescript-tooling/cli-contract.md documents review observe (command mapping table row and its own contract section: argv, the two-stage shape-then-symlink-then-consistency flow and why goalPlan.path traversal is REVIEW_OBSERVATION_INVALID rather than REVIEW_PATH_UNSAFE, every §22 binding/step-consistency rule, the write path, the outcome table, and data shape) and the amended review preflight section (independent --expect-fingerprint/--expect-revision, R7, and the expect field recording exactly the flags given); docs/batch-review/agent-workflow.md §3 is written out as the full contract §11 procedure (both segments, the pre-write re-check, work list resume with --external-ref, request files from human-provided values only, stopping at awaiting-authorization, never running execution authorize, run --dry-run then run with the exit table, review observe at the end of each segment, and GOAL_COMPLETED ≠ DONE); the result envelope schema needed no change — see Deviations`
-- e2e: pass, worded accurately — `no run of the packed/built packages/cli/dist/bin.js CLI executable itself (spawnSync against bin.js) exercises review observe or review preflight's --expect-* flags in this Story; packages/cli/test/review-observe.test.mjs and the TST-032 cases in review-preflight-command.test.mjs call the built dist/review-observe.js, dist/review-goal-plan.js, and dist/review-preflight.js functions directly (import, not spawn) against real isolated temporary git repositories (real git init, real filesystem writes, reads, and symlinks). make verify's own composed gate does spawn the built bin.js, but only through tests/typescript-tooling.sh's packed-package-surface and CLI help/version checks, which do not invoke review observe or review preflight. AC-006 (which requires only that make verify pass and the documentation/regression items above hold) is fully covered; there is no acceptance criterion in this Story requiring a spawned-binary rehearsal of review observe, or a real ForgePilot run — that rehearsal is explicitly the next Story (Out of Scope) — so nothing is marked partial, but this is recorded as a residual risk below.`
-- architecture: blocked — `no code review round has run against this diff in this session yet. Human Review by carl approved the TST-032 Story itself for execution in a Claude Code session on 2026-09-24 (recorded in the Story's Dependencies), together with the contract §9 amendment and the three decisions this Story implements (rehearsal is a separate Story; observe never compares fingerprint against coverageIndex.fingerprint; a null exit counts as run-failed and satisfies step-failed) — that is authorization to implement, not acceptance of this implementation. Blocked on a human/reviewer action outside this session, not on any failing check.`
+- unit: pass — `node --test packages/core/test/*.test.mjs packages/cli/test/*.test.mjs: 963 tests, 962 pass, 0 fail, 1 skipped by design (pre-existing 4 MiB perf smoke gated behind PRAXISBOUND_PERF_SMOKE=1, unrelated to this Story). Per-file test() counts (grep -c "^test(", corrected from an earlier, inaccurate draft of this document): packages/core/test/review-observation.test.mjs 44, packages/cli/test/review-observe.test.mjs 16, packages/cli/test/review-preflight-command.test.mjs 32 (2 of them TST-032's own), packages/core/test/review-preflight-report.test.mjs 10 (2 of them TST-032's own)`
+- integration: pass — `packages/core/test/review-observation.test.mjs drives validateForgepilotObservation/validateForgepilotObservationShape directly, covering happy paths, every §22/R2/R3 rejection named in AC-003 (each now asserting the specific rejection message, not just ok===false, and each R2 case using a stoppedBecause value with no R3 constraint of its own so a mutation deleting the R2 check actually flips the result — code review round 1 M1), positive and negative cases for every R3 value, the Human Review decisions on null exit and unlisted stoppedBecause values, the H2 work-list/goal-create exception (round 2) with both accepted and rejected shapes, the out-of-scope fingerprint/coverageIndex.fingerprint non-comparison, R6 hostile-text-never-echoed, schema/§13 bounds, and the storyId 64-character bound (round 1 LOW); packages/cli/test/review-observe.test.mjs drives review observe against isolated temporary git repositories with a real review goal-plan-produced Goal Plan Manifest, covering AC-001 (with the M2 success-envelope shape asserted), AC-004 (schema-invalid, schemaVersion 1.0.0, the 1048577-byte Security Fixture Matrix row, and a dedicated no-echo-with-hostile-text case), AC-005 (goalPlan.path traversal, a symlinked observation input, a symlinked goalPlan.path file, a symlinked goal-plan/ directory — round 1 H1 — a symlinked records/, and hostile ESC/authorized:true stderr preserved verbatim with an assertion that the confirmation record set is also unchanged — round 1 AC-005 accuracy item), M2's index-diagnostics-surfaced case, M3's outside-repository-path-accepted and missing-file-rejected cases, M4's exact fp12 filename derivation, and H2's realistic first-segment work-list/goal-create record end to end`
+- contract: pass — `docs/typescript-tooling/cli-contract.md documents review observe (command mapping table row and its own contract section, revised across both review rounds: the M3 accept-any-path input rule, the LOW batchId/prefix read-gating order, the M2 success data shape mirroring buildRespondSuccessEnvelope, the per-issue locator convention, and the H2 R2 exception) and the amended review preflight section (independent --expect-fingerprint/--expect-revision, R7, and the expect field recording exactly the flags given); docs/batch-review/agent-workflow.md §3 is written out as the full contract §11 procedure and, in round 2, step 3 was corrected to the amended §11 (non-zero work-list -> goal create without reading stderr); the result envelope schema needed no change — see Deviations`
+- e2e: pass, worded accurately — `no run of the packed/built packages/cli/dist/bin.js CLI executable itself (spawnSync against bin.js) exercises review observe or review preflight's --expect-* flags in this Story; every test calls the built dist/*.js functions directly (import, not spawn) against real isolated temporary git repositories (real git init, real filesystem writes, reads, and symlinks). make verify's own composed gate does spawn the built bin.js, but only through tests/typescript-tooling.sh's packed-package-surface and CLI help/version checks, which do not invoke review observe or review preflight. AC-006 is fully covered; there is no acceptance criterion in this Story requiring a spawned-binary rehearsal of review observe, or a real ForgePilot run — that rehearsal is explicitly the next Story (Out of Scope) — so nothing is marked partial, but this is recorded as a residual risk below.`
+- architecture: blocked — `two code review rounds have run against this diff in this session (see below); every finding in both is fixed and tested, but a confirming review has not run over the result. Human Review by carl approved the TST-032 Story itself for execution on 2026-09-24, the contract §9 amendment, the three original Human Review decisions this Story implements, and (round 2) the H2 amendment to R2/AC-003 recorded in story.md's Dependencies — that is authorization to implement and a settled reading of "exit 非 0" for work-list specifically, not acceptance of this implementation. Blocked on a human/reviewer action outside this session, not on any failing check.`
+
+## Code Review Follow-up — Round 1 (2026-09-24)
+
+All findings reproduced/verified as described by the reviewer and fixed here, each with a new, named test unless noted otherwise.
+
+- `H1` (AC-005 lacked tests for a symlinked `goalPlan.path` file and a symlinked `goal-plan/` directory; the underlying behavior was already correct): added `packages/cli/test/review-observe.test.mjs` — `"H1/symlinked-goal-plan-path-file"` (a symlink at the exact file `goalPlan.path` names) and `"H1/symlinked-goal-plan-directory"` (the whole `goal-plan/` directory symlinked to an outside copy of its own content, proving the rejection is the symlink itself and not a missing/mismatched file behind it); both assert `configuration-error`/`REVIEW_PATH_UNSAFE`, exit 2, and nothing written at the link target.
+- `M1` (four `packages/core/test/review-observation.test.mjs` R2 tests used `stoppedBecause: "step-failed"`/`"goal-completed"` with a last-step exit that R3 itself would already reject or accept regardless of the R2 check under test — verified by mutation: deleting the relevant R2 branch left every one of them still reporting `ok: false`, or in two more cases not named by the reviewer but sharing the same flaw, `ok: true` incorrectly): every step-order test switched to `stoppedBecause: "preflight-not-ready"` (no R3 constraint of its own), and each now asserts the specific rejection message (`assert.match(result.message, ...)`), not just `ok === false`. Added positive and negative cases for every previously-uncovered R3 value: `"R3/run-needs-human"` (exit 2 accepted, other rejected), `"R3/run-limit-reached"` (exit 3 accepted, other rejected), `"R3/run-interrupted"` (exit 130 accepted, exit 143 accepted, exit 137 rejected), and `"R3/awaiting-authorization"` (wrong last command rejected, non-zero exit on `execution-plan` rejected).
+- `M2` (§12: `observe`'s success `data` should be `{batchId, fingerprint, sources, diagnostics, record}` with `review index`'s own diagnostics surfaced in `issues[]` one-to-one, following `review respond`'s `buildRespondSuccessEnvelope`; `review-observe.ts` returned only `{batchId, fingerprint, record}` and `issues: []`): added `buildObserveSuccessEnvelope` (`review-observe.ts`), the same pattern `review-respond.ts` uses. Test: `"M2/index-diagnostics-surfaced"` — a declared source removed after the Goal Plan was written still lets `review observe` succeed (advisory, not blocking), and asserts `REVIEW_SOURCE_MISSING` appears in `issues[]` and in `data.diagnostics[]`, one-to-one, in the same order; the AC-001 test also now asserts `data.batchId`/`data.fingerprint`/`data.sources`/`data.diagnostics` are present. `cli-contract.md` updated to describe this shape.
+- `M3` (an observation file outside the repository was rejected `REVIEW_PATH_UNSAFE` with a misleading "symlinked segment" message; `review-observe.ts` required the observation input itself to resolve inside the repository, unlike `review import`/`review respond`'s own input handling): replaced the observation-input reader with `readObservationInputFile`, matching `review-input.ts`'s `readInputFile` (any path accepted, no repository-boundary check) while keeping `O_NOFOLLOW`, an initial `lstat` (rejecting a symlinked leaf directly, as `REVIEW_PATH_UNSAFE`), and a post-open `dev`/`ino` identity check the plain `readInputFile` does not have (closing the TOCTOU window between the `lstat` and the `open`). `goalPlan.path` keeps the stricter repository-bound reader (`readSafeRepoFile`, renamed from the old shared `readSafeBoundedFile`), since §22 requires it to live under the batch's own `goal-plan/`. Tests: `"M3/observation-file-outside-repository"` (an absolute path in a separate temp directory is accepted, not `REVIEW_PATH_UNSAFE`) and the pre-existing symlinked-observation-input test (still passes, now via the leaf-`lstat` branch instead of the old repository-boundary branch).
+- `M4` (R4's `<fp12>`-from-the-record's-own-fingerprint was untested because every fixture's observation `fingerprint` happened to equal the batch's index fingerprint): added `"M4/fp12-derives-from-the-records-own-fingerprint"` — an observation with `fingerprint: "1".repeat(64)` (deliberately different from the batch's own fingerprint) is written to the exact literal path `.../records/forgepilot-111111111111-1.json`, and a second call against the same observation writes `...-2.json`.
+- `M5` (`docs/batch-review/agent-workflow.md` §3.4's exit table added "含 JSON 缺欄位或無法解析" to the `run-failed` row, contradicting contract §11's "non-zero exit is never parsed"; §3.3's first-segment `stoppedBecause` list omitted `step-failed`/`result-unknown`): removed the parenthetical from the `run-failed` row (a non-zero exit is classified by its numeric value alone, per the table); added `step-failed` and `result-unknown` to §3.3's first-segment `stoppedBecause` list, each with a one-clause example.
+- `LOW`s: `forgepilot-observation.ts`'s `stepProblem` now also enforces the schema's `storyId` `maxLength: 64` (test: `"schema: step story over the storyId 64-character bound is rejected"`, a 65-character value matching the pattern). `review-observe.ts` now checks the observation's `batchId` and `goalPlan.path`'s `specs/batches/<BATCH-ID>/goal-plan/` prefix (both filesystem-free) before ever attempting to read the file `goalPlan.path` names — exported as `goalPlanDirectoryPrefix` from Core so the CLI and Core's own consistency check share one prefix computation, never drifting; a mismatch on either check short-circuits straight to `REVIEW_OBSERVATION_INVALID` via Core's own (unchanged) message, and no file outside the correct `goal-plan/` is opened. `readGoalPlanManifestId`'s JSON-nesting-depth scan now uses 128 (contract §10's Manifest/Coverage-Review bound), not 32 (the observation's own §13 bound) — the two were conflated before. `goalPlan.path` was never actually restricted to `manifest.json` in the implementation (only in a docstring's example wording, now corrected); H1's directory-symlink test also exercises a non-`manifest.json` sibling file living under the same `<plan.id>/` directory as further, incidental confirmation. Every rejection now carries a `path`/locator on its `issue()` and a matching `{code, severity, path?}` in a minimal `data.diagnostics`, one-to-one with `issues[]` (Story Error Projection: "a JSON-pointer or repository-relative locator") — the observation's own input argument for document-level rejections, or the specific unsafe path for a `REVIEW_PATH_UNSAFE`. `normalizeExpect` (`preflight-report.ts`)'s comment was corrected (it is used only by `buildPreflightReportRecord`, never by the shape validator, which independently rejects `{}`) and its behavior changed to collapse `{}` to `null` rather than building a record the validator would then reject; tests: `"buildPreflightReportRecord normalizes an empty expect object to null..."` and `"a stored record with expect: {} (zero keys, non-null) is rejected..."` (`review-preflight-report.test.mjs`). Added `"missing observation file is failure/REVIEW_OBSERVATION_INVALID..."` (`review-observe.test.mjs`) and documented it in `cli-contract.md` as matching `review import`/`review respond`'s own missing-input classification. `verification.md` (this document) corrected: the Core test count (44, not the earlier draft's inaccurate 36/28 claims — actual counts are listed above and are grep-verifiable); AC-002's "same outcome as without the flag" now has a real `assert.deepEqual`/`assert.equal` comparison of both runs' outcome and issue codes; AC-005's hostile-stderr test now asserts the confirmation record set (names and bytes) is unchanged, not just the Goal Plan Manifest; "no git" for `--expect-fingerprint` alone is now proved with an injected `gitAdapter` spy (`gitAdapterCalled` flag), the same pattern `review-preflight-git.test.mjs`'s "without --expect-revision, the git adapter is never called" already uses, rather than indirectly inferred from the absence of a git-only issue code.
+
+## Code Review Follow-up — Round 2 (2026-09-24, H2)
+
+Human Review by carl decided, after this round's finding, that contract §11 step 3 as originally written required the Agent to parse `unknown goal` from `work list`'s stderr to decide whether to run `goal create` — forbidden by §11's "不解析人類可讀輸出" — and that ForgePilot `32b7a68` has no machine-readable Goal-existence query. The fix: the Agent runs `goal create` unconditionally after any non-zero `work list` exit and lets ForgePilot's own exit decide (`goal create` itself rejects a duplicate Goal ID). Human Review amended contract §11 step 3, §22's R2 sentence, Story TST-032's own R2 and Dependencies, and acceptance.md's AC-003 wording (all committed unchanged, verbatim, as directed, in a separate commit before this round's code changes).
+
+- `H2`: `forgepilot-observation.ts`'s `stepOrderProblem` gained one exception to "every step but the last exits 0": a non-zero, **non-`null`** `work-list` exit is allowed as a non-last step only when the very next step is `goal-create`; every other non-last non-zero (or `null`) step is still rejected, and `goal-create` itself never receives this exception regardless of its own exit or position. The `null`-exit exclusion is a coordinating-agent reading of "exit 非 0" (a `null` exit means the process could not be started or its exit was not observed — a different, more severe failure than an observed non-zero exit — treated as still `step-failed`), made in this session, not settled by the reviewer or Human Review; it is recorded here, pending Human Review, exactly like the earlier `null`-on-`run`/`run-failed` decision this Story already implements. Tests (`packages/core/test/review-observation.test.mjs`, prefixed `H2/`): the two accepted shapes verbatim from the coordinator's instruction (`[preflight, work-list(1), goal-create(0), work-add(0)×2, execution-plan(0)]` with `awaiting-authorization`; `[preflight, work-list(1), goal-create(1)]` with `step-failed`) and four rejections (`work-list(1)` followed by `work-add`; `work-list(1)` as a non-last step followed only by another `preflight`; `goal-create(1)` followed by another step; `work-list(null)` followed by `goal-create`), each asserting the specific rejection message. One CLI test, `"H2/work-list-then-goal-create"` (`review-observe.test.mjs`), writes the realistic first-segment record (including a `stderr: "forgepilot: unknown goal"` string on the `work-list` step, present as data but never read by the tool) end to end and asserts `success`.
+- Docs: `docs/batch-review/agent-workflow.md` §3 step 3 rewritten per the amended §11 — no longer branches on a reported `unknown goal` string; runs `goal create` unconditionally on a non-zero `work list` exit and reports its own exit. `docs/typescript-tooling/cli-contract.md`'s Step order bullet in the `review observe` contract section gained the R2 exception, its `null`-exclusion, and the note that `goal-create` itself is never exempted.
 
 ## Implementation Summary
 
 - Core: a new pure module, `packages/core/src/review/forgepilot-observation.ts`
-  (`validateForgepilotObservationShape`, `validateForgepilotObservationConsistency`,
-  `validateForgepilotObservation`), hand-written against
-  `schemas/forgepilot-observation.schema.json` (`schemaVersion` `2.0.0`) the
-  same way `preflight-report.ts`/`revision-sheet.ts` validate their own
-  records. Shape validation (schema, §13 bounds including the
-  `steps[].stdout`/`stderr` 1,048,576-character exemption) is exported
-  separately from consistency validation (§22 binding — `batchId`,
-  `goalPlan.path` prefix/existence/sha256, `goalId` vs the Goal Plan
-  Manifest's own `plan.id` — and the §11/§22 R2/R3 step-order and
-  `stoppedBecause` rules) specifically so the CLI can resolve and read
-  `goalPlan.path` only after it is already known to be a syntactically safe
-  repository-relative path — the reason a path-traversal `goalPlan.path` is
-  `REVIEW_OBSERVATION_INVALID`, never `REVIEW_PATH_UNSAFE`. Never reads a
-  filesystem, process, or clock, and never compares the observation's own
-  `fingerprint` against the Goal Plan Manifest's `coverageIndex.fingerprint`
-  (Human Review 2026-09-24 decision, out of scope).
+  (`goalPlanDirectoryPrefix`, `validateForgepilotObservationShape`,
+  `validateForgepilotObservationConsistency`, `validateForgepilotObservation`),
+  hand-written against `schemas/forgepilot-observation.schema.json`
+  (`schemaVersion` `2.0.0`) the same way `preflight-report.ts`/`revision-sheet.ts`
+  validate their own records. Shape validation (schema, §13 bounds
+  including the `steps[].stdout`/`stderr` 1,048,576-character exemption and
+  the `storyId` 64-character bound) is exported separately from consistency
+  validation (§22 binding and the §11/§22 R2/R3 step-order and
+  `stoppedBecause` rules, including the H2 `work-list`/`goal-create`
+  exception) specifically so the CLI can gate a `goalPlan.path` read on
+  cheap, filesystem-free checks first. Never reads a filesystem, process, or
+  clock, and never compares the observation's own `fingerprint` against the
+  Goal Plan Manifest's `coverageIndex.fingerprint` (Human Review decision,
+  out of scope).
 - Core: `preflight-report.ts`'s `PreflightReportExpect` changed from
   `{fingerprint, revision}` (both required) to `{fingerprint?, revision?}`
-  (contract §9 as amended, R-008/R7); `validatePreflightReportShape`'s
-  `expect` check now accepts either field alone, both, or requires at least
-  one key when `expect` is non-null (matching the already-amended
-  `preflight-report.schema.json`'s `minProperties: 1`, which needed no
-  further edit). `preflightReportsEqualExceptCheckedAt`'s `expectEqual` is
-  unchanged (still field-by-field, now naturally handling `undefined`).
-- CLI: `packages/cli/src/review-preflight.ts` — the both-or-neither argv
-  rule for `--expect-fingerprint`/`--expect-revision` removed (each flag
-  already independently rejects being given twice); the git-only-on-
-  `--expect-revision` branch was already independent and needed no change;
-  the `expect` record now built from exactly the flags given (either alone,
-  both, or `null`); usage/help text updated to show the two flags as
-  independently optional.
-- CLI: new `packages/cli/src/review-observe.ts` — argv via the existing
-  `parseManifestAndFileArguments` (`review-input.ts`); the observation input
-  file and the Goal Plan Manifest it names are each resolved to a
-  repository-relative path, symlink-checked at every segment, opened
-  `O_NOFOLLOW`, and TOCTOU-closed by a post-open `lstat` `dev`/`ino` check
-  (mirroring `review-semantic-report.ts`'s `resolveRepoRelativePath`
-  pattern); the observation is size-bounded at 1 MiB (`RECORD_MAX_BYTES`)
-  and depth-bounded at 32 (`rawJsonMaxDepth`) before `JSON.parse`, with
-  nesting-depth-exceeded classified as `REVIEW_INPUT_TOO_LARGE` distinctly
-  from ordinary malformed JSON (`REVIEW_OBSERVATION_INVALID`); the Goal Plan
-  Manifest is read (bounded at 8 MiB, matching `review-goal-plan.ts`'s own
-  bound) only after Core's shape validation has already confirmed
-  `goalPlan.path` is syntactically safe; the accepted record's own bytes
-  (never re-serialized) are written create-new, exclusive, to
-  `records/forgepilot-<fp12>-<n>.json` via the existing `createNewRecord`
-  primitive. Wired into `bin.ts` and its help text.
-- Docs: `docs/typescript-tooling/cli-contract.md` gained a
-  `review observe` contract section, a command-table row, and updated
-  `review preflight` argv/`expect` wording; `docs/batch-review/agent-workflow.md`
-  §3 rewritten in full from its TST-031-era skeleton, following contract
-  §11 exactly (3.1–3.8: inputs, preconditions, both segments' numbered
-  steps, resume/`--attempt` rules, `review observe` usage, stop conditions,
-  and outputs/reporting, including the exit table and the `GOAL_COMPLETED`
-  ≠ DONE statement).
+  (contract §9 as amended, R-008/R7), with `{}` normalized to `null` before
+  a record is built, consistent with the shape validator's own rejection of
+  a non-null, zero-key `expect`.
+- CLI: `packages/cli/src/review-observe.ts` — argv via the existing
+  `parseManifestAndFileArguments`; the observation input file accepts any
+  path (`readObservationInputFile`, matching `review import`/`review
+respond`'s own input handling — round 1 M3), while `goalPlan.path` keeps
+  the stricter repository-bound reader (`readSafeRepoFile`) and is only
+  ever opened once the observation's `batchId` and the path's own
+  `goal-plan/` prefix have already passed a filesystem-free check (round 1
+  LOW); the observation is size-bounded at 1 MiB and depth-bounded at 32
+  before `JSON.parse`, with nesting-depth-exceeded classified distinctly
+  from ordinary malformed JSON; the accepted record's own bytes are written
+  create-new, exclusive, to `records/forgepilot-<fp12>-<n>.json`; the
+  success envelope mirrors `review respond`'s `buildRespondSuccessEnvelope`
+  (round 1 M2); every rejection carries a locator on its issue and a
+  matching minimal `data.diagnostics` entry (round 1 LOW). Wired into
+  `bin.ts` and its help text.
+- Docs: `docs/typescript-tooling/cli-contract.md` gained a `review observe`
+  contract section (revised across both rounds) and updated `review
+preflight` argv/`expect` wording; `docs/batch-review/agent-workflow.md`
+  §3 rewritten in full per contract §11, then corrected in round 2 for the
+  amended step 3.
 
 ## Deviations from the Story text (each a decision the reviewer should check)
 
@@ -81,46 +84,32 @@
 - The Story's Acceptance Evidence table names `packages/core/test/review-observation.test.mjs`
   and `packages/cli/test/review-observe.test.mjs` for every AC and every
   Security Fixture Matrix row; both files exist at exactly those paths and
-  every row/AC is covered there, superseding contract §16's still-`tests/batch-review-observe.sh`-shaped
-  planning placeholder (the Story's own acceptance.md explicitly directs
-  this substitution, the same pattern TST-031's verification.md used).
-- A missing observation input file (readable path resolves, but no file
+  every row/AC is covered there (including, after round 1, H1's two
+  previously-missing symlink cases), superseding contract §16's still-
+  `tests/batch-review-observe.sh`-shaped planning placeholder.
+- A missing observation input file (a path that resolves, but no file
   exists there) is classified `failure`/`REVIEW_OBSERVATION_INVALID` rather
-  than `configuration-error`: the Story's Expected Errors table reserves
-  `configuration-error` for "unreadable or invalid **manifest**, unsafe
-  path" and separately lists observation-content rejection as
-  `REVIEW_OBSERVATION_INVALID`; a missing observation file is closer in
-  kind to an invalid observation than to a manifest problem, and this
-  keeps every non-path-safety observation-file condition under one issue
-  code. Not directly tested (no fixture removes the observation file
-  after argv parsing but before the read); inferred from the two
-  Expected-Errors buckets rather than a literal Story sentence — flagged
-  here for reviewer confirmation.
-- `readSafeBoundedFile`'s "outside the repository root" branch (an
-  observation or `goalPlan.path` argument that lexically resolves above
-  `root`) is folded into the same `REVIEW_PATH_UNSAFE` result as an actual
-  symlinked segment, rather than a separate code — matching
-  `loadSemanticReport`'s own precedent (`review-semantic-report.ts`) for
-  exactly this situation on `--semantic-report`. `goalPlan.path` can never
-  reach this branch in practice, since Core's shape validation already
-  rejects any `..`-containing or absolute value before this code runs; the
-  branch exists only for defense in depth.
+  than `configuration-error`, matching `review import`/`review respond`'s
+  own treatment of a missing input file (round 1 M3 made this an explicit,
+  tested parallel rather than an untested inference).
 - The Goal Plan Manifest read bound (8 MiB) is asserted by analogy to
   contract §10's own Manifest/Coverage-Review bound and `review-goal-plan.ts`'s
   existing `READ_EXISTING_MAX_BYTES` constant, not a value contract §22 or
-  the Story states directly for `review observe` specifically; §13 states
-  only that the _observation_ input is bounded like other `records/` JSON
-  (1 MiB), and is silent on the bound for reading the Goal Plan Manifest
-  `review observe` looks up as a side effect of validating `goalPlan`.
+  the Story states directly for `review observe` specifically.
+- H2's `null`-exit exclusion from the `work-list`/`goal-create` exception is
+  this session's own reading of "exit 非 0" (a `null` exit is a different,
+  more severe condition than an observed non-zero exit), not literal Story
+  or contract text; the coordinator's instruction explicitly asked for this
+  reading and for it to be flagged here, pending Human Review.
 
 ## Evidence
 
-- `AC-001`: pass — `packages/cli/test/review-observe.test.mjs: "AC-001/both-records-written-verbatim" — a batch with a written Goal Plan (via a real review goal-plan run) accepts a first-segment observation ending in exit-0 execution-plan with awaiting-authorization and a second-segment observation ending in run exit 0 with goal-completed; each is written byte-for-byte (asserted via a raw byte-array comparison, not a re-serialization) to a new records/forgepilot-<fp12>-<n>.json with <n> incrementing 1 then a distinct name, and data.record names each file; human output shows a Record: line`
-- `AC-002`: pass — `packages/cli/test/review-preflight-command.test.mjs: "TST-032/AC-002: --expect-fingerprint alone matches, runs no git, and records expect: { fingerprint }" (REVIEW_READY with no REVIEW_PACKET_REVISION_MISMATCH on a repo with no commit, proving no git ran, and the written record's expect equals {fingerprint}), "...with a non-matching value is REVIEW_STALE with REVIEW_PACKET_FINGERPRINT_MISMATCH", and "TST-032/AC-002: --expect-revision alone runs the ADR-015 checks and records expect: { revision }" (REVIEW_PACKET_REVISION_MISMATCH on the same no-commit repo, proving git did run, and the written record's expect equals {revision})`
-- `AC-003`: pass — `packages/core/test/review-observation.test.mjs — one test per rejection named in the Story's AC-003 list: batchId mismatch, goalPlan.path outside goal-plan/, a missing Goal Plan Manifest, a wrong goalPlan.sha256, goalId not equal to plan.id (plus a positive equal-case), run without an earlier exit-0 run-dry-run (plus a non-exit-0 run-dry-run not counting), run-dry-run/run sharing a record with goal-create/work-add, a non-last step with a non-zero exit, an exit-0 work-add missing workItemId or created (each separately), goal-completed ending in work-add (Security Fixture Matrix row), run-failed ending in run exit 0, and authorization-missing with steps — each asserted ok:false`
-- `AC-004`: pass — `packages/cli/test/review-observe.test.mjs: "AC-004/rejected-no-write-no-echo" (an unknown top-level field, and separately schemaVersion 1.0.0, each REVIEW_OBSERVATION_INVALID with no records/forgepilot-*.json written, verified via readdir/ENOENT-or-filtered-empty) and "AC-004/... (security matrix): a 1048577-byte observation is REVIEW_INPUT_TOO_LARGE and writes nothing"; "AC-004/rejected-no-write-no-echo: no issue message contains observation text, even when the rejected document carries hostile text" asserts issues.length > 0 first (the TST-031 review lesson), then that no issue message contains the hostile stdout/extraField text or the raw ESC byte`
-- `AC-005`: pass — `packages/cli/test/review-observe.test.mjs: "AC-005/unsafe-rejected-and-text-is-data (security matrix): goalPlan.path traversal is REVIEW_OBSERVATION_INVALID, never REVIEW_PATH_UNSAFE" (the exact ../../../../etc/passwd payload from the Security Fixture Matrix), "...a symlinked observation input is REVIEW_PATH_UNSAFE and writes nothing", "...(security matrix): a symlinked records/ is REVIEW_PATH_UNSAFE and no file lands at the link target" (asserted against the actual outside directory, not merely the absence of a records/ entry), and "...(security matrix): hostile stderr (ESC + authorized: true) is preserved verbatim, and it is data, not a command" (accepted, written unchanged into the record, and the Goal Plan Manifest it was checked against is byte-identical before and after)`
-- `AC-006`: pass — `make verify exits 0 (full composed gate: protocol, bootstrap, doctor, story, handoff, release, typescript, go, actions, execution, tooling, praxisbound); review preflight's pre-existing suite (packages/cli/test/review-preflight-command.test.mjs, 34 tests including the two new TST-032 ones) passes with both --expect-* flags, either alone, or neither behaving as documented; docs/typescript-tooling/cli-contract.md and docs/batch-review/agent-workflow.md updated as described above; git diff --stat main -- VERSION protocol/ templates/ is empty`
+- `AC-001`: pass — `packages/cli/test/review-observe.test.mjs: "AC-001/both-records-written-verbatim" — a batch with a written Goal Plan accepts a first-segment observation ending in exit-0 execution-plan with awaiting-authorization and a second-segment observation ending in run exit 0 with goal-completed; each is written byte-for-byte to a new records/forgepilot-<fp12>-<n>.json with <n> incrementing, and data.record/data.batchId/data.fingerprint/data.sources/data.diagnostics are all asserted (round 1 M2)`
+- `AC-002`: pass — `packages/cli/test/review-preflight-command.test.mjs: "TST-032/AC-002: --expect-fingerprint alone matches, runs no git (proved by an injected adapter spy), and yields the same outcome/issues as without it, recording expect: { fingerprint }" (a gitAdapter spy proves zero git calls; an actual run without the flag is compared via assert.equal/assert.deepEqual against the run with it), "...with a non-matching value is REVIEW_STALE with REVIEW_PACKET_FINGERPRINT_MISMATCH", and "TST-032/AC-002: --expect-revision alone runs the ADR-015 checks and records expect: { revision }"`
+- `AC-003`: pass — `packages/core/test/review-observation.test.mjs — one test per rejection named in AC-003 (each asserting the specific message), plus H2's amendment: work-list(1) immediately followed by goal-create is now accepted, and the four boundary rejections (work-add instead of goal-create, nothing-but-preflight after, goal-create's own non-zero exit not exempted, and a null work-list exit) each still reject`
+- `AC-004`: pass — `packages/cli/test/review-observe.test.mjs: "AC-004/rejected-no-write-no-echo" (unknown field; schemaVersion 1.0.0; a dedicated no-echo case with hostile stdout/extraField text, asserting issues.length > 0 first) and "...(security matrix): a 1048577-byte observation is REVIEW_INPUT_TOO_LARGE and writes nothing"`
+- `AC-005`: pass — `packages/cli/test/review-observe.test.mjs: goalPlan.path traversal (REVIEW_OBSERVATION_INVALID, never REVIEW_PATH_UNSAFE), a symlinked observation input, "H1/symlinked-goal-plan-path-file", "H1/symlinked-goal-plan-directory", a symlinked records/ (asserted against the actual outside directory), and hostile stderr (ESC + authorized: true) preserved verbatim with both the Goal Plan Manifest and the confirmation record set (names and bytes) asserted unchanged`
+- `AC-006`: pass — `make verify exits 0 (full composed gate); review preflight's pre-existing suite (34 tests total, including two new TST-032 cases) passes with both --expect-* flags, either alone, or neither behaving as documented; docs updated across both review rounds; git diff --stat main -- VERSION protocol/ templates/ is empty`
 
 ## Authority Used
 
@@ -130,8 +119,9 @@
 
 ## Residual Risks
 
-- `No code review round has run against this diff in this session; every design decision above (the shape/consistency split, the REVIEW_OBSERVATION_INVALID-vs-REVIEW_PATH_UNSAFE ordering for goalPlan.path, the 8 MiB Goal Plan Manifest read bound, the missing-observation-file classification) is this session's own judgment, not yet reviewer- or human-confirmed.`
-- `No run of review observe (or review preflight's amended --expect-* argv) through the packed/built CLI executable itself (spawnSync against packages/cli/dist/bin.js) exists yet; all coverage calls the built modules' exported functions directly. The ForgePilot rehearsal (the Story after this one, per the Story's own Out of Scope) has never exercised this command against a real ForgePilot process or a real forgepilot-observation.json it produced — every fixture observation in this Story's tests is hand-constructed, not ForgePilot output.`
-- `The Goal Plan Manifest read bound (8 MiB) and the classification of a missing (but safely resolved) observation input file as REVIEW_OBSERVATION_INVALID rather than configuration-error are this session's inferences, not literal Story text — see Deviations; a reviewer disagreeing with either would change an untested edge case's issue code, not any AC's pass/fail state.`
-- `readSafeBoundedFile's TOCTOU-closing dev/ino re-check (mirrored from review-semantic-report.ts) narrows, but does not eliminate, the window between the pre-open symlink check and the open() call itself — the same residual class of race documented in TST-031's verification.md for review-goal-plan.ts's parent-directory check, inherent to Node's lack of an openat-style path-relative primitive.`
-- `docs/batch-review/agent-workflow.md §3 describes the Agent procedure in prose; no automated test executes this document against a real ForgePilot or asserts its numbered steps match contract §11 word-for-word beyond this session's own careful re-reading while writing it.`
+- `Two code review rounds have run against this diff in this session; every finding in both is fixed and tested, but a confirming review of the combined result has not run.`
+- `No run of review observe (or review preflight's amended --expect-* argv) through the packed/built CLI executable itself exists yet; all coverage calls the built modules' exported functions directly. The ForgePilot rehearsal (the Story after this one) has never exercised this command against a real ForgePilot process or a real forgepilot-observation.json it produced — every fixture observation in this Story's tests, including the H2 work-list/goal-create shapes, is hand-constructed, not ForgePilot output.`
+- `H2's null-exit exclusion (a null work-list exit is not covered by the goal-create exception) is this session's own reading of contract text, explicitly flagged as pending Human Review by the coordinator's own instruction — see Deviations.`
+- `The Goal Plan Manifest read bound (8 MiB) and the classification of a missing (but safely resolved) observation input file as REVIEW_OBSERVATION_INVALID rather than configuration-error remain this session's inferences, not literal Story text.`
+- `readObservationInputFile's identity check (lstat, then a post-open dev/ino comparison) narrows, but does not eliminate every theoretical TOCTOU window on a filesystem where inode numbers can be reused between the lstat and the open; this is the same residual class of risk documented for review-goal-plan.ts's parent-directory check in TST-031's verification.md.`
+- `docs/batch-review/agent-workflow.md §3 describes the Agent procedure in prose, now amended twice (round 1 M5's exit-table/stoppedBecause-list fixes, round 2's step 3 rewrite); no automated test executes this document against a real ForgePilot or asserts its numbered steps match contract §11 word-for-word beyond this session's own careful re-reading while writing it.`

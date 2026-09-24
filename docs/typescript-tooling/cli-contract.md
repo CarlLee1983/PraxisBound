@@ -51,25 +51,25 @@ verify             = execute make verify
 
 ## Command mapping and options
 
-| New command                                              | Legacy capability                     | Contract                                                                                                                                                             |
-| -------------------------------------------------------- | ------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `praxisbound init [repo]`                                | `scripts/bootstrap`                   | Apply fresh adoption by default; supports `--dry-run`, mutually exclusive `--force`/`--upgrade`.                                                                     |
-| `praxisbound doctor [repo]`                              | `scripts/doctor`                      | Static, read-only by default; retains `--run-verify` during compatibility period.                                                                                    |
-| `praxisbound verify [repo]`                              | Doctor execution mode / `make verify` | Explicitly runs target-owned `make verify` once from physical root.                                                                                                  |
-| `praxisbound story check [story ...]`                    | `scripts/story-check`                 | Discovers Stories when omitted; supports `--ready`.                                                                                                                  |
-| `praxisbound verification check [story ...]`             | `scripts/verification-check`          | Resolves plans by default; supports `--result`.                                                                                                                      |
-| `praxisbound handoff check [file]`                       | `scripts/handoff-check`               | Defaults to `specs/handoff.md`.                                                                                                                                      |
-| `praxisbound release check [repo]`                       | `scripts/release-check` Node wrapper  | Local, read-only release inspection; target defaults to `.`; never performs remote checks.                                                                           |
-| `praxisbound review index <manifest>`                    | none (new capability)                 | Reads one Batch Manifest and its declared sources; read-only; writes nothing.                                                                                        |
-| `praxisbound review render <manifest> --output <file>`   | none (new capability)                 | Writes an additive, self-contained offline HTML Review Projection; never changes selected sources.                                                                   |
-| `praxisbound review import <manifest> <sheet>`           | none (new capability)                 | Reads a Markdown Revision Sheet and records new requests, create-new, under the batch's `records/`; never changes a source.                                          |
-| `praxisbound review respond <manifest> <responses.json>` | none (new capability)                 | The only way to record a Revision Response file, create-new, after the contract §7 fingerprint and coverage checks.                                                  |
-| `praxisbound review confirm <manifest>`                  | none (new capability)                 | The only way to record a Definition Confirmation, create-new, through an interactive terminal act (contract §8).                                                     |
-| `praxisbound review preflight <manifest>`                | none (new capability)                 | Evaluates every contract §9 check — mechanical (including git, `ADR-015`) and the Semantic Report's own — and writes one Preflight Report (Stories TST-027/TST-028). |
-| `praxisbound review readiness-digests <manifest>`        | none (new capability)                 | Rewrites only the `story_md_digest`/`acceptance_md_digest` fields of every batch Story's existing `readiness.json` whose digests are stale; creates none (contract §21, Story TST-030). |
-| `praxisbound review goal-plan <manifest> --semantic-report <file>` | none (new capability)       | Projects `declaration.json`/`manifest.json`/`coverage-review.json` under `specs/batches/<BATCH-ID>/goal-plan/<plan.id>/` on `REVIEW_READY`; replaces the unimplemented `review packet` (contract §10, Story TST-031). |
-| `praxisbound review observe <manifest> <observation.json>` | none (new capability)      | Validates one Agent observation of a contract §11 ForgePilot handoff segment and, only when internally consistent, records it create-new under `records/forgepilot-<fp12>-<n>.json` (contract §22, Story TST-032). |
-| `praxisbound codex activate <repo>`                      | `scripts/codex-activate`              | Preview by default; supports `--apply`; stays a late migration wave.                                                                                                 |
+| New command                                                        | Legacy capability                     | Contract                                                                                                                                                                                                              |
+| ------------------------------------------------------------------ | ------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `praxisbound init [repo]`                                          | `scripts/bootstrap`                   | Apply fresh adoption by default; supports `--dry-run`, mutually exclusive `--force`/`--upgrade`.                                                                                                                      |
+| `praxisbound doctor [repo]`                                        | `scripts/doctor`                      | Static, read-only by default; retains `--run-verify` during compatibility period.                                                                                                                                     |
+| `praxisbound verify [repo]`                                        | Doctor execution mode / `make verify` | Explicitly runs target-owned `make verify` once from physical root.                                                                                                                                                   |
+| `praxisbound story check [story ...]`                              | `scripts/story-check`                 | Discovers Stories when omitted; supports `--ready`.                                                                                                                                                                   |
+| `praxisbound verification check [story ...]`                       | `scripts/verification-check`          | Resolves plans by default; supports `--result`.                                                                                                                                                                       |
+| `praxisbound handoff check [file]`                                 | `scripts/handoff-check`               | Defaults to `specs/handoff.md`.                                                                                                                                                                                       |
+| `praxisbound release check [repo]`                                 | `scripts/release-check` Node wrapper  | Local, read-only release inspection; target defaults to `.`; never performs remote checks.                                                                                                                            |
+| `praxisbound review index <manifest>`                              | none (new capability)                 | Reads one Batch Manifest and its declared sources; read-only; writes nothing.                                                                                                                                         |
+| `praxisbound review render <manifest> --output <file>`             | none (new capability)                 | Writes an additive, self-contained offline HTML Review Projection; never changes selected sources.                                                                                                                    |
+| `praxisbound review import <manifest> <sheet>`                     | none (new capability)                 | Reads a Markdown Revision Sheet and records new requests, create-new, under the batch's `records/`; never changes a source.                                                                                           |
+| `praxisbound review respond <manifest> <responses.json>`           | none (new capability)                 | The only way to record a Revision Response file, create-new, after the contract §7 fingerprint and coverage checks.                                                                                                   |
+| `praxisbound review confirm <manifest>`                            | none (new capability)                 | The only way to record a Definition Confirmation, create-new, through an interactive terminal act (contract §8).                                                                                                      |
+| `praxisbound review preflight <manifest>`                          | none (new capability)                 | Evaluates every contract §9 check — mechanical (including git, `ADR-015`) and the Semantic Report's own — and writes one Preflight Report (Stories TST-027/TST-028).                                                  |
+| `praxisbound review readiness-digests <manifest>`                  | none (new capability)                 | Rewrites only the `story_md_digest`/`acceptance_md_digest` fields of every batch Story's existing `readiness.json` whose digests are stale; creates none (contract §21, Story TST-030).                               |
+| `praxisbound review goal-plan <manifest> --semantic-report <file>` | none (new capability)                 | Projects `declaration.json`/`manifest.json`/`coverage-review.json` under `specs/batches/<BATCH-ID>/goal-plan/<plan.id>/` on `REVIEW_READY`; replaces the unimplemented `review packet` (contract §10, Story TST-031). |
+| `praxisbound review observe <manifest> <observation.json>`         | none (new capability)                 | Validates one Agent observation of a contract §11 ForgePilot handoff segment and, only when internally consistent, records it create-new under `records/forgepilot-<fp12>-<n>.json` (contract §22, Story TST-032).    |
+| `praxisbound codex activate <repo>`                                | `scripts/codex-activate`              | Preview by default; supports `--apply`; stays a late migration wave.                                                                                                                                                  |
 
 Global options may appear after the selected command path and before or among
 that command's options. They may appear once; `--` ends option parsing.
@@ -195,7 +195,7 @@ declared path. Unlike every other declared source, a Readiness Sidecar is
 exempt from the generic 4 MiB per-source cap: `review index`/`review render`
 stay `success` for an otherwise valid manifest (contract §12) regardless of
 its size. Its size is checked via `fstat` on the already-safely-opened
-handle *before* any content is read (code review round 2 HIGH-1): at or
+handle _before_ any content is read (code review round 2 HIGH-1): at or
 under the contract-mandated 1 MiB Sidecar bound (§13/§21), it is read and
 hashed normally (`sha256Hex` of the bytes); over that bound, its bytes are
 never loaded into memory at all — only streamed through a hash — so a
@@ -215,7 +215,7 @@ fingerprint, and diagnostics as before Story TST-030 (no new fields on
 falsy, when there is no Sidecar).
 
 A Sidecar's raw JSON text is scanned for duplicate object keys and
-pathological nesting *before* it is ever handed to `JSON.parse` (code review
+pathological nesting _before_ it is ever handed to `JSON.parse` (code review
 round 2 HIGH-2, `packages/core/src/review/json-safety.ts`'s `scanJsonSafety`,
 ported from `goal-plan-artifacts.ts`): `JSON.parse` itself remains the
 parser, so an authored `"__proto__"` key becomes an ordinary own property —
@@ -269,7 +269,7 @@ against the Sidecar's whole-file digest already in `data.sources`, lets a
 Revision Request target it without any extra Locator bookkeeping. An
 `oversized` Sidecar (over the 1 MiB bound — see `review index` above) shows
 only a fixed notice naming its path, never any content, since its bytes were
-never read. This Story card is the *only* place a Sidecar's content is ever
+never read. This Story card is the _only_ place a Sidecar's content is ever
 shown: the appendix's raw-source dump (「原始 Markdown（不列印）」) excludes
 every Readiness Sidecar path, both to avoid printing its content a second
 time and because that generic dump's plain HTML-escaping does not also guard
@@ -711,7 +711,7 @@ outcome decision, contract §9 R6):
   reported once per duplicated output id rather than once per occurrence
   (`REVIEW_READINESS_REFERENCE_UNKNOWN`). All five are BLOCKED except the
   shared `REVIEW_INPUT_TOO_LARGE` code above. These checks never prove a
-  declaration is *true*, only consistent with the Story and batch; Sidecar
+  declaration is _true_, only consistent with the Story and batch; Sidecar
   text (`authorized: true`, an instruction, a `<script>` tag, an ESC sequence,
   a bidi override) is data and never changes an outcome, and every issue
   message this check produces names only a field path and array index
@@ -964,7 +964,7 @@ or other non-regular file already at an artifact's path is neither a match
 nor a conflict — reading it is never attempted as a byte comparison — and
 is `ERROR`, exit 3.
 
-| Outcome               | Status  | Exit | Meaning                                                                                    |
+| Outcome               | Status  | Exit | Meaning                                                                                     |
 | --------------------- | ------- | ---- | ------------------------------------------------------------------------------------------- |
 | `REVIEW_READY`        | `pass`  | `0`  | Every artifact was written (or already matched); no execution authority is granted.         |
 | `REVIEW_BLOCKED`      | `fail`  | `1`  | Same as `review preflight`, or a Story has no Readiness Sidecar at all.                     |
@@ -972,7 +972,7 @@ is `ERROR`, exit 3.
 | `REVIEW_STALE`        | `fail`  | `1`  | Same as `review preflight`.                                                                 |
 | `failure`             | `fail`  | `1`  | An existing Goal Plan artifact has different bytes (`REVIEW_GOAL_PLAN_CONFLICT`).           |
 | `usage-error`         | `error` | `2`  | Invalid argv, including a missing `--semantic-report` or a bad `--attempt`.                 |
-| `configuration-error` | `error` | `2`  | Invalid/unreadable manifest, an unsafe path, or `plan.id` over 128 characters.               |
+| `configuration-error` | `error` | `2`  | Invalid/unreadable manifest, an unsafe path, or `plan.id` over 128 characters.              |
 | `ERROR`               | `error` | `3`  | A projection failed its own validator, an artifact write failed, or another internal error. |
 
 `data` extends the `review preflight` shape (`batchId`, `fingerprint`,
@@ -1003,16 +1003,41 @@ unknown flag is `usage-error`, exit 2. An invalid or unreadable manifest, or
 a manifest path with a symlinked segment, is `configuration-error`, exit 2,
 exactly as `review index` reports it.
 
-The observation input file is resolved to a repository-relative path,
-checked for a symlinked segment at any path component, opened `O_NOFOLLOW`,
-and re-checked by `dev`/`ino` identity against a fresh `lstat` after opening
-(the same TOCTOU-closing pattern `--semantic-report` uses, Story TST-028
-security C1/M1); a symlinked path is `configuration-error`,
-`REVIEW_PATH_UNSAFE`, exit 2. Its size is bounded at the same 1 MiB contract
-§13 uses for every `records/` JSON document; over the bound, or a JSON
-nesting depth over 32, is `failure`, `REVIEW_INPUT_TOO_LARGE`, exit 1,
-before the document is otherwise inspected. Invalid UTF-8 or malformed JSON
-is `failure`, `REVIEW_OBSERVATION_INVALID`, exit 1.
+The observation input file (`<observation.json>`) accepts any path,
+including one outside the repository — the same way `review
+import`/`review respond`'s own input file does (`review-input.ts`'s
+`readInputFile`), not the stricter repository-boundary rule
+`--semantic-report` applies to itself (code review round 1 M3: a path
+outside the repository is not itself unsafe, and is never rejected with a
+"symlinked segment" message). It is resolved (`isAbsolute(argument) ?
+argument : resolve(root, argument)`), `lstat`ed (a symlinked leaf is
+`configuration-error`, `REVIEW_PATH_UNSAFE`, exit 2; a missing or
+non-regular file is `failure`, `REVIEW_OBSERVATION_INVALID`, exit 1, the
+same as `review import`/`review respond` treat their own missing input),
+opened `O_NOFOLLOW`, and re-checked by `dev`/`ino` identity against the
+initial `lstat` after opening, closing the TOCTOU window between the two.
+Its size is bounded at the same 1 MiB contract §13 uses for every
+`records/` JSON document; over the bound, or a JSON nesting depth over 32,
+is `failure`, `REVIEW_INPUT_TOO_LARGE`, exit 1, before the document is
+otherwise inspected. Invalid UTF-8 or malformed JSON is `failure`,
+`REVIEW_OBSERVATION_INVALID`, exit 1.
+
+`goalPlan.path`, named _inside_ the observation, is treated the stricter
+way `--semantic-report` treats its own path (`review-semantic-report.ts`,
+R10a): it must be a repository-relative path (§22 requires it to live under
+the batch's own `goal-plan/`), every segment symlink-checked, opened
+`O_NOFOLLOW`, and identity-checked against a fresh `lstat`. It is read only
+once two cheap, filesystem-free checks already pass — the observation's
+`batchId` equals the manifest's, and `goalPlan.path` starts with
+`specs/batches/<BATCH-ID>/goal-plan/` (code review round 1 LOW) — so a
+`batchId` mismatch or an out-of-prefix `goalPlan.path` is always
+`REVIEW_OBSERVATION_INVALID` and never causes any file outside the batch's
+own `goal-plan/` to be opened at all. A symlinked segment on an
+already-in-prefix `goalPlan.path` is `configuration-error`,
+`REVIEW_PATH_UNSAFE`, exit 2 — including a symlink at the `goal-plan/`
+directory itself, or at any file directly under it (§22 places no
+restriction on which file under `goal-plan/` `goalPlan.path` may name; it
+is not limited to `manifest.json`).
 
 The parsed document is validated in two stages by Core's pure
 `packages/core/src/review/forgepilot-observation.ts`, hand-written against
@@ -1029,15 +1054,14 @@ as `REVIEW_RECORD_INVALID` if ever found under `records/`, contract §2):
    character) — so a path-traversal payload in `goalPlan.path` is always
    `REVIEW_OBSERVATION_INVALID` here, never reaching a filesystem check at
    all, and therefore never `REVIEW_PATH_UNSAFE`.
-2. Only then is `goalPlan.path` resolved and read (bounded at 8 MiB, the
-   same Goal Plan Manifest bound `review goal-plan` uses, `O_NOFOLLOW`,
-   symlink-checked the same way as the observation input); a symlinked
-   segment anywhere on that path is `configuration-error`,
-   `REVIEW_PATH_UNSAFE`, exit 2. `validateForgepilotObservationConsistency`
+2. Only then — and only once the cheap `batchId`/prefix gate above passes —
+   is `goalPlan.path` resolved and read (bounded at 8 MiB, the same Goal
+   Plan Manifest bound `review goal-plan` uses). `validateForgepilotObservationConsistency`
    then checks contract §22's binding and step-consistency rules against the
    manifest's own `batchId` and the Goal Plan Manifest bytes (or `undefined`
-   when the file could not be read at all — missing and wrong-`sha256` fold
-   into the same `REVIEW_OBSERVATION_INVALID` rejection, contract §22):
+   when the gate did not pass, or the file could not be read at all —
+   missing and wrong-`sha256` fold into the same `REVIEW_OBSERVATION_INVALID`
+   rejection, contract §22):
    - `batchId` equals the manifest's own `batchId`.
    - `goalPlan.path` lies under `specs/batches/<BATCH-ID>/goal-plan/`, the
      named file exists, and its sha256 equals `goalPlan.sha256`.
@@ -1048,8 +1072,19 @@ as `REVIEW_RECORD_INVALID` if ever found under `records/`, contract §2):
      of scope for Story TST-032, Human Review 2026-09-24).
    - Step order (contract §11/§22, R2): no `run` without an earlier exit-0
      `run-dry-run`; `run-dry-run`/`run` never share a record with
-     `goal-create`/`work-add`; every step but the last exits `0`; an exit-0
-     `work-add` has both `workItemId` and `created`.
+     `goal-create`/`work-add`; every step but the last exits `0` — with one
+     exception (Human Review 2026-09-24, H2): a non-zero, non-`null`
+     `work-list` exit is allowed as a non-last step only when the very next
+     step is `goal-create` (contract §11 step 3: ForgePilot has no
+     machine-readable Goal-existence query, so the Agent tries `goal
+create` unconditionally after a non-zero `work list` and lets
+     ForgePilot's own exit — 0 for "did not exist, now created", non-zero
+     for "already exists" — decide, never parsing `work list`'s stderr). A
+     `null` `work-list` exit is not covered by this exception (a
+     coordinating-agent reading of "exit 非 0" pending Human Review — see
+     verification.md); `goal-create` itself never gets this exception,
+     whatever its own exit or position. An exit-0 `work-add` has both
+     `workItemId` and `created`.
    - `stoppedBecause` consistency with the last step (R3):
      `awaiting-authorization` ends with an exit-0 `execution-plan`;
      `goal-completed`/`run-needs-human`/`run-limit-reached`/
@@ -1077,18 +1112,30 @@ uses. A `records/` symlink discovered at write time is `configuration-error`,
 `REVIEW_PATH_UNSAFE`, exit 2, nothing written; any other write failure is
 `ERROR`, exit 3, `REVIEW_RECORD_WRITE_FAILED`, leaving no partial file.
 
-| Outcome               | Status  | Exit | Meaning                                                                                     |
-| ---------------------- | ------- | ---- | -------------------------------------------------------------------------------------------- |
-| `success`             | `pass`  | `0`  | The observation was internally consistent and written once; `data.record` names the file.    |
+| Outcome               | Status  | Exit | Meaning                                                                                                                             |
+| --------------------- | ------- | ---- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| `success`             | `pass`  | `0`  | The observation was internally consistent and written once; `data.record` names the file.                                           |
 | `failure`             | `fail`  | `1`  | Schema/binding/step-consistency rejection (`REVIEW_OBSERVATION_INVALID`) or over-limit (`REVIEW_INPUT_TOO_LARGE`); nothing written. |
-| `usage-error`         | `error` | `2`  | Invalid or missing argv.                                                                      |
-| `configuration-error` | `error` | `2`  | Invalid/unreadable manifest, or a symlinked path (observation input, `goalPlan.path`, or `records/`). |
-| `ERROR`               | `error` | `3`  | The record write failed, or another unexpected internal error.                                |
+| `usage-error`         | `error` | `2`  | Invalid or missing argv.                                                                                                            |
+| `configuration-error` | `error` | `2`  | Invalid/unreadable manifest, a symlinked leaf on the observation input, or a symlinked segment on `goalPlan.path` or `records/`.    |
+| `ERROR`               | `error` | `3`  | The record write failed, or another unexpected internal error.                                                                      |
 
-`data` is `{ batchId, fingerprint, record }` on success (`record` the
-repo-relative path just written); rejections carry only `issues[]`, no
-`data`. The command never spawns any process, never reads `.forgepilot`, and
-never treats `goal-completed` as Human Review acceptance or `DONE`.
+`data` extends the `review index`/`review respond` minimal shape
+(`{batchId, fingerprint, sources, diagnostics}`, contract §12) with `record`
+(the repo-relative path just written) on success — the same
+`buildRespondSuccessEnvelope` pattern `review respond` uses: `review
+index`'s own diagnostics for the current batch (e.g. `REVIEW_SOURCE_MISSING`
+for a source removed after the Goal Plan was written) are surfaced in
+`issues[]`, one-to-one with `data.diagnostics[]`, alongside — never instead
+of — the write's own success. Every rejection (`usage-error`,
+`configuration-error`, `failure`) instead carries a minimal
+`data.diagnostics` of exactly one entry (`{code, severity: "blocking",
+path?}`) matching its one `issues[]` entry one-to-one (contract §12,
+Story's own Error Projection: a repository-relative locator, the offending
+path — the observation input's own argument, `goalPlan.path`, or
+`records/`'s own path — named wherever one is available). The command never
+spawns any process, never reads `.forgepilot`, and never treats
+`goal-completed` as Human Review acceptance or `DONE`.
 
 ## `review preflight` and `review goal-plan` outcomes
 

@@ -45,23 +45,23 @@
 對每個有效意見的每個 `targets`，以當前來源依 contract §5 判定（`review import --json` 的 `revisions[].targets[].match`
 與此相同）：
 
-| 判定 | 處置 |
-| --- | --- |
-| `match` | 可以作為修改目標。 |
-| `hash-mismatch` | 來源在提出後已改變。不修改；以 `needs-decision` 問人「意見針對的舊內容已改變，是否仍適用於目前的 `<path>` `<anchor>`？」，或以 `not-incorporated` 說明已不適用的理由。 |
-| `anchor-missing` | 錨點不存在或 `path` 不是批次來源。不修改；`needs-decision` 問人要套用到哪個錨點。 |
-| `anchor-duplicate` | 錨點重複。不修改；`needs-decision` 問人指的是哪一處。 |
+| 判定               | 處置                                                                                                                                                                   |
+| ------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `match`            | 可以作為修改目標。                                                                                                                                                     |
+| `hash-mismatch`    | 來源在提出後已改變。不修改；以 `needs-decision` 問人「意見針對的舊內容已改變，是否仍適用於目前的 `<path>` `<anchor>`？」，或以 `not-incorporated` 說明已不適用的理由。 |
+| `anchor-missing`   | 錨點不存在或 `path` 不是批次來源。不修改；`needs-decision` 問人要套用到哪個錨點。                                                                                      |
+| `anchor-duplicate` | 錨點重複。不修改；`needs-decision` 問人指的是哪一處。                                                                                                                  |
 
 不依標題相似、名稱相同或 `quote` 文字去找「應該是這裡」的段落。`quote` 只供閱讀，不是定位依據。
 
 ### 1.4 分流（`route`）
 
-| `route` | 何時使用 | 可修改的來源 |
-| --- | --- | --- |
-| `presentation` | 定義正確，只是 Review Projection 的呈現有問題 | Renderer 或其呈現規則；不動定義來源 |
-| `story-derivation` | Story 沒有忠實推導 Spec | 受影響的 Story／acceptance；先對照所屬 Spec 條目確認 Spec 本身不需改 |
-| `spec-requirement` | 意見提出新需求或改變 Spec 需求 | Spec，且只在授權明確涵蓋修改 Spec 時 |
-| `decision` | 涉及 ADR 的取捨 | 不修改 `Status: accepted` 的 ADR。新增替代 ADR 提案（`Status: proposed`），或回 `needs-decision` 並寫出具體的決策問題 |
+| `route`            | 何時使用                                      | 可修改的來源                                                                                                          |
+| ------------------ | --------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| `presentation`     | 定義正確，只是 Review Projection 的呈現有問題 | Renderer 或其呈現規則；不動定義來源                                                                                   |
+| `story-derivation` | Story 沒有忠實推導 Spec                       | 受影響的 Story／acceptance；先對照所屬 Spec 條目確認 Spec 本身不需改                                                  |
+| `spec-requirement` | 意見提出新需求或改變 Spec 需求                | Spec，且只在授權明確涵蓋修改 Spec 時                                                                                  |
+| `decision`         | 涉及 ADR 的取捨                               | 不修改 `Status: accepted` 的 ADR。新增替代 ADR 提案（`Status: proposed`），或回 `needs-decision` 並寫出具體的決策問題 |
 
 替代 ADR 提案寫成新檔後，要等它被加入 manifest 的 `sources.adrs` 才是批次來源；在那之前它的 locator 判定為
 `anchor-missing`，回應不能是 `incorporated`，而是以 `needs-decision` 問人是否把提案納入批次，或以 `not-incorporated`
@@ -165,12 +165,12 @@
 
 ### 2.3 四個類別的檢查指引
 
-| 類別 | 找什麼 | 不算 |
-| --- | --- | --- |
-| `missing-split` | Spec 條目的要求沒有落在任何 Story 的範圍或驗收；一張 Story 夾帶了應獨立交付或獨立驗收的工作。 | 同一 Story 內可合理一起完成的小項。 |
-| `contradiction` | Spec、ADR、Story、驗收彼此說法不一致：數值、順序、權威、錯誤處理、邊界不同。 | 用詞不同但意思相同。 |
-| `insufficient-acceptance` | 驗收無法證明 Story 目標：缺失敗情境、邊界、安全或回歸；驗收無法觀察或無法判定通過。 | 要求尚未實作的功能測試在開工前就通過。 |
-| `open-question` | 開工必須先決定、但來源沒有答案的事項。 | 實作時自然可決定的細節。 |
+| 類別                      | 找什麼                                                                                        | 不算                                   |
+| ------------------------- | --------------------------------------------------------------------------------------------- | -------------------------------------- |
+| `missing-split`           | Spec 條目的要求沒有落在任何 Story 的範圍或驗收；一張 Story 夾帶了應獨立交付或獨立驗收的工作。 | 同一 Story 內可合理一起完成的小項。    |
+| `contradiction`           | Spec、ADR、Story、驗收彼此說法不一致：數值、順序、權威、錯誤處理、邊界不同。                  | 用詞不同但意思相同。                   |
+| `insufficient-acceptance` | 驗收無法證明 Story 目標：缺失敗情境、邊界、安全或回歸；驗收無法觀察或無法判定通過。           | 要求尚未實作的功能測試在開工前就通過。 |
+| `open-question`           | 開工必須先決定、但來源沒有答案的事項。                                                        | 實作時自然可決定的細節。               |
 
 沒有發現時寫 `{"result": "none"}`。「沒問題」不是理由，但也不要為了填滿而製造 issue；全部 `none` 是合法結論。
 
@@ -232,11 +232,16 @@ Work Item，並如實回報執行結果。本節只透過公開 CLI（一律帶 
    任一項不是 `REVIEW_READY`，或 sha256 不符，即停止（`preflight-not-ready`），不繼續寫入。
    `--expect-fingerprint` 與 `--expect-revision` 彼此獨立（contract §9 修訂，R-008）：這裡只需要
    `--expect-fingerprint`，不需要也不提供 `--expect-revision`。
+
 3. 執行 `work list --goal <goalId> --json` 讀現況：
-   - 回報 `unknown goal`：執行 `goal create --id <goalId> --title <batchId> --review-policy goal --json`。
-   - Goal 已存在：`review_policy` 必須是 `goal`；既有每個 Work Item 的 `external_ref` 必須是本 Goal Plan 的
-     Story ID，其 `story_ref` 與（對應後的）`depends_on` 必須與 declaration/manifest 相符。任一項不符即停止
-     （`goal-mismatch`／`work-mismatch`），不續建、不猜測。
+   - exit 非 0：不讀、不解析 stderr（ForgePilot `32b7a68` 對未知 Goal 只在 stderr 回報 `unknown goal`，
+     沒有機器可讀的存在查詢，而 §11 禁止解析人類可讀輸出）；直接執行
+     `goal create --id <goalId> --title <batchId> --review-policy goal --json`。它的 exit 決定結果：
+     exit 0 表示 Goal 原本不存在並已建立；非 0（例如 Goal 其實已存在，`goal create` 會回報
+     `goal "<id>" already exists` 並拒絕）即停止（`step-failed`）——由 ForgePilot 自己把關，Agent 不臆測原因。
+   - Goal 已存在（`work list` exit 0）：`review_policy` 必須是 `goal`；既有每個 Work Item 的 `external_ref`
+     必須是本 Goal Plan 的 Story ID，其 `story_ref` 與（對應後的）`depends_on` 必須與 declaration/manifest 相符。
+     任一項不符即停止（`goal-mismatch`／`work-mismatch`），不續建、不猜測。
 4. 依 declaration 的拓撲序（同層依 Story ID 位元組序）對尚未存在的 Story 逐一執行
 
    ```sh
@@ -246,6 +251,7 @@ Work Item，並如實回報執行結果。本節只透過公開 CLI（一律帶 
 
    依賴只用 ForgePilot 剛剛回傳的實際 WI ID，絕不用 Story ID 頂替。`created: false` 是冪等重試的正常結果，
    不是錯誤。
+
 5. 寫 `goal-plan/<plan.id>/preflight-request.json`（`forgepilot.goal-preflight-request/v1`，`nodeMappings`
    取自實際 WI ID），執行 `goal preflight --request <path> --json`；非 0 exit 即停止（`goal-preflight-failed`）。
 6. 寫 `goal-plan/<plan.id>/execution-request.json` 並執行 `execution plan --request <path> --json`。
@@ -255,7 +261,9 @@ Work Item，並如實回報執行結果。本節只透過公開 CLI（一律帶 
 
 停止後，第一段結束：依 3.6 以 `review observe` 寫一份觀察紀錄，`stoppedBecause` 為
 `authorization-missing`、`preflight-not-ready`、`goal-mismatch`、`work-mismatch`、
-`goal-preflight-failed` 或 `awaiting-authorization` 之一。
+`goal-preflight-failed`、`awaiting-authorization`、`step-failed`（例如步驟 5、6 的請求檔寫入或
+執行失敗、非上列任一項的其他 exit 非 0）或 `result-unknown`（某一步 exit 0 但 JSON 不合
+`forgepilot.cli/v1` 或缺必要欄位）之一。
 
 ### 3.4 第二段：人授權之後
 
@@ -266,13 +274,13 @@ Agent 記憶推定授權存在——未經授權的 Goal 會在步驟 8 被 Forg
    exit 非 0 即停止（`step-failed`）。
 9. 執行 `run --goal <goalId> --runtime codex --snapshot`，依 exit 如實回報，不加油添醋、不省略：
 
-   | exit | `stoppedBecause` | 回報 |
-   | --- | --- | --- |
-   | 0 | `goal-completed` | ForgePilot 的技術完成；不是 Human Review 接受、不是 DONE、不授權 merge／deploy |
-   | 2 | `run-needs-human` | 停在需要人的條件 |
-   | 3 | `run-limit-reached` | 觸及預算或時間上限 |
-   | 130、143 | `run-interrupted` | 被中斷或終止 |
-   | 其他 | `run-failed` | 錯誤（含 JSON 缺欄位或無法解析，另見下方 `result-unknown`） |
+   | exit     | `stoppedBecause`    | 回報                                                                           |
+   | -------- | ------------------- | ------------------------------------------------------------------------------ |
+   | 0        | `goal-completed`    | ForgePilot 的技術完成；不是 Human Review 接受、不是 DONE、不授權 merge／deploy |
+   | 2        | `run-needs-human`   | 停在需要人的條件                                                               |
+   | 3        | `run-limit-reached` | 觸及預算或時間上限                                                             |
+   | 130、143 | `run-interrupted`   | 被中斷或終止                                                                   |
+   | 其他     | `run-failed`        | 錯誤                                                                           |
 
    任一步 exit 非 0 即停止（`step-failed`）；exit 0 但 JSON 不合 `forgepilot.cli/v1` 或缺必要欄位，
    停止（`result-unknown`）。停止後不啟動 Runner。
