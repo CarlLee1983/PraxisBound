@@ -723,6 +723,20 @@ test("N3/exception-is-work-list-specific: goal-preflight(1) immediately followed
 // N3 (mutation-verified): no existing test asserted a `step-failed` record
 // is REJECTED when its last step exits 0 — deleting the `step-failed` R3
 // branch entirely (always `undefined`, no rejection) failed 0 tests.
+
+test("N3/step-failed-rejects-exit-0: step-failed whose last step exits 0 is rejected", () => {
+  const result = assertRejected(
+    observation({
+      steps: [step({ command: "preflight", exit: 0 })],
+      stoppedBecause: "step-failed",
+    }),
+  );
+  assert.match(
+    result.message,
+    /step-failed must end with a non-zero or null exit/,
+  );
+});
+
 // TST-034 (contract §11/§22 amendment, R1): `goal preflight` and `execution
 // plan` exit 0 even on failed validation (TST-033 F-1); failures appear only
 // in the response's `diagnostics`, which `review observe` never parses (R2).
@@ -754,7 +768,9 @@ test("TST-034/R1: execution-plan-failed ending in an exit-0 execution-plan is ac
   assert.equal(result.ok, true, JSON.stringify(result));
 });
 
-test("TST-034/AC-002: goal-preflight-failed whose last step is a non-zero-exit goal-preflight is rejected", () => {
+// Security Fixture Matrix row 1: `goal-preflight-failed with last step
+// goal-preflight exit 1` is rejected.
+test("TST-034/AC-002 (security matrix): goal-preflight-failed whose last step is a non-zero-exit goal-preflight is rejected", () => {
   const result = assertRejected(
     observation({
       steps: [step({ command: "goal-preflight", exit: 1 })],
@@ -767,7 +783,25 @@ test("TST-034/AC-002: goal-preflight-failed whose last step is a non-zero-exit g
   );
 });
 
-test("TST-034/AC-002 (security matrix): goal-preflight-failed whose last step is not goal-preflight is rejected", () => {
+// MEDIUM-2 (code review): a `null` exit is not `0`, so it must be rejected
+// the same way a non-zero exit is; mutating `exit === 0` to `exit !== 1` in
+// the built module (a mutation that still passes exit 1 → rejected, exit 0
+// → accepted, but wrongly accepts `null`) is caught by this test, unlike the
+// non-zero-exit test above, which never exercises `null`.
+test("TST-034/AC-002: goal-preflight-failed whose last step is a null-exit goal-preflight is rejected", () => {
+  const result = assertRejected(
+    observation({
+      steps: [step({ command: "goal-preflight", exit: null })],
+      stoppedBecause: "goal-preflight-failed",
+    }),
+  );
+  assert.match(
+    result.message,
+    /goal-preflight-failed must end with an exit-0 goal-preflight/,
+  );
+});
+
+test("TST-034/AC-002: goal-preflight-failed whose last step is not goal-preflight is rejected", () => {
   const result = assertRejected(
     observation({
       steps: [
@@ -799,6 +833,26 @@ test("TST-034/AC-002: execution-plan-failed whose last step is a non-zero-exit e
   );
 });
 
+// MEDIUM-2 (code review), the `execution-plan-failed` counterpart of the
+// `goal-preflight-failed` null-exit test above.
+test("TST-034/AC-002: execution-plan-failed whose last step is a null-exit execution-plan is rejected", () => {
+  const result = assertRejected(
+    observation({
+      steps: [
+        step({ command: "goal-preflight" }),
+        step({ command: "execution-plan", exit: null }),
+      ],
+      stoppedBecause: "execution-plan-failed",
+    }),
+  );
+  assert.match(
+    result.message,
+    /execution-plan-failed must end with an exit-0 execution-plan/,
+  );
+});
+
+// Security Fixture Matrix row 2: `execution-plan-failed with last step
+// work-add` is rejected.
 test("TST-034/AC-002 (security matrix): execution-plan-failed whose last step is work-add is rejected", () => {
   const result = assertRejected(
     observation({
@@ -853,7 +907,7 @@ test("TST-034/AC-004: goal-preflight-failed with stdout claiming an empty diagno
 // own goal-plan/manifest.json is the real, byte-identical manifest every
 // record's goalPlan.sha256 was computed against (each record shares the
 // same goalPlan.path/sha256; verified independently by hand before writing
-// this test), so no synthetic binding is needed here.
+// this test).
 test("AC-003/tst-033-accepted-observations: every accepted TST-033 rehearsal record still passes consistency validation", async () => {
   const manifestBytes = await readFile(
     join(TST_033_EVIDENCE, "goal-plan/manifest.json"),
@@ -862,7 +916,11 @@ test("AC-003/tst-033-accepted-observations: every accepted TST-033 rehearsal rec
   const names = (await readdir(recordsDir))
     .filter((name) => name.startsWith("forgepilot-"))
     .sort();
-  assert.ok(names.length > 0);
+  // The rehearsal's own evidence directory carries exactly five accepted
+  // forgepilot-*.json records (see TST-033's verification.md); asserting the
+  // exact count, not merely "at least one", catches a fixture-path mistake
+  // that would otherwise silently iterate over zero or a wrong subset.
+  assert.equal(names.length, 5, JSON.stringify(names));
   for (const name of names) {
     const text = await readFile(join(recordsDir, name), "utf8");
     const data = JSON.parse(text);
@@ -874,17 +932,4 @@ test("AC-003/tst-033-accepted-observations: every accepted TST-033 rehearsal rec
     });
     assert.equal(result.ok, true, `${name}: ${JSON.stringify(result)}`);
   }
-});
-
-test("N3/step-failed-rejects-exit-0: step-failed whose last step exits 0 is rejected", () => {
-  const result = assertRejected(
-    observation({
-      steps: [step({ command: "preflight", exit: 0 })],
-      stoppedBecause: "step-failed",
-    }),
-  );
-  assert.match(
-    result.message,
-    /step-failed must end with a non-zero or null exit/,
-  );
 });

@@ -562,6 +562,74 @@ test("Security Fixture Matrix row 3: stdout claiming an empty diagnostics array 
   }
 });
 
+// Security Fixture Matrix rows 1-2: an R3 rejection of each new
+// stoppedBecause writes nothing under records/ — checked here through the
+// real command, complementing Core's own message-level rejection tests.
+
+test("Security Fixture Matrix row 1: goal-preflight-failed with last step goal-preflight exit 1 is rejected and writes no records/forgepilot-*.json", async () => {
+  const batchId = "TST-9823-fixture";
+  const fixture = await buildBatchWithGoalPlan(batchId);
+  try {
+    const observation = baseObservation(fixture, {
+      steps: [{ command: "goal-preflight", exit: 1, stdout: "{}", stderr: "" }],
+      stoppedBecause: "goal-preflight-failed",
+    });
+    const name = await writeObservationFile(
+      fixture.root,
+      "bad.json",
+      observation,
+    );
+    const execution = await run(fixture.root, [
+      fixture.manifestPath,
+      name,
+      "--json",
+    ]);
+    assert.equal(execution.result.outcome, "failure");
+    assert.equal(execution.result.exit, 1);
+    assert.ok(codesOf(execution).includes("REVIEW_OBSERVATION_INVALID"));
+    await assertNoForgepilotRecords(fixture.root, batchId);
+  } finally {
+    await cleanupWorkspace(fixture.root);
+  }
+});
+
+test("Security Fixture Matrix row 2: execution-plan-failed with last step work-add is rejected and writes no records/forgepilot-*.json", async () => {
+  const batchId = "TST-9824-fixture";
+  const fixture = await buildBatchWithGoalPlan(batchId);
+  try {
+    const observation = baseObservation(fixture, {
+      steps: [
+        {
+          command: "work-add",
+          story: "RF-001",
+          workItemId: "WI-001",
+          created: true,
+          exit: 0,
+          stdout: "{}",
+          stderr: "",
+        },
+      ],
+      stoppedBecause: "execution-plan-failed",
+    });
+    const name = await writeObservationFile(
+      fixture.root,
+      "bad.json",
+      observation,
+    );
+    const execution = await run(fixture.root, [
+      fixture.manifestPath,
+      name,
+      "--json",
+    ]);
+    assert.equal(execution.result.outcome, "failure");
+    assert.equal(execution.result.exit, 1);
+    assert.ok(codesOf(execution).includes("REVIEW_OBSERVATION_INVALID"));
+    await assertNoForgepilotRecords(fixture.root, batchId);
+  } finally {
+    await cleanupWorkspace(fixture.root);
+  }
+});
+
 test("M4/fp12-derives-from-the-records-own-fingerprint: the written file name uses the observation's own fingerprint, not the batch's, and <n> increments past an existing name", async () => {
   const batchId = "TST-9810-fixture";
   const fixture = await buildBatchWithGoalPlan(batchId);
