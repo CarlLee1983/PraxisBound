@@ -84,10 +84,7 @@
         {
           "type": "object",
           "additionalProperties": false,
-          "required": [
-            "fingerprint",
-            "revision"
-          ],
+          "minProperties": 1,
           "properties": {
             "fingerprint": {
               "$ref": "urn:praxisbound:batch-review:defs:1#/$defs/sha256"
