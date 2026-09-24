@@ -130,6 +130,11 @@ const CLASS_BY_CODE: Readonly<Record<string, PreflightOutcomeClass>> = {
   REVIEW_READINESS_CRITERIA_MISMATCH: "blocked",
   REVIEW_READINESS_OPERATION_UNGRANTED: "blocked",
   REVIEW_READINESS_REFERENCE_UNKNOWN: "blocked",
+  // `review goal-plan`-only (Story TST-031, contract §10 step 1): a Story
+  // with no Readiness Sidecar at all. `review preflight` never supplies
+  // this code — no Sidecar is not itself a preflight blocker — so adding it
+  // here changes no existing command's outcome.
+  REVIEW_READINESS_MISSING: "blocked",
   // INCOMPLETE
   REVIEW_CONFIRMATION_MISSING: "incomplete",
   REVIEW_REVISION_UNADDRESSED: "incomplete",
