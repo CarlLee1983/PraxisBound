@@ -3,7 +3,7 @@
 * Status: accepted
 * Date: 2026-09-23
 * Accepted: 2026-09-23 (human review, merged #111)
-* Amended by: ADR-017 — ForgePilot `32b7a68` offers no machine-readable authorization query, so the Agent starts the second segment on the human's session statement and the real `run` is the authorization gate
+* Amended by: ADR-017 — ForgePilot `32b7a68` offers no machine-readable authorization query, so the Agent starts the second segment on the human's session statement and the real `run` is the authorization gate; contract §11 (TST-034) also restricts "built from a clean copy" to the first segment, since the second needs a Bootstrap-managed install
 
 ## Context
 
