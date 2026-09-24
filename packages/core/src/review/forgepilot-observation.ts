@@ -67,6 +67,7 @@ const STOPPED_BECAUSE_VALUES = [
   "goal-mismatch",
   "work-mismatch",
   "goal-preflight-failed",
+  "execution-plan-failed",
   "step-failed",
   "result-unknown",
 ] as const;
@@ -347,6 +348,18 @@ function stoppedBecauseProblem(
       return last !== undefined && last.exit !== 0
         ? undefined
         : "step-failed must end with a non-zero or null exit";
+    case "goal-preflight-failed":
+      return last !== undefined &&
+        last.command === "goal-preflight" &&
+        last.exit === 0
+        ? undefined
+        : "goal-preflight-failed must end with an exit-0 goal-preflight";
+    case "execution-plan-failed":
+      return last !== undefined &&
+        last.command === "execution-plan" &&
+        last.exit === 0
+        ? undefined
+        : "execution-plan-failed must end with an exit-0 execution-plan";
     default:
       // R3: values not listed above carry no last-step constraint beyond R2
       // (Story TST-032's Human Review decision).
