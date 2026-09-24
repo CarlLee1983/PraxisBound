@@ -43,7 +43,7 @@
           "type": "string",
           "minLength": 1,
           "maxLength": 256,
-          "pattern": "^(?!.*[\\u0000-\\u001f\\u007f-\\u009f\\u2028\\u2029\\u200b-\\u200f\\u202a-\\u202e\\u2066-\\u2069\\ufeff])\\S(?:[\\s\\S]*\\S)?$"
+          "pattern": "^(?!.*[\\p{Cc}\\p{Cf}\\p{Zl}\\p{Zp}])\\S(?:[\\s\\S]*\\S)?$"
         },
         "assurance": { "const": "self-asserted" }
       }

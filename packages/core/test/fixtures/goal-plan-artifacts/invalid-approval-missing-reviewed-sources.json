@@ -1,9 +1,0 @@
-{
-  "schemaVersion": 1,
-  "reviewId": "missing-reviewed-sources",
-  "manifestDigest": "a9c992ceb94003f2783ae044c187ff0e561ee04f15fcaca524046da250c319bf",
-  "coverageIndexIdentity": "sources/coverage-index.md",
-  "conclusion": "approved",
-  "approvedBy": "Fixture Reviewer",
-  "approvedAt": "2025-01-02T03:04:05Z"
-}

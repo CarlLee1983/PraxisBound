@@ -1,0 +1,16 @@
+{
+  "schemaVersion": "1",
+  "plan": { "id": "fixture-goal-plan", "revision": 1 },
+  "nodes": [
+    {
+      "nodeRef": "node-a",
+      "storyRef": "specs/stories/EX-001-first",
+      "dependsOn": []
+    },
+    {
+      "nodeRef": "node-b",
+      "storyRef": "specs/stories/EX-002-second",
+      "dependsOn": ["node-a"]
+    }
+  ]
+}

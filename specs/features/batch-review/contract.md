@@ -342,6 +342,15 @@ Schemas：[`schemas/goal-plan/`](schemas/goal-plan/)（declaration、manifest、
 逐位元組收錄，作為 PraxisBound 擁有的 Goal Plan 格式；它取代 `@praxisbound/core` 0.3.0 以 FP-51 發布的 Goal Plan 形狀。
 兩邊日後不一致時，以本目錄為 PraxisBound 的權威並回到修訂，不在實作中擇一沿用。
 
+（修訂性澄清，TST-029，人類審閱 2026-09-23）規格等於 ForgePilot `32b7a68` `internal/app/preflight.go` 實際接受的範圍，
+而非其 testdata schema 的字面：`repoPath` 與 `reviewer.name` 排除 Unicode Cc、Cf、Zl、Zp 類字元（schema 已改，因此不再與 ForgePilot testdata 逐位元組相同）。
+無法以 JSON Schema 表達的附加規則，由實作一併檢查，違反時為 `malformed-artifact`：
+
+- `repoPath` ≤ 1024 UTF-8 bytes；`reviewer.name` ≤ 256 UTF-8 bytes 且 ≤ 256 個 Unicode 碼位。
+- `reviewedAt` 必須是實際存在的 UTC 日期時間（例如 2 月 30 日、`24:00` 不合法）；毫秒為任意三位數。
+- Declaration 與 Manifest 各自的全部 `dependsOn` 邊合計 ≤ 10000。
+- Declaration ≤ 1 MiB、JSON 巢狀 ≤ 32 層；Manifest 與 Coverage Review ≤ 8 MiB、≤ 128 層。
+
 `praxisbound review goal-plan <manifest> --semantic-report <file> [--attempt <n>]`：
 
 1. 執行與 `preflight` 完全相同的判定（不帶 `--expect-revision`），並寫一份新的 Preflight Report。

@@ -1,11 +1,34 @@
 {
   "schemaVersion": "1.0.0",
-  "reviewId": "00000000-0000-4000-8000-000000000001",
-  "manifestSha256": "4f12f97b8757116267e36da0fe666b8aa76fd8d4332947418d4a1ae351738a08",
+  "plan": { "id": "fixture-goal-plan", "revision": 1 },
+  "declaration": {
+    "path": "specs/plans/fixture-goal-plan.json",
+    "sha256": "c5eb4091cc468eaa6ab39c2d52ffa8da9f13c1ab4375de4c2d1c05469c544f8d"
+  },
+  "nodes": [
+    {
+      "nodeRef": "node-a",
+      "storyRef": "specs/stories/EX-001-first",
+      "readinessContract": {
+        "path": "specs/stories/EX-001-first/readiness.json",
+        "sha256": "d6a81f64a2c54e4ff937ac28eeccbac4c68c78f6d288c022ffb9690308fafc40"
+      },
+      "dependsOn": []
+    },
+    {
+      "nodeRef": "node-b",
+      "storyRef": "specs/stories/EX-002-second",
+      "readinessContract": {
+        "path": "specs/stories/EX-002-second/readiness.json",
+        "sha256": "e9825600d17652b1a0d596a74a4626c87036df71bd25d47c4edbc4c5cf191495"
+      },
+      "dependsOn": ["node-a"]
+    }
+  ],
   "reviewedSources": [
     {
       "path": "specs/decisions/ADR-001-example.md",
-      "sha256": "8429f306dbe21c4979f4230bc4d9d169b8e22293632975d0cf186f7ac03b2208"
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
     },
     {
       "path": "specs/features/example/spec.md",
@@ -31,8 +54,5 @@
   "coverageIndex": {
     "batchId": "BR-001-goal-plan-fixture",
     "fingerprint": "7cc082593adf00fe141410aaeb24974dd4750db3b4e0f54be636f05651ec5019"
-  },
-  "conclusion": "approved",
-  "reviewer": { "name": "Fixture Reviewer", "assurance": "self-asserted" },
-  "reviewedAt": "2026-09-20T01:23:45.000Z"
+  }
 }
