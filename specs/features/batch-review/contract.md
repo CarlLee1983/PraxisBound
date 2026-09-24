@@ -288,11 +288,11 @@ Semantic Report 由 Agent 產生：綁定 `fingerprint`；批次內每張 Story 
 （`missing-split`、`contradiction`、`insufficient-acceptance`、`open-question`），結論為 `none` 或非空 issues；
 記錄 `agent`（自述、未驗證）與 `observedAt`。
 
-`praxisbound review preflight <manifest> [--semantic-report <file>] [--expect-fingerprint <sha256> --expect-revision <commit>]`：
+`praxisbound review preflight <manifest> [--semantic-report <file>] [--expect-fingerprint <sha256>] [--expect-revision <commit>]`：
 
 | 檢查 | issue code | 結果 |
 | --- | --- | --- |
-| argv 合法；`--expect-*` 同時提供或同時省略 | 既有 usage 規則 | `usage-error`，exit 2 |
+| argv 合法；`--expect-*` 各自至多一次（修訂，R-008：兩者互相獨立） | 既有 usage 規則 | `usage-error`，exit 2 |
 | manifest 可讀且合法、路徑安全、schemaVersion 支援 | `REVIEW_MANIFEST_INVALID`、`REVIEW_PATH_UNSAFE`、`REVIEW_SCHEMA_UNSUPPORTED` | `configuration-error`，exit 2 |
 | 內部失敗 | 既有 CLI 規則 | `ERROR`，exit 3 |
 | 來源存在 | `REVIEW_SOURCE_MISSING` | BLOCKED |
@@ -322,6 +322,9 @@ Semantic Report 由 Agent 產生：綁定 `fingerprint`；批次內每張 Story 
 - 優先序：`ERROR`／`*-error` > `REVIEW_STALE` > `REVIEW_BLOCKED` > `REVIEW_INCOMPLETE` > `REVIEW_READY`；全部 issues 仍列出。
 - （修訂，R-008）`--expect-fingerprint` 由 Agent 工作流程在每個 ForgePilot 寫入前使用（§11）；`--expect-revision` 是選用的 commit 檢查（ADR-015），交接路徑不再要求（§10）。
   issue code `REVIEW_PACKET_FINGERPRINT_MISMATCH`／`REVIEW_PACKET_REVISION_MISMATCH` 已實作並保留原名，名稱中的 packet 為歷史用詞。
+- （修訂，R-008）`--expect-fingerprint` 與 `--expect-revision` 互相獨立，可單獨提供：§11 步驟 2 只帶 `--expect-fingerprint`，原本「同時提供或同時省略」的規則會讓它成為 `usage-error`。
+  只帶 `--expect-fingerprint` 時不執行 git；只帶 `--expect-revision` 時照 ADR-015 檢查 HEAD 與未提交修改。Preflight Report 的 `expect` 記錄實際提供的項目（schema 改為兩欄各自選填、至少一欄）。
+  原本被拒絕的 argv 改為接受、既有紀錄仍然合法，分類 **Additive**。
 - 預檢不執行 `make verify`、不要求尚未實作的測試通過，也不寫來源。
 - （修訂性澄清，R-007）預檢不檢查 Execution Authorization：唯讀評估不產生需要授權的效果，授權由 §10 在每個效果發生當下解析。
   因此 R-007 AC-001 的「授權不足」不對應本表任何一列，而由 Agent 工作流程在每個效果前處理（§11）。
