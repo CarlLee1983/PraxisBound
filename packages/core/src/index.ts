@@ -390,3 +390,15 @@ export type {
   GoalPlanProjectionStory,
   GoalPlanProjectionSuccess,
 } from "./review/goal-plan.js";
+
+export {
+  validateForgepilotObservation,
+  validateForgepilotObservationConsistency,
+  validateForgepilotObservationShape,
+} from "./review/forgepilot-observation.js";
+export type {
+  ForgepilotObservationContext,
+  ForgepilotObservationData,
+  ForgepilotObservationStep,
+  ForgepilotObservationValidation,
+} from "./review/forgepilot-observation.js";
