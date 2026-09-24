@@ -913,18 +913,47 @@ unchanged sources yields identical bytes — on top of Story TST-029's
 exporters (`exportGoalPlanDeclaration`/`exportGoalPlanManifest`/
 `exportPlanCoverageReview`), each self-validating against its own TST-029
 validator before returning; a projection that fails its own validator is
-`ERROR`, exit 3, and writes nothing.
+`ERROR`, exit 3, and writes no Goal Plan file. `confirmedAt`'s separator
+accepts a lowercase `t` (matching what a real Definition Confirmation's own
+validation already accepts) and is always normalized to uppercase `T` in the
+exported `reviewedAt`; a `:60` leap-second `confirmedAt` (theoretically
+confirmable, though `review confirm` itself never writes one) has no
+corresponding `reviewedAt` the artifact schema accepts, so it is left
+unhandled and surfaces as the same self-validation `ERROR` rather than a
+silently wrong timestamp (code review M-3, a human decision).
+
+Immediately before projecting, `batch.json` and the applicable confirmation
+record are re-read and their sha256 re-checked against the digests the
+evaluation itself already computed; a mismatch (a concurrent edit between
+evaluation and projection) is `ERROR`, exit 3, never a Goal Plan silently
+different from the one just evaluated (code review M-6). A manifest
+declaring more than one dependency entry for the same Story (legal per
+manifest validation) has its `dependsOn` edges unioned and deduplicated
+across every entry for that Story, never limited to the last one seen (code
+review HIGH-1).
 
 The three artifacts are written under the fixed directory
-`specs/batches/<BATCH-ID>/goal-plan/<plan.id>/`, no output flag. Every file
-is created exclusively; an existing file with identical bytes counts as
-written and is left untouched; an existing file with different bytes rejects
-the whole run, `failure`, `REVIEW_GOAL_PLAN_CONFLICT`, exit 1, leaving every
-already-written file (this run's and any pre-existing one) untouched — never
-rewritten or deleted. A symlink at the output directory, at `goal-plan/`, at
-any parent up to the repository root, or at an artifact path is
-`REVIEW_PATH_UNSAFE`, `configuration-error`, exit 2, and nothing is written
-through it.
+`specs/batches/<BATCH-ID>/goal-plan/<plan.id>/`, no output flag. Each is
+written to a same-directory temporary file (`O_EXCL|O_NOFOLLOW`, `fsync`ed)
+and then linked to its final name — `link` never overwrites an existing
+destination — so a write failure partway through never leaves a truncated
+artifact at the final path (code review M-4). An existing file with
+identical bytes counts as written and is left untouched (verified by
+`lstat`-based inode/mtime as well as byte content); an existing file with
+different bytes rejects the whole run, `failure`, `REVIEW_GOAL_PLAN_CONFLICT`,
+exit 1, leaving every already-written file (this run's and any pre-existing
+one) untouched — never rewritten or deleted; that `failure` envelope's
+`issues[]`/`data.diagnostics[]` still correspond one to one (contract §12),
+with the conflict appended to both the preflight evaluation's own issues and
+diagnostics, and `data.files` still lists every artifact this run already
+created or found byte-identical before the conflict (code review M-5, LOW).
+A symlink at the output directory, at `goal-plan/`, at any parent up to the
+repository root, or at an artifact path is `REVIEW_PATH_UNSAFE`,
+`configuration-error`, exit 2 (still reporting `data.preflightRecord` and
+`data.files`, code review LOW), and nothing is written through it. A
+directory, FIFO, or other non-regular file already at an artifact's path is
+neither a match nor a conflict — reading it is never attempted as a byte
+comparison — and is `ERROR`, exit 3.
 
 | Outcome               | Status  | Exit | Meaning                                                                                    |
 | --------------------- | ------- | ---- | ------------------------------------------------------------------------------------------- |
