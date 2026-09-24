@@ -8,16 +8,26 @@
  * internally consistent per §11/§22 (Core's
  * `validateForgepilotObservationShape`/`validateForgepilotObservationConsistency`).
  *
- * File handling mirrors `--semantic-report`'s (`review-semantic-report.ts`,
- * R10a): the observation input and the Goal Plan Manifest it names are each
- * resolved to a repository-relative path, checked for a symlinked segment
- * before ever being opened, opened `O_NOFOLLOW`, and re-checked by
- * `dev`/`ino` against a fresh `lstat` after opening (TOCTOU). The Goal Plan
- * Manifest is only ever read once its path has already passed schema
- * validation (`REPO_PATH_PATTERN`, no `..`), so a syntactically invalid
- * `goalPlan.path` is always `REVIEW_OBSERVATION_INVALID`, never
- * `REVIEW_PATH_UNSAFE` — the two failures are checked in that order and
- * never confused (contract §22's path-traversal fixture).
+ * Two different file-reading strategies are used, deliberately:
+ *
+ * - The observation input itself (`<observation.json>`) is an arbitrary
+ *   caller-supplied path, exactly like `review import`/`review respond`'s
+ *   own input file (`review-input.ts`'s `readInputFile`): any path is
+ *   accepted, including one outside the repository, but the leaf itself
+ *   must not be a symlink (`lstat`, `O_NOFOLLOW` open, a post-open
+ *   `dev`/`ino` identity check against the initial `lstat` — code review
+ *   round 1 M3).
+ * - `goalPlan.path`, named *inside* the observation, is a repository
+ *   artifact (§22: it must lie under
+ *   `specs/batches/<BATCH-ID>/goal-plan/`), so it is resolved and checked
+ *   the stricter way `--semantic-report` is (`review-semantic-report.ts`,
+ *   R10a): repository-relative, every path segment symlink-checked. It is
+ *   read only after the observation has already passed schema validation
+ *   (so the path is known syntactically safe, no `..`) *and* the cheap,
+ *   filesystem-free `batchId`/prefix check has already passed (code review
+ *   round 1 LOW) — a `goalPlan.path` outside the batch's own `goal-plan/`
+ *   is always `REVIEW_OBSERVATION_INVALID`, and no file outside that
+ *   directory, nor belonging to a different batch, is ever opened.
  */
 
 import { constants } from "node:fs";
@@ -25,16 +35,19 @@ import { lstat, open } from "node:fs/promises";
 import { isAbsolute, relative, resolve } from "node:path";
 
 import {
+  goalPlanDirectoryPrefix,
   rawJsonMaxDepth,
   validateForgepilotObservationConsistency,
   validateForgepilotObservationShape,
   type ForgepilotObservationData,
+  type ReviewIndex,
 } from "@praxisbound/core";
 
 import { findUnsafeSourcePath } from "./review-paths.js";
 import {
   createNewRecord,
   readBounded,
+  recordsDirectory,
   RECORD_MAX_BYTES,
 } from "./review-records.js";
 import { parseManifestAndFileArguments } from "./review-input.js";
@@ -44,6 +57,7 @@ import {
   issue,
   runReviewIndexUnsafe,
   sanitizeInternalError,
+  toDataValue,
   type ReviewIndexExecution,
   type ReviewRenderedOutput,
 } from "./review.js";
@@ -62,11 +76,73 @@ ForgePilot and never judges its current state; the written record is
 historical Evidence, not current status.
 `;
 
-/** The Goal Plan Manifest bound (contract §10 R2: Manifest artifacts are bounded at 8 MiB), distinct from the 1 MiB bound on the observation input itself (§13). */
+/** The Goal Plan Manifest bound (contract §10: Manifest artifacts are bounded at 8 MiB), distinct from the 1 MiB bound on the observation input itself (§13). */
 const GOAL_PLAN_MANIFEST_MAX_BYTES = 8 * 1024 * 1024;
 const WRITE_MAX_ATTEMPTS = 100000;
 
-type SafeFileRead =
+type ObservationInputRead =
+  | {
+      readonly kind: "ok";
+      readonly absolute: string;
+      readonly bytes: Uint8Array;
+    }
+  | { readonly kind: "unsafe" }
+  | { readonly kind: "missing" }
+  | { readonly kind: "too-large" };
+
+/**
+ * Reads the observation input file itself: any path is accepted, the same
+ * way `review import`/`review respond`'s own input file is
+ * (`review-input.ts`'s `readInputFile`) — no repository-boundary
+ * requirement — but the leaf must not be a symlink (code review round 1
+ * M3: a path outside the repository is not itself unsafe, so it must never
+ * be rejected with a "symlinked segment" message). The initial `lstat`
+ * both rejects a symlinked leaf directly and supplies the identity a
+ * post-open `dev`/`ino` check closes the TOCTOU window against.
+ */
+async function readObservationInputFile(
+  root: string,
+  argument: string,
+  maxBytes: number,
+): Promise<ObservationInputRead> {
+  const absolute = isAbsolute(argument) ? argument : resolve(root, argument);
+  let initialStats;
+  try {
+    initialStats = await lstat(absolute);
+  } catch {
+    return { kind: "missing" };
+  }
+  if (initialStats.isSymbolicLink()) return { kind: "unsafe" };
+  if (!initialStats.isFile()) return { kind: "missing" };
+  if (initialStats.size > maxBytes) return { kind: "too-large" };
+
+  let handle;
+  try {
+    handle = await open(
+      absolute,
+      constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK,
+    );
+  } catch {
+    return { kind: "missing" };
+  }
+  try {
+    const openedStats = await handle.stat();
+    if (
+      openedStats.dev !== initialStats.dev ||
+      openedStats.ino !== initialStats.ino
+    )
+      return { kind: "unsafe" };
+    if (!openedStats.isFile()) return { kind: "missing" };
+    if (openedStats.size > maxBytes) return { kind: "too-large" };
+    const bytes = await readBounded(handle, maxBytes);
+    if (bytes === undefined) return { kind: "too-large" };
+    return { kind: "ok", absolute, bytes };
+  } finally {
+    await handle.close().catch(() => undefined);
+  }
+}
+
+type SafeRepoFileRead =
   | {
       readonly kind: "ok";
       readonly absolute: string;
@@ -78,17 +154,20 @@ type SafeFileRead =
   | { readonly kind: "too-large" };
 
 /**
- * Resolves `argument` to a repository-relative path, rejects any symlinked
- * segment or a path outside the repository, and reads at most `maxBytes`
- * with `O_NOFOLLOW`, closing the check-then-open TOCTOU window with a
- * post-open `lstat` identity check (mirrors `loadSemanticReport`'s
- * `resolveRepoRelativePath`, Story TST-028 security C1/M1).
+ * Resolves `argument` (already known to be a repository-relative path, no
+ * `..`) inside `root`, rejects any symlinked segment, and reads at most
+ * `maxBytes` with `O_NOFOLLOW`, closing the check-then-open TOCTOU window
+ * with a post-open `lstat` identity check (mirrors `loadSemanticReport`'s
+ * `resolveRepoRelativePath`, Story TST-028 security C1/M1). Used only for
+ * `goalPlan.path`, a repository artifact §22 requires to live under
+ * `goal-plan/` — never for the observation input itself (see
+ * `readObservationInputFile`, code review round 1 M3).
  */
-async function readSafeBoundedFile(
+async function readSafeRepoFile(
   root: string,
   argument: string,
   maxBytes: number,
-): Promise<SafeFileRead> {
+): Promise<SafeRepoFileRead> {
   const absolute = resolve(root, argument);
   const relativePath = relative(root, absolute).split("\\").join("/");
   if (
@@ -159,22 +238,104 @@ function readObservationJson(bytes: Uint8Array): ObservationJsonRead {
   }
 }
 
-function invalidResult(message: string): ReviewIndexExecution["result"] {
-  return envelope("fail", "failure", 1, [
-    issue("REVIEW_OBSERVATION_INVALID", message),
-  ]);
+/**
+ * Story Error Projection ("a JSON-pointer or repository-relative locator in
+ * the existing envelope", code review round 1 LOW): every rejection carries
+ * its own `path` on the `issue()` and a matching `{code, severity, path?}`
+ * diagnostic in `data.diagnostics`, one-to-one with `issues[]` (contract
+ * §12), the same pairing `review respond`/`review goal-plan` use.
+ */
+function locatorDiagnostic(
+  code: string,
+  path?: string,
+): {
+  readonly code: string;
+  readonly severity: "blocking";
+  readonly path?: string;
+} {
+  return path === undefined
+    ? { code, severity: "blocking" }
+    : { code, severity: "blocking", path };
 }
 
-function tooLargeResult(message: string): ReviewIndexExecution["result"] {
-  return envelope("fail", "failure", 1, [
-    issue("REVIEW_INPUT_TOO_LARGE", message),
-  ]);
+function invalidResult(
+  message: string,
+  path?: string,
+): ReviewIndexExecution["result"] {
+  return envelope(
+    "fail",
+    "failure",
+    1,
+    [issue("REVIEW_OBSERVATION_INVALID", message, path)],
+    {
+      diagnostics: toDataValue([
+        locatorDiagnostic("REVIEW_OBSERVATION_INVALID", path),
+      ]),
+    },
+  );
 }
 
-function unsafeResult(message: string): ReviewIndexExecution["result"] {
-  return envelope("error", "configuration-error", 2, [
-    issue("REVIEW_PATH_UNSAFE", message),
-  ]);
+function tooLargeResult(
+  message: string,
+  path?: string,
+): ReviewIndexExecution["result"] {
+  return envelope(
+    "fail",
+    "failure",
+    1,
+    [issue("REVIEW_INPUT_TOO_LARGE", message, path)],
+    {
+      diagnostics: toDataValue([
+        locatorDiagnostic("REVIEW_INPUT_TOO_LARGE", path),
+      ]),
+    },
+  );
+}
+
+function unsafeResult(
+  message: string,
+  path?: string,
+): ReviewIndexExecution["result"] {
+  return envelope(
+    "error",
+    "configuration-error",
+    2,
+    [issue("REVIEW_PATH_UNSAFE", message, path)],
+    {
+      diagnostics: toDataValue([locatorDiagnostic("REVIEW_PATH_UNSAFE", path)]),
+    },
+  );
+}
+
+/**
+ * The success envelope (code review round 1 M2): mirrors `review
+ * respond`'s `buildRespondSuccessEnvelope` — `review index`'s own
+ * diagnostics (e.g. `REVIEW_SOURCE_MISSING`) are surfaced in `issues[]`,
+ * one-to-one with `data.diagnostics[]`, and `data` carries the same
+ * `{batchId, fingerprint, sources, diagnostics}` minimal shape every other
+ * review command does, plus `record`.
+ */
+function buildObserveSuccessEnvelope(
+  index: ReviewIndex,
+  record: string,
+): ReviewIndexExecution["result"] {
+  const issues = index.diagnostics.map((entry) =>
+    issue(entry.code, entry.message, entry.path),
+  );
+  const diagnostics = index.diagnostics.map((entry) => ({
+    code: entry.code,
+    severity: entry.severity,
+    ...(entry.locator === undefined
+      ? {}
+      : { locator: toDataValue(entry.locator) }),
+  }));
+  return envelope("pass", "success", 0, issues, {
+    batchId: index.batchId,
+    fingerprint: index.fingerprint,
+    sources: toDataValue(index.sources),
+    diagnostics: toDataValue(diagnostics),
+    record,
+  });
 }
 
 /** Runs `praxisbound review observe <manifest> <observation.json>`. */
@@ -205,9 +366,10 @@ export async function runReviewObserve(
       return { mode: parsed.mode, result: loaded.result };
     const { manifestPath, index } = loaded.loaded;
 
-    // R5: the observation input file itself must not resolve through a
-    // symlink, checked before anything else about it is read.
-    const observationRead = await readSafeBoundedFile(
+    // M3: the observation input is an arbitrary caller-supplied path (like
+    // review import/respond's own input file) — no repository-boundary
+    // requirement, only a leaf-symlink/TOCTOU check.
+    const observationRead = await readObservationInputFile(
       root,
       parsed.file,
       RECORD_MAX_BYTES,
@@ -215,19 +377,26 @@ export async function runReviewObserve(
     if (observationRead.kind === "unsafe")
       return {
         mode: parsed.mode,
-        result: unsafeResult("observation input path has a symlinked segment"),
+        result: unsafeResult(
+          "the observation input file is a symlink",
+          parsed.file,
+        ),
       };
     if (observationRead.kind === "too-large")
       return {
         mode: parsed.mode,
         result: tooLargeResult(
           "the observation file exceeds the size limit (1 MiB)",
+          parsed.file,
         ),
       };
     if (observationRead.kind === "missing")
       return {
         mode: parsed.mode,
-        result: invalidResult("the observation file could not be read"),
+        result: invalidResult(
+          "the observation file could not be read",
+          parsed.file,
+        ),
       };
 
     const parsedJson = readObservationJson(observationRead.bytes);
@@ -236,12 +405,16 @@ export async function runReviewObserve(
         mode: parsed.mode,
         result: tooLargeResult(
           "the observation JSON nesting exceeds the supported depth",
+          parsed.file,
         ),
       };
     if (parsedJson.kind === "malformed")
       return {
         mode: parsed.mode,
-        result: invalidResult("the observation file is not valid JSON"),
+        result: invalidResult(
+          "the observation file is not valid JSON",
+          parsed.file,
+        ),
       };
 
     // Schema only, no filesystem access yet: goalPlan.path is not resolved
@@ -253,27 +426,39 @@ export async function runReviewObserve(
       return {
         mode: parsed.mode,
         result: shape.tooLarge
-          ? tooLargeResult(shape.message)
-          : invalidResult(shape.message),
+          ? tooLargeResult(shape.message, parsed.file)
+          : invalidResult(shape.message, parsed.file),
       };
     const record: ForgepilotObservationData = shape.record;
 
-    // R5: the Goal Plan Manifest path and every directory segment above it
-    // must not resolve through a symlink either. The path is already known
-    // to be a well-formed repository-relative path (schema-checked above),
-    // so this is the first point it is ever touched on disk.
-    const goalPlanRead = await readSafeBoundedFile(
-      root,
-      record.goalPlan.path,
-      GOAL_PLAN_MANIFEST_MAX_BYTES,
-    );
-    if (goalPlanRead.kind === "unsafe")
-      return {
-        mode: parsed.mode,
-        result: unsafeResult("goalPlan.path has a symlinked segment"),
-      };
-    const goalPlanManifestBytes =
-      goalPlanRead.kind === "ok" ? goalPlanRead.bytes : undefined;
+    // LOW (code review round 1): the cheap, filesystem-free batchId/prefix
+    // check runs before any attempt to read the file goalPlan.path names —
+    // a mismatched batchId or a path outside this batch's own goal-plan/
+    // never causes any file to be opened at all.
+    const withinBatchGoalPlanDirectory =
+      record.batchId === index.batchId &&
+      record.goalPlan.path.startsWith(goalPlanDirectoryPrefix(index.batchId));
+
+    let goalPlanManifestBytes: Uint8Array | undefined;
+    if (withinBatchGoalPlanDirectory) {
+      // R5: the Goal Plan Manifest path and every directory segment above
+      // it must not resolve through a symlink either.
+      const goalPlanRead = await readSafeRepoFile(
+        root,
+        record.goalPlan.path,
+        GOAL_PLAN_MANIFEST_MAX_BYTES,
+      );
+      if (goalPlanRead.kind === "unsafe")
+        return {
+          mode: parsed.mode,
+          result: unsafeResult(
+            "goalPlan.path has a symlinked segment",
+            record.goalPlan.path,
+          ),
+        };
+      goalPlanManifestBytes =
+        goalPlanRead.kind === "ok" ? goalPlanRead.bytes : undefined;
+    }
 
     const consistency = validateForgepilotObservationConsistency(record, {
       batchId: index.batchId,
@@ -283,8 +468,8 @@ export async function runReviewObserve(
       return {
         mode: parsed.mode,
         result: consistency.tooLarge
-          ? tooLargeResult(consistency.message)
-          : invalidResult(consistency.message),
+          ? tooLargeResult(consistency.message, parsed.file)
+          : invalidResult(consistency.message, parsed.file),
       };
 
     // R4: the accepted record is written verbatim (the exact input bytes),
@@ -302,26 +487,39 @@ export async function runReviewObserve(
       if (written.reason === "unsafe")
         return {
           mode: parsed.mode,
-          result: unsafeResult("records path has a symlinked segment"),
+          result: unsafeResult(
+            "records path has a symlinked segment",
+            recordsDirectory(manifestPath),
+          ),
         };
       return {
         mode: parsed.mode,
-        result: envelope("error", "ERROR", 3, [
-          issue(
-            "REVIEW_RECORD_WRITE_FAILED",
-            "unable to write the observation record",
-          ),
-        ]),
+        result: envelope(
+          "error",
+          "ERROR",
+          3,
+          [
+            issue(
+              "REVIEW_RECORD_WRITE_FAILED",
+              "unable to write the observation record",
+              recordsDirectory(manifestPath),
+            ),
+          ],
+          {
+            diagnostics: toDataValue([
+              locatorDiagnostic(
+                "REVIEW_RECORD_WRITE_FAILED",
+                recordsDirectory(manifestPath),
+              ),
+            ]),
+          },
+        ),
       };
     }
 
     return {
       mode: parsed.mode,
-      result: envelope("pass", "success", 0, [], {
-        batchId: index.batchId,
-        fingerprint: index.fingerprint,
-        record: written.relativePath,
-      }),
+      result: buildObserveSuccessEnvelope(index, written.relativePath),
     };
   } catch (error) {
     process.stderr.write(

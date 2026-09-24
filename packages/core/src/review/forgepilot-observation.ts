@@ -38,7 +38,10 @@ const WORK_ITEM_ID_PATTERN = /^WI-[0-9]+$/;
 const MAX_STEPS = 2000;
 /** The schema's `steps[].stdout`/`stderr` `maxLength` — a deliberate exemption from the ordinary 64 KiB text limit (contract §13). */
 const MAX_STEP_OUTPUT_LENGTH = 1048576;
-const MAX_NESTING_DEPTH = 32;
+/** The Goal Plan Manifest's own depth bound (contract §10: Manifest/Coverage Review ≤ 128 layers) — distinct from the observation's own 32-layer bound (§13) checked above. */
+const MAX_GOAL_PLAN_MANIFEST_NESTING_DEPTH = 128;
+/** `defs.schema.json`'s `storyId` bound. */
+const MAX_STORY_ID_LENGTH = 64;
 
 const STEP_COMMANDS = [
   "preflight",
@@ -152,7 +155,11 @@ function stepProblem(value: unknown): FieldProblem | undefined {
   )
     return problem("step command has an invalid value");
   if (value.story !== undefined) {
-    if (typeof value.story !== "string" || !STORY_ID_PATTERN.test(value.story))
+    if (
+      typeof value.story !== "string" ||
+      value.story.length > MAX_STORY_ID_LENGTH ||
+      !STORY_ID_PATTERN.test(value.story)
+    )
       return problem("step story has an invalid form");
   }
   if (value.workItemId !== undefined) {
@@ -240,7 +247,17 @@ function validateObservationShape(data: unknown): FieldProblem | undefined {
 }
 
 /**
- * R2: step order rules, independent of `stoppedBecause`.
+ * R2: step order rules, independent of `stoppedBecause`. Contract §11 step
+ * 3/§22 (Human Review 2026-09-24, H2): ForgePilot `32b7a68` has no
+ * machine-readable Goal existence query — an unknown Goal only makes `work
+ * list` exit non-zero and report `unknown goal` on stderr, which §11
+ * forbids the Agent from parsing — and `goal create` itself rejects a
+ * duplicate Goal ID, so the Agent tries `goal create` unconditionally after
+ * a non-zero `work list` and lets ForgePilot's own exit decide. This is the
+ * one exception to "every step but the last exits 0": a non-zero, *non-null*
+ * `work-list` exit is allowed as a non-last step only when the very next
+ * step is `goal-create`; every other non-last non-zero (or `null`) step is
+ * still rejected, and `goal-create` itself gets no such exception.
  */
 function stepOrderProblem(
   steps: readonly ForgepilotObservationStep[],
@@ -262,7 +279,15 @@ function stepOrderProblem(
     if (step.command === "run-dry-run" && step.exit === 0)
       sawDryRunExitZero = true;
     const isLast = index === steps.length - 1;
-    if (!isLast && step.exit !== 0) return "a non-last step did not exit 0";
+    if (!isLast && step.exit !== 0) {
+      const next = steps[index + 1];
+      const isWorkListBeforeGoalCreate =
+        step.command === "work-list" &&
+        step.exit !== null &&
+        next !== undefined &&
+        next.command === "goal-create";
+      if (!isWorkListBeforeGoalCreate) return "a non-last step did not exit 0";
+    }
     if (
       step.command === "work-add" &&
       step.exit === 0 &&
@@ -373,6 +398,17 @@ export function validateForgepilotObservationShape(
   return { ok: true, record: data as ForgepilotObservationData };
 }
 
+/**
+ * The manifest's own `specs/batches/<BATCH-ID>/goal-plan/` prefix (contract
+ * §22): exported so the CLI can gate an actual file read on this cheap,
+ * filesystem-free check — a `goalPlan.path` outside this prefix (or a
+ * `batchId` mismatch, checked by the caller alongside it) never causes any
+ * file outside `goal-plan/` to be opened at all.
+ */
+export function goalPlanDirectoryPrefix(batchId: string): string {
+  return `specs/batches/${batchId}/goal-plan/`;
+}
+
 /** Parses the Goal Plan Manifest's own `plan.id`, without otherwise validating it (§22 only needs this one field; Core's `validateGoalPlanManifest` is the authority for the artifact's own shape). */
 function readGoalPlanManifestId(bytes: Uint8Array): string | undefined {
   let text: string;
@@ -381,7 +417,8 @@ function readGoalPlanManifestId(bytes: Uint8Array): string | undefined {
   } catch {
     return undefined;
   }
-  if (rawJsonMaxDepth(text) > MAX_NESTING_DEPTH) return undefined;
+  if (rawJsonMaxDepth(text) > MAX_GOAL_PLAN_MANIFEST_NESTING_DEPTH)
+    return undefined;
   let parsed: unknown;
   try {
     parsed = JSON.parse(text);
@@ -406,9 +443,7 @@ export function validateForgepilotObservationConsistency(
     return { ok: false, message: "batchId does not match the manifest" };
 
   if (
-    !record.goalPlan.path.startsWith(
-      `specs/batches/${context.batchId}/goal-plan/`,
-    )
+    !record.goalPlan.path.startsWith(goalPlanDirectoryPrefix(context.batchId))
   )
     return {
       ok: false,

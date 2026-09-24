@@ -392,6 +392,7 @@ export type {
 } from "./review/goal-plan.js";
 
 export {
+  goalPlanDirectoryPrefix,
   validateForgepilotObservation,
   validateForgepilotObservationConsistency,
   validateForgepilotObservationShape,

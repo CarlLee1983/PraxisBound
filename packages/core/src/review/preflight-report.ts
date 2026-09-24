@@ -139,7 +139,19 @@ function expectEqual(
   return a.fingerprint === b.fingerprint && a.revision === b.revision;
 }
 
-/** `PreflightReportExpect` given `finalizeDiagnostic`-free frozen output; used both by `buildPreflightReportRecord` and by the shape validator below to avoid literal `undefined`-vs-absent-key drift. */
+/**
+ * Normalizes `expect` before `buildPreflightReportRecord` freezes it into a
+ * record: drops a literal `undefined` key so the built record never
+ * disagrees with a round-trip through `JSON.stringify`/`JSON.parse`, and —
+ * consistent with `validatePreflightReportShape` below, which rejects a
+ * non-null `expect` with zero keys — collapses `{}` (both fields omitted,
+ * an object given rather than `null`) to `null` rather than building a
+ * record `validateStoredPreflightReportRecord` would then reject (code
+ * review round 1 LOW: this function is used only here, by
+ * `buildPreflightReportRecord`, not by the shape validator, which has no
+ * need to normalize anything it is about to reject or accept as already
+ * given).
+ */
 function normalizeExpect(
   expect: PreflightReportExpect | null,
 ): PreflightReportExpect | null {
@@ -148,6 +160,7 @@ function normalizeExpect(
   if (expect.fingerprint !== undefined)
     normalized.fingerprint = expect.fingerprint;
   if (expect.revision !== undefined) normalized.revision = expect.revision;
+  if (Object.keys(normalized).length === 0) return null;
   return Object.freeze(normalized);
 }
 
