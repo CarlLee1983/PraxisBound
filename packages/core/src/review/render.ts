@@ -43,6 +43,8 @@ import {
   partitionAcceptanceDocument,
   partitionStoryDocument,
   renderAdrAppendix,
+  renderReadinessSidecarHtml,
+  renderReadinessSidecarOversizedNoticeHtml,
   requirementLabelHtml,
   storyTitleWithoutId,
   type AcceptanceContent,
@@ -65,6 +67,14 @@ import type {
 export interface ReviewProjectionDocument {
   readonly path: string;
   readonly bytes: Uint8Array | undefined;
+  /**
+   * `true` when the source exists and its digest is already known (the
+   * fingerprint covers it) but its content was never read into memory
+   * because it exceeds contract §13/§21's Readiness Sidecar bound (Story
+   * TST-030 HIGH-1, code review round 2): `bytes` is always `undefined` in
+   * this case, and the projection shows only a size notice, never content.
+   */
+  readonly oversized?: boolean;
 }
 
 const MISSING_SOURCE_TEXT = "產生本次離線快照時，此來源無法讀取。";
@@ -79,6 +89,8 @@ interface StoryDocuments {
   readonly title: string | undefined;
   readonly story: StoryContent | undefined;
   readonly acceptance: AcceptanceContent | undefined;
+  /** A present Readiness Sidecar's rendered block (Story TST-030), or `undefined` when absent. */
+  readonly readinessHtml: string | undefined;
 }
 
 interface MatrixEntry {
@@ -273,9 +285,13 @@ function renderRequirementCard(
             const home = homeOf.get(storyId);
             if (home !== targetId)
               return `<p><a href="#${home}">${escapeHtml(storyId)} 已在其他卡片顯示</a></p>`;
-            const focus = storyDocuments.get(story.path)?.story;
+            const documents = storyDocuments.get(story.path);
+            const focus = documents?.story;
             const storyPath = `${story.path}/story.md`;
-            return `<section><h4>${escapeHtml(storyId)}${docPathLabel(storyPath, needsReviewPaths)}</h4>${focus?.focusHtml ?? missing}</section>`;
+            return (
+              `<section><h4>${escapeHtml(storyId)}${docPathLabel(storyPath, needsReviewPaths)}</h4>${focus?.focusHtml ?? missing}</section>` +
+              (documents?.readinessHtml ?? "")
+            );
           })
           .join("");
 
@@ -312,6 +328,7 @@ function renderOrphanStories(
         `<section class="orphan-story"><h3>${heading}${displayTitle === undefined ? "" : ` ${escapeHtml(displayTitle)}`}</h3>` +
         `<section><h4>執行驗收${docPathLabel(acceptancePath, needsReviewPaths)}</h4>${documents?.acceptance?.acceptanceGroupsHtml ?? `<p class="muted">${MISSING_SECTION_TEXT}</p>`}</section>` +
         `<section><h4>Story 重點${docPathLabel(storyPath, needsReviewPaths)}</h4>${documents?.story?.focusHtml ?? `<p class="muted">${MISSING_SECTION_TEXT}</p>`}</section>` +
+        (documents?.readinessHtml ?? "") +
         `</section>`
       );
     })
@@ -451,8 +468,20 @@ function renderAppendix(
     )
     .join("");
 
+  // A present Readiness Sidecar (Story TST-030) is already shown verbatim,
+  // safely escaped, with its own Story card (`renderReadinessSidecarHtml`);
+  // excluding it here avoids printing its content a second time (code
+  // review round 2 HIGH-1) and, since that is the only place it is ever
+  // shown, means this loop's plain `escapeHtml` never needs to also guard
+  // against a hidden/bidi code point in Sidecar bytes (MEDIUM-1).
+  const readinessSourcePaths = new Set(
+    index.stories
+      .map((story) => story.readinessPath)
+      .filter((path): path is string => path !== undefined),
+  );
   const rawMarkdown = index.sources
     .map((source) => {
+      if (readinessSourcePaths.has(source.path)) return "";
       const document = documents.get(source.path);
       if (document?.bytes === undefined) return "";
       const text = new TextDecoder("utf-8").decode(document.bytes);
@@ -536,10 +565,36 @@ export function renderReviewProjection(
     if (acceptanceContent !== undefined)
       for (const section of acceptanceContent.appendixSections)
         storyAppendix.push(section);
+    // A present Readiness Sidecar (Story TST-030, contract §21) is shown
+    // verbatim with its Story, escaped as text (Story R6: its content is
+    // data, never markup or an outcome); `#document` targets it (contract
+    // §5 rule 3) via the whole-file digest `review index` already put in
+    // `index.sources`, so no extra Locator plumbing is needed here.
+    const readinessPath = story.readinessPresent
+      ? story.readinessPath
+      : undefined;
+    const readinessDocument =
+      readinessPath === undefined
+        ? undefined
+        : documentsByPath.get(readinessPath);
     storyDocuments.set(story.path, {
       title: storyBytes === undefined ? undefined : firstH1Text(storyBytes),
       story: storyContent,
       acceptance: acceptanceContent,
+      // HIGH-1 (code review round 2): an over-limit Sidecar was never read
+      // into memory at all (`oversized`, streamed-digest only) — its
+      // content is never shown, only a size notice naming its path.
+      readinessHtml:
+        readinessPath === undefined
+          ? undefined
+          : readinessDocument?.oversized === true
+            ? renderReadinessSidecarOversizedNoticeHtml(readinessPath)
+            : readinessDocument?.bytes === undefined
+              ? undefined
+              : renderReadinessSidecarHtml(
+                  readinessPath,
+                  readinessDocument.bytes,
+                ),
     });
   }
 

@@ -715,11 +715,12 @@ Story 的 `inputs`、`outputs`、`future_identities` 與 `decision_follow_ups`�
   為 `sha256:` 加當前原始位元組的小寫 hex，再以 2 空白縮排、結尾一個換行、保留各物件原有鍵順序的格式寫回；撰寫者原本的排版可能因此改變，內容不變。
   不建立 Sidecar、不碰其他欄位。它修改定義來源，所以與任何來源修改一樣需要 Execution Authorization，並應在 `confirm` 前執行；
   執行後指紋改變，既有確認依 §8 不再適用。outcome：`success`，或 `failure`（Sidecar 不合 schema，`REVIEW_READINESS_INVALID`，不寫任何檔案）。
-- 預檢（§9）對存在的 Sidecar 檢查，全部為 BLOCKED：
+- （修訂性澄清，TST-030）Sidecar 超過 §13 上限時為 `REVIEW_INPUT_TOO_LARGE`，沿用該 code 既有的 INCOMPLETE 分類（「無法完成檢查」，同 Semantic Report 超限）；每個 issue code 只對應一種結果類別（§9）。
+- 預檢（§9）對存在且未超限的 Sidecar 檢查，下列全部為 BLOCKED：
 
 | 檢查 | issue code |
 | --- | --- |
-| 大小與 schema 合法；`story_ref` 等於該 Story 目錄路徑 | `REVIEW_READINESS_INVALID`（超限為 `REVIEW_INPUT_TOO_LARGE`） |
+| 大小與 schema 合法；`story_ref` 等於該 Story 目錄路徑 | `REVIEW_READINESS_INVALID` |
 | 兩個 digest 等於當前 `story.md`、`acceptance.md` 原始位元組 | `REVIEW_READINESS_STALE` |
 | `criteria[].id` 與 acceptance.md 的 AC ID 集合完全相同 | `REVIEW_READINESS_CRITERIA_MISMATCH` |
 | `owner` 為 `runner_worker`、`canonical_verification` 或 `integration_final` 的 AC，`operations` 都在 Story `## Authority` 標為 `yes` 的項目內；`runner_worker` 只可有 `plan`、`modify` | `REVIEW_READINESS_OPERATION_UNGRANTED` |

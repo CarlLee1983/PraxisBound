@@ -11,7 +11,10 @@
  * Pure: no I/O, only the bytes and index facts the caller already holds.
  */
 
+import { sha256Hex } from "./fingerprint.js";
 import { escapeHtml } from "./html.js";
+import { escapeEvidenceField, escapeEvidenceProse } from "./render-evidence.js";
+import { elementId } from "./render-locators.js";
 import { adrExplicitId, STORY_FIXED_FIELDS } from "./vocabulary.js";
 import {
   renderMarkdownHtml,
@@ -399,6 +402,53 @@ export function partitionAcceptanceDocument(
   }
 
   return { acceptanceGroupsHtml, appendixSections };
+}
+
+/**
+ * A present Readiness Sidecar's block (Story TST-030, contract §21): its raw
+ * bytes decoded and HTML-escaped as plain text, never parsed as Markdown or
+ * re-serialized — the projection shows exactly the bytes the fingerprint
+ * covers. `id`/`data-*` use the same `#document` anchor and whole-file
+ * digest contract §5 rule 3 and `matchRevisionTarget` already recognize for
+ * any batch source, so a Revision Request can target this block without any
+ * extra Locator bookkeeping.
+ */
+export function renderReadinessSidecarHtml(
+  path: string,
+  bytes: Uint8Array,
+): string {
+  const text = new TextDecoder("utf-8").decode(bytes);
+  const blockSha256 = sha256Hex(bytes);
+  const id = elementId(path, `#document ${blockSha256}`);
+  // HIGH-2: HTML-escaping alone leaves a raw bidi/hidden code point in the
+  // text node; `escapeEvidenceProse` (shared with the evidence area,
+  // `render-evidence.ts`) also visibly escapes every code point
+  // `isHiddenOrReorderingCodePoint` names, while keeping literal newlines so
+  // the pretty-printed JSON still reads as JSON. `escapeEvidenceField` gives
+  // the same protection for the one-line path label.
+  return (
+    `<section class="readiness-sidecar" id="${id}" data-path="${escapeEvidenceField(path)}" data-anchor="#document" data-block-sha256="${blockSha256}">` +
+    `<h4>Readiness Sidecar <span class="doc-path">${escapeEvidenceField(path)}</span></h4>` +
+    `<pre class="raw-source"><code>${escapeEvidenceProse(text)}</code></pre>` +
+    `</section>`
+  );
+}
+
+/**
+ * The notice shown in place of an over-limit Readiness Sidecar's content
+ * (Story TST-030 HIGH-1, code review round 2): its bytes were never read
+ * into memory (only streamed for a digest, in `review.ts`), so there is no
+ * content this function could show even by mistake.
+ */
+export function renderReadinessSidecarOversizedNoticeHtml(
+  path: string,
+): string {
+  return (
+    `<section class="readiness-sidecar readiness-sidecar-oversized">` +
+    `<h4>Readiness Sidecar <span class="doc-path">${escapeEvidenceField(path)}</span></h4>` +
+    `<p class="muted">此檔案超過上限，內容不予顯示。</p>` +
+    `</section>`
+  );
 }
 
 /**

@@ -19,6 +19,7 @@ function baseInput(overrides = {}) {
     gitFindings: [],
     semanticGateFindings: [],
     semanticFindings: [],
+    readinessFindings: [],
     ...overrides,
   };
 }

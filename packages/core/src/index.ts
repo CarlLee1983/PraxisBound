@@ -180,6 +180,26 @@ export type {
   PreflightOutcome,
   PreflightUnresolvedRequests,
 } from "./review/preflight.js";
+export { readAuthority, readTaskMode } from "./story-governance.js";
+export {
+  buildReadinessOutputOwners,
+  checkReadinessSidecarConsistency,
+  checkReadinessSidecarReferences,
+  parseReadinessSidecar,
+  transitiveDependencyClosureDirectories,
+} from "./review/readiness-sidecar.js";
+export type {
+  ReadinessCriterion,
+  ReadinessDecisionFollowUp,
+  ReadinessFutureIdentity,
+  ReadinessInput,
+  ReadinessOutput,
+  ReadinessSidecarBatchContext,
+  ReadinessSidecarData,
+  ReadinessSidecarFinding,
+  ReadinessSidecarParseResult,
+  ReadinessSidecarStoryContext,
+} from "./review/readiness-sidecar.js";
 export {
   buildPreflightReportRecord,
   MAX_DIAGNOSTICS,

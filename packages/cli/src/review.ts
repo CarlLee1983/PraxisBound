@@ -6,8 +6,9 @@ import {
   realpath,
   rename,
   unlink,
+  type FileHandle,
 } from "node:fs/promises";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import {
   basename,
   dirname,
@@ -279,10 +280,25 @@ async function findOversizedSourcePath(
   return undefined;
 }
 
+/** `true` only for "the path does not exist" (ENOENT); every other failure (EACCES and similar) is a distinct, present-but-unreadable condition. */
+function isNotFoundError(error: unknown): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    (error as NodeJS.ErrnoException).code === "ENOENT"
+  );
+}
+
 /**
  * Reads one source without ever following a symlink swapped in after the
  * safety pre-check: the handle is opened with `O_NOFOLLOW` and revalidated
- * before the read, exactly like Story's `readSafeSource`.
+ * before the read, exactly like Story's `readSafeSource`. MEDIUM (Story
+ * TST-030): a path that exists but cannot be read (permission denied, a
+ * directory in a file's place, or a lost race) is `unreadable`, distinct
+ * from a genuinely absent (`missing`, ENOENT) one — every declared source
+ * already treats the two identically (`REVIEW_SOURCE_MISSING`), but a
+ * Readiness Sidecar must not count an `unreadable` one as absent (contract
+ * §21 R1).
  */
 async function readSourceObservation(
   root: string,
@@ -292,11 +308,13 @@ async function readSourceObservation(
   let pathStats;
   try {
     pathStats = await lstat(absolute);
-  } catch {
-    return { kind: "missing" };
+  } catch (error) {
+    return isNotFoundError(error)
+      ? { kind: "missing" }
+      : { kind: "unreadable" };
   }
   if (pathStats.isSymbolicLink()) return { kind: "unsafe" };
-  if (!pathStats.isFile()) return { kind: "missing" };
+  if (!pathStats.isFile()) return { kind: "unreadable" };
 
   let handle;
   try {
@@ -304,17 +322,139 @@ async function readSourceObservation(
       absolute,
       constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK,
     );
-  } catch {
-    return { kind: "missing" };
+  } catch (error) {
+    return isNotFoundError(error)
+      ? { kind: "missing" }
+      : { kind: "unreadable" };
   }
 
   try {
     const openedStats = await handle.stat();
-    if (!openedStats.isFile()) return { kind: "missing" };
+    if (!openedStats.isFile()) return { kind: "unreadable" };
     const bytes = await handle.readFile();
     return { kind: "file", bytes };
   } catch {
-    return { kind: "missing" };
+    return { kind: "unreadable" };
+  } finally {
+    await handle.close().catch(() => undefined);
+  }
+}
+
+/** Contract §13/§21's Readiness Sidecar bound: the only size limit ever applied to `readiness.json` (index/render apply none at all — see `readReadinessSidecarObservation`). */
+const READINESS_SIDECAR_MAX_BYTES = 1024 * 1024;
+
+/**
+ * One low-level positioned read against an open handle, the shape of
+ * `FileHandle.prototype.read`. Kept injectable (code review round 3
+ * MEDIUM) so a test can simulate a file that grows after `fstat` without
+ * needing a real, timing-dependent race: `fstat`'s reported size is never
+ * trusted as the bound on its own, only the number of bytes an actual read
+ * returns.
+ */
+export type BoundedRead = (
+  handle: FileHandle,
+  buffer: Buffer,
+  offset: number,
+  length: number,
+  position: number,
+) => Promise<{ readonly bytesRead: number }>;
+
+const defaultBoundedRead: BoundedRead = (
+  handle,
+  buffer,
+  offset,
+  length,
+  position,
+) => handle.read(buffer, offset, length, position);
+
+/**
+ * Reads one Readiness Sidecar the same safe way `readSourceObservation`
+ * does, but never buffers more than `READINESS_SIDECAR_MAX_BYTES + 1` bytes
+ * regardless of what `fstat` reported (Story TST-030 HIGH-1, code review
+ * round 3 MEDIUM): `fstat`'s size is read once, before opening, but a file
+ * can grow between that check and the read that follows, so the actual
+ * bound is enforced by the read loop itself, not by trusting a stat result.
+ * At or under the §13/§21 1 MiB bound, the exact bytes read are returned as
+ * `file`; over it, those bytes already read are hashed, then the remainder
+ * of the file is streamed through the same hash without ever being
+ * buffered, and the observation is `oversized`, carrying only that digest.
+ * A batch author's readiness.json can be arbitrarily large, or grow after
+ * this function starts reading it, without `review index`/`review render`
+ * ever risking a heap allocation proportional to it.
+ */
+export async function readReadinessSidecarObservation(
+  root: string,
+  path: string,
+  boundedRead: BoundedRead = defaultBoundedRead,
+): Promise<SourceObservation> {
+  const absolute = resolve(root, path);
+  let pathStats;
+  try {
+    pathStats = await lstat(absolute);
+  } catch (error) {
+    return isNotFoundError(error)
+      ? { kind: "missing" }
+      : { kind: "unreadable" };
+  }
+  if (pathStats.isSymbolicLink()) return { kind: "unsafe" };
+  if (!pathStats.isFile()) return { kind: "unreadable" };
+
+  let handle;
+  try {
+    handle = await open(
+      absolute,
+      constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK,
+    );
+  } catch (error) {
+    return isNotFoundError(error)
+      ? { kind: "missing" }
+      : { kind: "unreadable" };
+  }
+
+  try {
+    const openedStats = await handle.stat();
+    if (!openedStats.isFile()) return { kind: "unreadable" };
+
+    // Bounded read: fill at most MAX+1 bytes, at explicit positions (never
+    // relying on the handle's own position), so a buffer that fills all the
+    // way is the one and only signal for "over the bound" — not `fstat`'s
+    // (possibly stale) `size`.
+    const buffer = Buffer.alloc(READINESS_SIDECAR_MAX_BYTES + 1);
+    let totalRead = 0;
+    for (;;) {
+      const { bytesRead } = await boundedRead(
+        handle,
+        buffer,
+        totalRead,
+        buffer.length - totalRead,
+        totalRead,
+      );
+      if (bytesRead === 0) break;
+      totalRead += bytesRead;
+      if (totalRead >= buffer.length) break;
+    }
+
+    if (totalRead <= READINESS_SIDECAR_MAX_BYTES) {
+      return {
+        kind: "file",
+        bytes: new Uint8Array(buffer.subarray(0, totalRead)),
+      };
+    }
+
+    // The buffer filled: this file is over the bound (whatever `fstat` may
+    // have reported earlier). The bytes already read are hashed; the rest
+    // of the file is streamed through the same hash, never buffered.
+    const hash = createHash("sha256");
+    hash.update(buffer.subarray(0, totalRead));
+    for await (const chunk of handle.createReadStream({
+      autoClose: false,
+      start: totalRead,
+    })) {
+      hash.update(chunk as Uint8Array);
+    }
+    return { kind: "oversized", sha256: hash.digest("hex") };
+  } catch {
+    return { kind: "unreadable" };
   } finally {
     await handle.close().catch(() => undefined);
   }
@@ -529,7 +669,18 @@ export async function runReviewIndexUnsafe(
     };
   }
 
-  const unsafePath = await findUnsafeSourcePath(root, plan.plan.sources);
+  // A Readiness Sidecar (Story TST-030, contract §21) is not a manifest-
+  // declared source, so its path is gathered separately from `plan.sources`;
+  // its presence is decided later, from `observations`, by `indexReviewBatch`
+  // itself (R1: absent is not missing). Its path segments (including the
+  // Story directory) are checked for a symlink the same way every other
+  // declared path is (R7).
+  const readinessPaths = plan.plan.stories.map((story) => story.readinessPath);
+
+  const unsafePath = await findUnsafeSourcePath(root, [
+    ...plan.plan.sources,
+    ...readinessPaths,
+  ]);
   if (unsafePath !== undefined) {
     return {
       mode: parsed.mode,
@@ -543,6 +694,11 @@ export async function runReviewIndexUnsafe(
     };
   }
 
+  // HIGH-3: a Readiness Sidecar is exempt from this generic per-source cap.
+  // Contract §13/§21's own, tighter 1 MiB bound is Core's own check on its
+  // bytes (`parseReadinessSidecar`), applied only where the Sidecar's
+  // content is actually evaluated (`review preflight`/`review
+  // readiness-digests`) — never an `index`/`render`-time hard failure.
   const oversizedPath = await findOversizedSourcePath(root, plan.plan.sources);
   if (oversizedPath !== undefined) {
     return {
@@ -563,6 +719,9 @@ export async function runReviewIndexUnsafe(
   const observations = new Map<string, SourceObservation>();
   for (const path of plan.plan.sources) {
     observations.set(path, await readSourceObservation(root, path));
+  }
+  for (const path of readinessPaths) {
+    observations.set(path, await readReadinessSidecarObservation(root, path));
   }
 
   const indexed = indexReviewBatch(
@@ -930,6 +1089,7 @@ export async function runReviewRender(
       return {
         path: source.path,
         bytes: observation?.kind === "file" ? observation.bytes : undefined,
+        oversized: observation?.kind === "oversized",
       };
     });
     // One shared `records/` safety check and listing for every reader below

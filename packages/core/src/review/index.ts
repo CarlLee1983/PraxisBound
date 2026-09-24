@@ -18,7 +18,7 @@ import {
   type HeadingBlock,
   type MarkdownLineMatch,
 } from "./markdown.js";
-import { escapeControlCharacters } from "./path.js";
+import { compareUtf8, escapeControlCharacters } from "./path.js";
 import {
   adrExplicitId,
   ENTRY_SECTION_LABELS,
@@ -94,7 +94,19 @@ export function indexReviewBatch(
   plan: ReviewBatchPlan,
   observations: ReviewObservations,
 ): IndexReviewBatchResult {
-  for (const path of plan.sources) {
+  // A Readiness Sidecar (Story TST-030, contract §21) is not a manifest-
+  // declared source, so it is never `REVIEW_SOURCE_MISSING` when genuinely
+  // absent (R1); but a symlinked one is exactly as unsafe as any other batch
+  // path (R7). Unlike every other source, it is exempt from the generic
+  // per-source size cap (HIGH-3): §13/§21's 1 MiB Sidecar bound is a
+  // preflight-time/`readiness-digests`-time check on its own bytes, made by
+  // Core once they are read — never an index/render-time hard failure — so
+  // `review index`/`review render` stay `success` for a batch whose
+  // manifest is otherwise valid (contract §12) regardless of a Sidecar's
+  // size, and simply hash whatever bytes were read.
+  const readinessPaths = plan.stories.map((story) => story.readinessPath);
+
+  for (const path of [...plan.sources, ...readinessPaths]) {
     const observation = observationOf(observations, path);
     if (observation.kind === "unsafe") return { kind: "unsafe", path };
   }
@@ -110,16 +122,41 @@ export function indexReviewBatch(
 
   const diagnostics: ReviewDiagnostic[] = [...plan.diagnostics];
 
-  const sourceDigests: SourceDigest[] = plan.sources.map((path) => {
+  // A Sidecar that is present but unreadable (EACCES and similar — distinct
+  // from a genuinely absent one, `missing`/ENOENT) must not count as absent:
+  // it still joins `sources` with `sha256: null` and a diagnostic, mirroring
+  // contract §4's missing-source handling, so a stale/tampered Sidecar can
+  // never silently drop out of the fingerprint and block `confirm`/
+  // `goal-plan` the same way a missing declared source does. An `oversized`
+  // one (HIGH-1, code review round 2) already carries a real, streamed
+  // `sha256`, so it joins `sources` exactly like `file`.
+  const includedReadinessPaths = readinessPaths.filter((path) => {
+    const kind = observationOf(observations, path).kind;
+    return kind === "file" || kind === "unreadable" || kind === "oversized";
+  });
+  const allSourcePaths = [...plan.sources, ...includedReadinessPaths].sort(
+    compareUtf8,
+  );
+
+  const sourceDigests: SourceDigest[] = allSourcePaths.map((path) => {
     const observation = observationOf(observations, path);
     if (observation.kind === "file") {
       return { path, sha256: sha256Hex(observation.bytes) };
     }
+    if (observation.kind === "oversized") {
+      return { path, sha256: observation.sha256 };
+    }
+    // LOW (code review round 2): an `unreadable` source exists but could not
+    // be read — a different condition from a genuinely `missing` one, and
+    // worded accordingly, even though both keep the same `sha256: null` /
+    // `REVIEW_SOURCE_MISSING` shape (contract §4).
     diagnostics.push(
       diagnostic(
         "REVIEW_SOURCE_MISSING",
         "blocking",
-        `declared source is missing: ${path}`,
+        observation.kind === "unreadable"
+          ? `declared source exists but could not be read: ${path}`
+          : `declared source is missing: ${path}`,
         path,
       ),
     );
@@ -246,10 +283,26 @@ export function indexReviewBatch(
       }
     }
 
+    // AC-005: `readinessPath`/`readinessPresent` are omitted entirely — not
+    // set to `undefined`/`false` — when there is no Sidecar, so a batch with
+    // none produces byte-identical `review index` output to before this
+    // Story (Human Review 2026-09-23).
+    const readinessKind = observationOf(observations, story.readinessPath).kind;
+    const readinessPresent =
+      readinessKind === "file" ||
+      readinessKind === "unreadable" ||
+      readinessKind === "oversized";
+
     return {
       id: story.storyId,
       path: story.directory,
       acceptanceIds,
+      ...(readinessPresent
+        ? {
+            readinessPath: story.readinessPath,
+            readinessPresent: true as const,
+          }
+        : {}),
       locators: {
         story: storyLocators,
         acceptance: acceptanceLocators,

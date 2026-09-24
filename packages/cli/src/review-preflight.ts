@@ -39,6 +39,7 @@ import {
 } from "@praxisbound/core";
 
 import { loadReviewConfirmationApplicability } from "./review-confirmation-records.js";
+import { computeReadinessPreflightFindings } from "./review-readiness.js";
 import { loadSemanticReport } from "./review-semantic-report.js";
 import {
   computeResponseCoverage,
@@ -640,6 +641,18 @@ export async function runReviewPreflight(
     // observation) go into `semantic[]`, and only once the gate is clean.
     const semanticGateFindings = semanticLoad.gateFindings;
     const semanticFindings = semanticLoad.semanticFindings;
+
+    // Story TST-030, contract §21: every present Readiness Sidecar's own
+    // findings, computed from the same `observations` `review index`
+    // already read (no extra filesystem access).
+    const readinessFindings: PreflightFinding[] =
+      computeReadinessPreflightFindings(index, loadedBatch.observations).map(
+        (finding) => ({
+          code: finding.code,
+          message: finding.message,
+          path: finding.path,
+        }),
+      );
     const semanticReportRef: PreflightReportSemanticReportRef | null =
       semanticLoad.sha256 === undefined
         ? null
@@ -656,6 +669,7 @@ export async function runReviewPreflight(
         storyFindings,
         expectFingerprint: parsed.expectFingerprint,
         gitFindings,
+        readinessFindings,
         semanticGateFindings,
         semanticFindings,
       });
