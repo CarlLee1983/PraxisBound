@@ -151,3 +151,19 @@ test("preflightReportsEqualExceptCheckedAt distinguishes a different outcome or 
     false,
   );
 });
+
+test("code review round 1 LOW: buildPreflightReportRecord normalizes an empty expect object to null, consistent with the shape validator rejecting {}", () => {
+  const record = buildPreflightReportRecord(baseRecordInput({ expect: {} }));
+  assert.equal(record.expect, null);
+  const validated = validateStoredPreflightReportRecord(record, BATCH_ID);
+  assert.equal(validated.ok, true, JSON.stringify(validated));
+});
+
+test("code review round 1 LOW: a stored record with expect: {} (zero keys, non-null) is rejected by the shape validator", () => {
+  const record = {
+    ...buildPreflightReportRecord(baseRecordInput()),
+    expect: {},
+  };
+  const validated = validateStoredPreflightReportRecord(record, BATCH_ID);
+  assert.equal(validated.ok, false);
+});

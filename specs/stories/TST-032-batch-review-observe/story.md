@@ -134,7 +134,11 @@ Goal Plan directory rules in `packages/cli/src/review-goal-plan.ts`.
   `goal-completed` as Human Review acceptance or DONE.
 * R2: Step rules: no `run` without an earlier exit-0 `run-dry-run`;
   `run-dry-run` or `run` never share a record with `goal-create` or
-  `work-add`; every step but the last exits 0; an exit-0 `work-add` has
+  `work-add`; every step but the last exits 0, except that a `work-list`
+  with a non-zero integer exit may be followed immediately by `goal-create`
+  (contract §11 steps 2–3, amended by Human Review 2026-09-24; a `null`
+  exit does not qualify, and the re-check before step 3 covers that
+  `goal-create`); an exit-0 `work-add` has
   `workItemId` and `created`.
 * R3: `stoppedBecause` rules: `awaiting-authorization` ends with an exit-0
   `execution-plan`; `goal-completed` (0), `run-needs-human` (2),
@@ -180,6 +184,14 @@ Goal Plan directory rules in `packages/cli/src/review-goal-plan.ts`.
   one; `review observe` does not compare the observation's `fingerprint`
   with the Goal Plan Manifest's `coverageIndex.fingerprint`; a `null` exit
   counts as `run-failed` for `run` and satisfies `step-failed`.
+* Human Review by carl on 2026-09-24 amended R2 and AC-003 after code review
+  found that contract §11 step 3 could not be recorded under §22: a
+  non-zero `work-list` followed immediately by `goal-create` is accepted, and
+  ForgePilot's rejection of a duplicate Goal ID is the guard.
+* Human Review by carl on 2026-09-24, after the second code review, decided
+  that the re-check before §11 step 3 also covers its `goal create`, so the
+  two steps stay adjacent, and that a `null` `work-list` exit does not
+  qualify for the exception.
 * `ADR-016` and contract §2, §9 (as amended for independent `--expect-*`),
   §11–§13, §15–§16, §22.
 * TST-031 (`review goal-plan`) is merged.

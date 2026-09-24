@@ -53,9 +53,10 @@ export interface PreflightReportSemanticReportRef {
   readonly sha256: string;
 }
 
+/** Contract §9 as amended (R-008): each field is independently optional, at least one present when `expect` is non-null. */
 export interface PreflightReportExpect {
-  readonly fingerprint: string;
-  readonly revision: string;
+  readonly fingerprint?: string;
+  readonly revision?: string;
 }
 
 export interface PreflightReportRecord {
@@ -87,7 +88,7 @@ export function buildPreflightReportRecord(
     semanticReport: input.semanticReport,
     mechanical: Object.freeze([...input.mechanical]),
     semantic: Object.freeze([...input.semantic]),
-    expect: input.expect,
+    expect: normalizeExpect(input.expect),
   });
 }
 
@@ -136,6 +137,31 @@ function expectEqual(
 ): boolean {
   if (a === null || b === null) return a === b;
   return a.fingerprint === b.fingerprint && a.revision === b.revision;
+}
+
+/**
+ * Normalizes `expect` before `buildPreflightReportRecord` freezes it into a
+ * record: drops a literal `undefined` key so the built record never
+ * disagrees with a round-trip through `JSON.stringify`/`JSON.parse`, and —
+ * consistent with `validatePreflightReportShape` below, which rejects a
+ * non-null `expect` with zero keys — collapses `{}` (both fields omitted,
+ * an object given rather than `null`) to `null` rather than building a
+ * record `validateStoredPreflightReportRecord` would then reject (code
+ * review round 1 LOW: this function is used only here, by
+ * `buildPreflightReportRecord`, not by the shape validator, which has no
+ * need to normalize anything it is about to reject or accept as already
+ * given).
+ */
+function normalizeExpect(
+  expect: PreflightReportExpect | null,
+): PreflightReportExpect | null {
+  if (expect === null) return null;
+  const normalized: { fingerprint?: string; revision?: string } = {};
+  if (expect.fingerprint !== undefined)
+    normalized.fingerprint = expect.fingerprint;
+  if (expect.revision !== undefined) normalized.revision = expect.revision;
+  if (Object.keys(normalized).length === 0) return null;
+  return Object.freeze(normalized);
 }
 
 function diagnosticEqual(a: ReviewDiagnostic, b: ReviewDiagnostic): boolean {
@@ -311,16 +337,24 @@ function validatePreflightReportShape(
       return problem("expect must be an object or null");
     const extra3 = unknownKey(data.expect, ["fingerprint", "revision"]);
     if (extra3 !== undefined) return problem("expect has an unknown field");
-    if (
-      typeof data.expect.fingerprint !== "string" ||
-      !SHA256_PATTERN.test(data.expect.fingerprint)
-    )
-      return problem("expect fingerprint has an invalid form");
-    if (
-      typeof data.expect.revision !== "string" ||
-      !REVISION_HEX_PATTERN.test(data.expect.revision)
-    )
-      return problem("expect revision has an invalid form");
+    // Contract §9 as amended (R-008): each field is independently optional,
+    // but at least one must be present when `expect` is non-null.
+    if (Object.keys(data.expect).length === 0)
+      return problem("expect must have at least one field when not null");
+    if (data.expect.fingerprint !== undefined) {
+      if (
+        typeof data.expect.fingerprint !== "string" ||
+        !SHA256_PATTERN.test(data.expect.fingerprint)
+      )
+        return problem("expect fingerprint has an invalid form");
+    }
+    if (data.expect.revision !== undefined) {
+      if (
+        typeof data.expect.revision !== "string" ||
+        !REVISION_HEX_PATTERN.test(data.expect.revision)
+      )
+        return problem("expect revision has an invalid form");
+    }
   }
   return undefined;
 }

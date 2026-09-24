@@ -450,7 +450,16 @@ test("AC-006 (part): invalid argv is usage-error, exit 2, and writes nothing", a
     const cases = [
       ["--not-a-flag"],
       [manifestPath, "extra-positional"],
-      [manifestPath, "--expect-fingerprint", "f".repeat(64)],
+      // R7: each --expect-* is independently valid alone (contract §9 as
+      // amended); a duplicated flag, or a value failing its own pattern, is
+      // still usage-error.
+      [
+        manifestPath,
+        "--expect-fingerprint",
+        "f".repeat(64),
+        "--expect-fingerprint",
+        "e".repeat(64),
+      ],
       [
         manifestPath,
         "--expect-fingerprint",
@@ -850,6 +859,115 @@ test("review round 2 H2 (Human Review decision): a supersede after the fact neve
     // include r1, since r2 superseded it) and permanently report
     // REVIEW_RESPONSE_MISMATCH for answering a now-ineffective id.
     assert.ok(!codesOf(execution).includes("REVIEW_RESPONSE_MISMATCH"));
+  } finally {
+    await cleanupWorkspace(root);
+  }
+});
+
+test("TST-032/AC-002: --expect-fingerprint alone matches, runs no git (proved by an injected adapter spy), and yields the same outcome/issues as without it, recording expect: { fingerprint }", async () => {
+  const batchId = "TST-9718-fixture";
+  const { root, manifestPath } = await readyFixtureRepo(batchId);
+  try {
+    const data = await indexData(root, manifestPath);
+    await writeConfirmation(root, batchId, data);
+    const semanticReport = await writeSemanticReportFile(
+      root,
+      batchId,
+      data.fingerprint,
+    );
+
+    const withoutFlag = await run(root, [
+      manifestPath,
+      "--semantic-report",
+      semanticReport,
+      "--json",
+    ]);
+
+    // code review round 1 M1 (verification.md accuracy item): "runs no
+    // git" is proved directly with an injected adapter spy (the same
+    // pattern review-preflight-git.test.mjs's "without --expect-revision,
+    // the git adapter is never called" uses), not indirectly by the
+    // absence of a git-only issue code.
+    let gitAdapterCalled = false;
+    const spyAdapter = {
+      observe: async () => {
+        gitAdapterCalled = true;
+        return { kind: "not-a-repository" };
+      },
+    };
+    const withFlagExecution = await runReviewPreflight(
+      [
+        manifestPath,
+        "--semantic-report",
+        semanticReport,
+        "--expect-fingerprint",
+        data.fingerprint,
+        "--json",
+      ],
+      root,
+      { gitAdapter: spyAdapter },
+    );
+    assert.deepEqual(validateResultEnvelope(withFlagExecution.result), {
+      ok: true,
+      value: withFlagExecution.result,
+    });
+    assert.equal(gitAdapterCalled, false);
+
+    // "the same outcome as without it": an actual comparison, not merely
+    // the presence/absence of one issue code.
+    assert.equal(withFlagExecution.result.outcome, withoutFlag.result.outcome);
+    assert.deepEqual(codesOf(withFlagExecution), codesOf(withoutFlag));
+
+    const record = JSON.parse(
+      await readFile(
+        join(root, withFlagExecution.result.data.preflightRecord),
+        "utf8",
+      ),
+    );
+    assert.deepEqual(record.expect, { fingerprint: data.fingerprint });
+  } finally {
+    await cleanupWorkspace(root);
+  }
+});
+
+test("TST-032/AC-002: --expect-fingerprint alone with a non-matching value is REVIEW_STALE with REVIEW_PACKET_FINGERPRINT_MISMATCH", async () => {
+  const batchId = "TST-9719-fixture";
+  const { root, manifestPath } = await readyFixtureRepo(batchId);
+  try {
+    const execution = await run(root, [
+      manifestPath,
+      "--expect-fingerprint",
+      "d".repeat(64),
+      "--json",
+    ]);
+    assert.equal(execution.result.outcome, "REVIEW_STALE");
+    assert.ok(
+      codesOf(execution).includes("REVIEW_PACKET_FINGERPRINT_MISMATCH"),
+    );
+  } finally {
+    await cleanupWorkspace(root);
+  }
+});
+
+test("TST-032/AC-002: --expect-revision alone runs the ADR-015 checks and records expect: { revision }", async () => {
+  const batchId = "TST-9720-fixture";
+  const { root, manifestPath } = await readyFixtureRepo(batchId);
+  try {
+    const execution = await run(root, [
+      manifestPath,
+      "--expect-revision",
+      "e".repeat(40),
+      "--json",
+    ]);
+    // The fixture repo has no commit yet, so --expect-revision alone must
+    // still trigger the ADR-015 git checks and report the HEAD mismatch,
+    // proving it ran independently of --expect-fingerprint.
+    assert.ok(codesOf(execution).includes("REVIEW_PACKET_REVISION_MISMATCH"));
+
+    const record = JSON.parse(
+      await readFile(join(root, execution.result.data.preflightRecord), "utf8"),
+    );
+    assert.deepEqual(record.expect, { revision: "e".repeat(40) });
   } finally {
     await cleanupWorkspace(root);
   }

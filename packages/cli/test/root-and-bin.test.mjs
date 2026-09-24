@@ -32,6 +32,7 @@ Commands:
   review preflight   Evaluate every mechanical batch review check
   review readiness-digests Refresh Readiness Sidecar digests
   review goal-plan   Project Goal Plan artifacts for ForgePilot handoff
+  review observe     Record a validated ForgePilot handoff observation
   verification check Resolve plans and check recorded results
   help, --help       Show this help
   version, --version Print the CLI version

@@ -55,6 +55,11 @@ import {
   reviewGoalPlanHelp,
   runReviewGoalPlan,
 } from "./review-goal-plan.js";
+import {
+  renderReviewObserveHuman,
+  reviewObserveHelp,
+  runReviewObserve,
+} from "./review-observe.js";
 import { renderStoryHuman, runStoryCheck, storyHelp } from "./story.js";
 import {
   renderVerifyHuman,
@@ -98,6 +103,7 @@ Commands:
   review preflight   Evaluate every mechanical batch review check
   review readiness-digests Refresh Readiness Sidecar digests
   review goal-plan   Project Goal Plan artifacts for ForgePilot handoff
+  review observe     Record a validated ForgePilot handoff observation
   verification check Resolve plans and check recorded results
   help, --help       Show this help
   version, --version Print the CLI version
@@ -410,6 +416,23 @@ if (
     process.stdout.write(serializeResultEnvelope(execution.result));
   } else {
     const rendered = renderReviewGoalPlanHuman(execution);
+    process.stdout.write(rendered.stdout);
+    process.stderr.write(rendered.stderr);
+  }
+  process.exitCode = execution.result.exit;
+} else if (
+  args.length === 3 &&
+  args[0] === "review" &&
+  args[1] === "observe" &&
+  args[2] === "--help"
+) {
+  process.stdout.write(reviewObserveHelp);
+} else if (args[0] === "review" && args[1] === "observe") {
+  const execution = await runReviewObserve(args.slice(2));
+  if (execution.mode === "json") {
+    process.stdout.write(serializeResultEnvelope(execution.result));
+  } else {
+    const rendered = renderReviewObserveHuman(execution);
     process.stdout.write(rendered.stdout);
     process.stderr.write(rendered.stderr);
   }
