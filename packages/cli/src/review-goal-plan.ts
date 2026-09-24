@@ -648,16 +648,40 @@ export async function runReviewGoalPlan(
           ]),
         };
       }
-      // LOW/M-5 (code review): baseData carries the preflight evaluation's
-      // own diagnostics/preflightRecord; both failure branches below still
-      // report data.preflightRecord (the report was written regardless of
-      // this failure) and data.files (every artifact this run already
-      // created or found byte-identical before the failure, R5).
+      // M-5/LOW (code review): both failure branches below carry the full
+      // preflight evaluation data (batchId, fingerprint, sources,
+      // diagnostics, preflightRecord — never only a subset), with
+      // data.files (every artifact this run already created or found
+      // byte-identical before the failure, R5) and data.goalPlanDirectory
+      // (already known, whether or not writing it succeeded) added, and
+      // this failure's own issue/diagnostic appended — contract §12's
+      // issues[] <-> data.diagnostics[] one-to-one correspondence holds for
+      // REVIEW_PATH_UNSAFE exactly the same way it does for
+      // REVIEW_GOAL_PLAN_CONFLICT, not a smaller ad hoc shape for one of
+      // the two.
       const baseData = (written.result.data ?? {}) as {
-        readonly preflightRecord?: string;
         readonly diagnostics?: readonly unknown[];
         readonly [key: string]: unknown;
       };
+      const failureIssue = issue(
+        writeResult.code,
+        writeResult.message,
+        writeResult.path,
+      );
+      const failureDiagnostic = {
+        code: writeResult.code,
+        severity: "blocking" as const,
+      };
+      const failureData = {
+        ...baseData,
+        diagnostics: toDataValue([
+          ...(baseData.diagnostics ?? []),
+          failureDiagnostic,
+        ]),
+        goalPlanDirectory: projection.directory,
+        files: toDataValue(writeResult.written),
+      };
+      const failureIssues = [...written.result.issues, failureIssue];
       if (writeResult.code === "REVIEW_PATH_UNSAFE") {
         return {
           mode: parsed.mode,
@@ -665,46 +689,14 @@ export async function runReviewGoalPlan(
             "error",
             "configuration-error",
             2,
-            [issue(writeResult.code, writeResult.message, writeResult.path)],
-            {
-              ...(baseData.preflightRecord === undefined
-                ? {}
-                : { preflightRecord: baseData.preflightRecord }),
-              files: toDataValue(writeResult.written),
-            },
+            failureIssues,
+            failureData,
           ),
         };
       }
-      // M-5 (code review): contract §12's issues[] <-> data.diagnostics[]
-      // one-to-one correspondence still holds on REVIEW_GOAL_PLAN_CONFLICT
-      // — the preflight evaluation's own issues/diagnostics are carried
-      // through unchanged, with the conflict itself appended to both, in
-      // the same order.
-      const conflictIssue = issue(
-        writeResult.code,
-        writeResult.message,
-        writeResult.path,
-      );
-      const conflictDiagnostic = {
-        code: writeResult.code,
-        severity: "blocking" as const,
-      };
       return {
         mode: parsed.mode,
-        result: envelope(
-          "fail",
-          "failure",
-          1,
-          [...written.result.issues, conflictIssue],
-          {
-            ...baseData,
-            diagnostics: toDataValue([
-              ...(baseData.diagnostics ?? []),
-              conflictDiagnostic,
-            ]),
-            files: toDataValue(writeResult.written),
-          },
-        ),
+        result: envelope("fail", "failure", 1, failureIssues, failureData),
       };
     }
 
