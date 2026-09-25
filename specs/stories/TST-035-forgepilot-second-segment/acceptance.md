@@ -8,7 +8,8 @@ partial, never pass. AC-007 is an automated Core test.
 
 ## Happy Path
 
-* [ ] AC-001: The human installs ForgePilot `3a76aca` through the Bootstrap.
+* [ ] AC-001: The Agent, on carl's delegation, installs ForgePilot
+  `3a76aca` through the Bootstrap.
   The evidence records the plan ID, the Go version, the installed binary's
   sha256, and the verbatim `generation-v1 current` output. (R-008 test and
   delivery)
@@ -40,9 +41,10 @@ partial, never pass. AC-007 is an automated Core test.
   refused with a non-zero exit, and no Worker starts. It is recorded as
   `run-failed`, and `review observe` accepts the record. (R-008/AC-002,
   AC-006; contract §11 step 9)
-* [ ] AC-005: The Agent performs none of the Bootstrap install, `review
-  confirm`, `execution authorize`, or `execution supervise`. The evidence
-  shows each human action, and shows that no supervision job exists.
+* [ ] AC-005: The Agent performs none of `review confirm`, `execution
+  authorize`, or `execution supervise`. The evidence shows each human
+  action, the delegation of the Bootstrap install, and that no supervision
+  job exists.
   (R-008/AC-006)
 
 ## Failure Cases
@@ -76,7 +78,7 @@ partial, never pass. AC-007 is an automated Core test.
 
 | AC | Method | Evidence | Fixture / precondition | Expected observation |
 | --- | --- | --- | --- | --- |
-| `AC-001` | manual | `specs/stories/TST-035-forgepilot-second-segment/evidence/` | `human runs forgepilot-bootstrap plan and install at 3a76aca` | `bootstrap-install-recorded-with-generation` |
+| `AC-001` | manual | `specs/stories/TST-035-forgepilot-second-segment/evidence/` | `Agent runs forgepilot-bootstrap plan and install at 3a76aca on carl's delegation` | `bootstrap-install-recorded-with-generation` |
 | `AC-002` | manual | `specs/stories/TST-035-forgepilot-second-segment/evidence/` | `fixture repository, human-confirmed batch` | `first-segment-awaiting-authorization-observed` |
 | `AC-003` | manual | `specs/stories/TST-035-forgepilot-second-segment/evidence/` | `human ran execution authorize and stated it` | `second-segment-run-observed-or-blocked` |
 | `AC-004` | manual | `specs/stories/TST-035-forgepilot-second-segment/evidence/` | `Goal planned, not authorized` | `unauthorized-run-refused-run-failed` |

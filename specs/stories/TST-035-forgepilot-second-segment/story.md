@@ -92,7 +92,9 @@ describes `32b7a68`. Its evidence stays as that record; this Story observes
 
 ### In Scope
 
-* The human installs ForgePilot `3a76aca` through its Bootstrap. The
+* The Agent, on carl's delegation, moves the pre-existing
+  `~/.local/bin/forgepilot` symlink aside and installs ForgePilot `3a76aca`
+  through its Bootstrap `plan` and `install --approve`. The
   evidence records the plan ID, the `generation-v1 current` output, the Go
   version, and the installed binary's sha256.
 * A fixture repository in a temporary directory, with at least three
@@ -161,9 +163,10 @@ describes `32b7a68`. Its evidence stays as that record; this Story observes
 
 ## Rules
 
-* R1: The Agent never runs the Bootstrap `install`, `review confirm`, or
-  `execution authorize`, and never installs supervision. The human does
-  these, and the evidence records that and when.
+* R1: The Agent never runs `review confirm` or `execution authorize`, and
+  never installs supervision. The human does these, and the evidence
+  records that and when. The Bootstrap `plan` and `install` are the one
+  exception, delegated by carl; the evidence records the delegation.
 * R2: The Agent never chooses a Worker Profile, caps, `expiresAt`, or
   `engineGeneration`. `engineGeneration` comes verbatim from `generation-v1
   current`, never a placeholder. A missing value stops the rehearsal at
@@ -211,7 +214,9 @@ describes `32b7a68`. Its evidence stays as that record; this Story observes
 * Human Review by carl approved this Story for execution in a Claude Code
   session on 2026-09-25, with three decisions:
   * the re-pin to `3a76aca` is accepted as Corrective
-  * carl performs the Bootstrap install on this machine
+  * carl performs the Bootstrap install on this machine; amended the same
+    day in session: carl delegated moving the old `~/.local/bin/forgepilot`
+    symlink and running the Bootstrap `plan` and `install` to the Agent
   * the paid Codex run is allowed; its caps are supplied by carl in the
     session at §11 step 6, as R2 requires
 * TST-033 and TST-034 are merged.
