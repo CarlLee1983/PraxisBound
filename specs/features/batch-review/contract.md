@@ -392,7 +392,7 @@ Goal Plan 產物不含授權、不是 `protocol/handoff.md` 的 handoff、不含
 僅透過 ForgePilot 公開 CLI 並一律帶 `--json`；不讀寫 `.forgepilot`，不解析人類可讀輸出。
 ForgePilot 的 JSON 只在 exit 0 時保證；非 0 exit 一律停止，不嘗試解析。唯一例外是步驟 3 的 `work list`（修訂，R-008，TST-032 人類審閱 2026-09-24）。
 （修訂，R-008，TST-034）exit 0 不等於驗證通過：`goal preflight` 與 `execution plan` 在驗證失敗時仍 exit 0，
-失敗只出現在輸出的 `diagnostics`（TST-033 讀原始碼確認）。這兩步 exit 0 後，`diagnostics` 必須為 `null` 或空陣列，否則依步驟 5、6 停止。
+失敗只出現在輸出的 `diagnostics`（TST-033 讀原始碼確認）。這兩步 exit 0 後，輸出頂層的 `diagnostics` 必須為 `null` 或空陣列（巢狀物件內的 `diagnostics` 不計），否則依步驟 5、6 停止。
 
 一次交接分成兩段，由人的 `execution authorize` 隔開。
 
@@ -415,9 +415,9 @@ ForgePilot 的 JSON 只在 exit 0 時保證；非 0 exit 一律停止，不嘗�
    依賴只用 ForgePilot 回傳的實際 WI ID，不以 Story ID 代替。`created: false` 是冪等重試的正常結果。
 5. 寫 `goal-plan/<plan.id>/preflight-request.json`（`forgepilot.goal-preflight-request/v1`；`nodeMappings` 取自實際 WI ID），
    執行 `goal preflight --request <path> --json`；非 0 exit 即停止（`step-failed`）；
-   exit 0 但 `diagnostics` 非空即停止（`goal-preflight-failed`）（修訂，R-008，TST-034）。
+   exit 0 但頂層 `diagnostics` 既非 `null` 也非空陣列即停止（`goal-preflight-failed`）（修訂，R-008，TST-034）。
 6. 寫 `goal-plan/<plan.id>/execution-request.json`（`forgepilot.execution-plan-request/v2`）並執行 `execution plan --request <path> --json`；
-   非 0 exit 即停止（`step-failed`）；exit 0 但 `diagnostics` 非空或沒有 `approvalToken` 即停止（`execution-plan-failed`）（修訂，R-008，TST-034）。
+   非 0 exit 即停止（`step-failed`）；exit 0 但頂層 `diagnostics` 既非 `null` 也非空陣列、或沒有 `approvalToken` 即停止（`execution-plan-failed`）（修訂，R-008，TST-034）。
    Worker Profile（Codex 執行檔路徑、模型）、各項上限與 `expiresAt` 只取自人在當前會話明確提供的值，Agent 不選預設值。
    （修訂，R-008，TST-034）ForgePilot `32b7a68` 對這些值的限制，Agent 據以提醒人、不自行修改：`runtime` 只接受 `codex`、
    `effort` 只接受 `medium`、`sandbox` 只接受 `workspace-write`；`executablePath` 須為不含 symlink 的絕對路徑（ForgePilot 會解析 symlink 後記錄，
@@ -436,7 +436,7 @@ ForgePilot `32b7a68` 沒有可查詢授權的機器可讀命令，因此 Agent �
 8. 重做步驟 2，再執行 `run --goal <goalId> --runtime codex --runtime-command <executablePath> --snapshot --dry-run`；exit 非 0 即停止（`step-failed`）。
    dry-run 不檢查授權，未授權的 Goal 也會 exit 0（TST-033 實測）；它只預檢範圍與 runtime，不證明授權存在。
 9. 執行 `run --goal <goalId> --runtime codex --runtime-command <executablePath> --snapshot`，依 exit 如實回報。
-   授權的真正關卡在這一步：沒有有效授權時 ForgePilot 拒絕並 exit 1，依下表回報為 `run-failed`。
+   授權的真正關卡在這一步：沒有有效授權時 ForgePilot 拒絕並 exit 1（TST-033 讀原始碼確認，第二段未實際執行），依下表回報為 `run-failed`。
    `<executablePath>` 是步驟 6 請求中的同一值；不帶 `--runtime-command` 時 ForgePilot 以 PATH 解析 `codex`，
    PATH 上的 symlink 會與授權記錄的解析後路徑不符（修訂，R-008，TST-034）。
 
@@ -777,7 +777,7 @@ Schema：[`schemas/forgepilot-observation.schema.json`](schemas/forgepilot-obser
   `goal-completed`／`run-needs-human`／`run-limit-reached`／`run-interrupted`／`run-failed` 的最後一步須為 `run`，且 exit 依 §11 對照表；
   `step-failed` 的最後一步 exit 須非 0；`authorization-missing` 須沒有任何步驟。
   （修訂，R-008，TST-034）`goal-preflight-failed` 的最後一步須為 exit 0 的 `goal-preflight`；`execution-plan-failed` 的最後一步須為 exit 0 的 `execution-plan`
-  （兩者都是 exit 0 但 `diagnostics` 非空，§11 步驟 5–6）。工具不解析 `stdout` 判斷 `diagnostics`，只檢查步驟形狀。
+  （兩者都是 exit 0 但頂層 `diagnostics` 既非 `null` 也非空陣列，§11 步驟 5–6）。工具不解析 `stdout` 判斷 `diagnostics`，只檢查步驟形狀。
 
 紀錄是當次觀察的歷史 Evidence：工具只驗證它內部一致，不驗證 ForgePilot 真的這樣輸出過；現況一律以 ForgePilot 為準。
 

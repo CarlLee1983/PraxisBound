@@ -1113,9 +1113,15 @@ list`'s stderr; the re-check before step 3 also covers this
      `run-interrupted`/`run-failed` end with `run` at the exit contract §11's
      table names for each (`run-failed` accepts any other exit, including
      `null` — Human Review 2026-09-24); `step-failed` ends with a non-zero
-     or `null` exit; `authorization-missing` has no steps at all; any other
-     `stoppedBecause` value carries no last-step constraint beyond R2 (Human
-     Review 2026-09-24).
+     or `null` exit; `goal-preflight-failed` ends with an exit-0
+     `goal-preflight`, and `execution-plan-failed` ends with an exit-0
+     `execution-plan` (Story TST-034, contract §11/§22 amendment: ForgePilot
+     `32b7a68`'s `goal preflight` and `execution plan` exit 0 even on failed
+     validation — failure appears only in the response's `diagnostics`,
+     which this module never parses; the rule only checks step shape, the
+     same way every other R3 rule does); `authorization-missing` has no
+     steps at all; any other `stoppedBecause` value carries no last-step
+     constraint beyond R2 (Human Review 2026-09-24).
 
    Any rejection at this stage is `failure`, `REVIEW_OBSERVATION_INVALID`,
    exit 1 (or `REVIEW_INPUT_TOO_LARGE` when the shape stage's own rejection

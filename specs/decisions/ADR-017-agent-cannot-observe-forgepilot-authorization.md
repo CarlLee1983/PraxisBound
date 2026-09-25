@@ -34,7 +34,7 @@ with "goal … has no current execution authorization" and exits 1.
 
 ## Consequences
 
-Contract §11 step 8 and its preface are revised (TST-034). An unauthorized
+Contract §11 step 8 and its preface are revised (TST-034). The same revision records that the second segment needs a Bootstrap-managed ForgePilot install, so ADR-016's "built from a clean copy of that commit" now holds only for the first segment. An unauthorized
 Goal can now reach the real `run` call, which is safe only because ForgePilot
 refuses it; if a later ForgePilot starts work on an unauthorized Goal, this
 decision no longer holds. A machine-readable authorization query in ForgePilot

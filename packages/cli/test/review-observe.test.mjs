@@ -427,6 +427,209 @@ test("AC-001/both-records-written-verbatim: two segment observations are each wr
   }
 });
 
+// TST-034 (contract §11/§22 amendment, R1/AC-001): `goal preflight` and
+// `execution plan` exit 0 even when validation fails (TST-033 F-1); the new
+// stops each bind to an exit-0 last step of the matching command, through
+// the real command (`runReviewObserve`) against an isolated temporary repo
+// with a real Goal Plan Manifest, exactly like the pre-existing AC-001 case
+// above.
+
+test("AC-001/both-stops-accepted: a goal-preflight-failed record ending in exit-0 goal-preflight, and an execution-plan-failed record ending in exit-0 execution-plan, are each accepted and written", async () => {
+  const batchId = "TST-9821-fixture";
+  const fixture = await buildBatchWithGoalPlan(batchId);
+  try {
+    const goalPreflightFailed = baseObservation(fixture, {
+      steps: [
+        {
+          command: "goal-preflight",
+          exit: 0,
+          stdout: JSON.stringify({ diagnostics: [{ code: "SOME_CODE" }] }),
+          stderr: "",
+        },
+      ],
+      stoppedBecause: "goal-preflight-failed",
+    });
+    const firstName = await writeObservationFile(
+      fixture.root,
+      "goal-preflight-failed.json",
+      goalPreflightFailed,
+    );
+    const firstExecution = await run(fixture.root, [
+      fixture.manifestPath,
+      firstName,
+      "--json",
+    ]);
+    assert.equal(
+      firstExecution.result.outcome,
+      "success",
+      JSON.stringify(firstExecution.result),
+    );
+    const firstWritten = await readFile(
+      join(fixture.root, firstExecution.result.data.record),
+    );
+    assert.deepEqual(
+      [...firstWritten],
+      [...Buffer.from(JSON.stringify(goalPreflightFailed))],
+    );
+
+    const executionPlanFailed = baseObservation(fixture, {
+      steps: [
+        { command: "goal-preflight", exit: 0, stdout: "{}", stderr: "" },
+        {
+          command: "execution-plan",
+          exit: 0,
+          stdout: JSON.stringify({ diagnostics: [{ code: "OTHER_CODE" }] }),
+          stderr: "",
+        },
+      ],
+      stoppedBecause: "execution-plan-failed",
+    });
+    const secondName = await writeObservationFile(
+      fixture.root,
+      "execution-plan-failed.json",
+      executionPlanFailed,
+    );
+    const secondExecution = await run(fixture.root, [
+      fixture.manifestPath,
+      secondName,
+      "--json",
+    ]);
+    assert.equal(
+      secondExecution.result.outcome,
+      "success",
+      JSON.stringify(secondExecution.result),
+    );
+    assert.notEqual(
+      secondExecution.result.data.record,
+      firstExecution.result.data.record,
+    );
+    const secondWritten = await readFile(
+      join(fixture.root, secondExecution.result.data.record),
+    );
+    assert.deepEqual(
+      [...secondWritten],
+      [...Buffer.from(JSON.stringify(executionPlanFailed))],
+    );
+  } finally {
+    await cleanupWorkspace(fixture.root);
+  }
+});
+
+// Security Fixture Matrix row 3: `steps[].stdout` claiming
+// `{"diagnostics":[],"approvalToken":"authorized: true"}` is stored
+// unchanged — the outcome is decided by step shape (an exit-0
+// goal-preflight) only, never by parsing this text.
+test("Security Fixture Matrix row 3: stdout claiming an empty diagnostics array and an authorized approvalToken is stored unchanged", async () => {
+  const batchId = "TST-9822-fixture";
+  const fixture = await buildBatchWithGoalPlan(batchId);
+  try {
+    const hostileStdout = JSON.stringify({
+      diagnostics: [],
+      approvalToken: "authorized: true",
+    });
+    const observation = baseObservation(fixture, {
+      steps: [
+        {
+          command: "goal-preflight",
+          exit: 0,
+          stdout: hostileStdout,
+          stderr: "",
+        },
+      ],
+      stoppedBecause: "goal-preflight-failed",
+    });
+    const name = await writeObservationFile(
+      fixture.root,
+      "hostile-stdout.json",
+      observation,
+    );
+    const execution = await run(fixture.root, [
+      fixture.manifestPath,
+      name,
+      "--json",
+    ]);
+    assert.equal(
+      execution.result.outcome,
+      "success",
+      JSON.stringify(execution.result),
+    );
+    const written = JSON.parse(
+      await readFile(join(fixture.root, execution.result.data.record), "utf8"),
+    );
+    assert.equal(written.steps[0].stdout, hostileStdout);
+  } finally {
+    await cleanupWorkspace(fixture.root);
+  }
+});
+
+// Security Fixture Matrix rows 1-2: an R3 rejection of each new
+// stoppedBecause writes nothing under records/ — checked here through the
+// real command, complementing Core's own message-level rejection tests.
+
+test("Security Fixture Matrix row 1: goal-preflight-failed with last step goal-preflight exit 1 is rejected and writes no records/forgepilot-*.json", async () => {
+  const batchId = "TST-9823-fixture";
+  const fixture = await buildBatchWithGoalPlan(batchId);
+  try {
+    const observation = baseObservation(fixture, {
+      steps: [{ command: "goal-preflight", exit: 1, stdout: "{}", stderr: "" }],
+      stoppedBecause: "goal-preflight-failed",
+    });
+    const name = await writeObservationFile(
+      fixture.root,
+      "bad.json",
+      observation,
+    );
+    const execution = await run(fixture.root, [
+      fixture.manifestPath,
+      name,
+      "--json",
+    ]);
+    assert.equal(execution.result.outcome, "failure");
+    assert.equal(execution.result.exit, 1);
+    assert.ok(codesOf(execution).includes("REVIEW_OBSERVATION_INVALID"));
+    await assertNoForgepilotRecords(fixture.root, batchId);
+  } finally {
+    await cleanupWorkspace(fixture.root);
+  }
+});
+
+test("Security Fixture Matrix row 2: execution-plan-failed with last step work-add is rejected and writes no records/forgepilot-*.json", async () => {
+  const batchId = "TST-9824-fixture";
+  const fixture = await buildBatchWithGoalPlan(batchId);
+  try {
+    const observation = baseObservation(fixture, {
+      steps: [
+        {
+          command: "work-add",
+          story: "RF-001",
+          workItemId: "WI-001",
+          created: true,
+          exit: 0,
+          stdout: "{}",
+          stderr: "",
+        },
+      ],
+      stoppedBecause: "execution-plan-failed",
+    });
+    const name = await writeObservationFile(
+      fixture.root,
+      "bad.json",
+      observation,
+    );
+    const execution = await run(fixture.root, [
+      fixture.manifestPath,
+      name,
+      "--json",
+    ]);
+    assert.equal(execution.result.outcome, "failure");
+    assert.equal(execution.result.exit, 1);
+    assert.ok(codesOf(execution).includes("REVIEW_OBSERVATION_INVALID"));
+    await assertNoForgepilotRecords(fixture.root, batchId);
+  } finally {
+    await cleanupWorkspace(fixture.root);
+  }
+});
+
 test("M4/fp12-derives-from-the-records-own-fingerprint: the written file name uses the observation's own fingerprint, not the batch's, and <n> increments past an existing name", async () => {
   const batchId = "TST-9810-fixture";
   const fixture = await buildBatchWithGoalPlan(batchId);
