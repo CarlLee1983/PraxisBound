@@ -4,6 +4,7 @@
 * Date: 2026-09-23
 * Accepted: 2026-09-23 (human review, merged #111)
 * Amended by: ADR-017 — ForgePilot `32b7a68` offers no machine-readable authorization query, so the Agent starts the second segment on the human's session statement and the real `run` is the authorization gate; contract §11 (TST-034) also restricts "built from a clean copy" to the first segment, since the second needs a Bootstrap-managed install
+* Amended: 2026-09-26 (TST-035, human review) — the pin moves to ForgePilot `3a76aca`, whose Bootstrap install supports the second segment; the §11 CLI surface and `run` exit table are unchanged between the two commits
 
 ## Context
 
@@ -86,10 +87,11 @@ alignment and the readiness sidecar (independent of each other), then
 shape has passed a real `goal preflight`.
 
 The handoff is bound to a pinned ForgePilot commit (`32b7a68` for the contract
-revision), built from a clean copy of that commit. The rehearsal runs through
-`execution plan`; the human runs `execution authorize`, then `run --dry-run` is
-required and a real `run`, which needs a Codex runtime, may be recorded as
-blocked.
+revision, `3a76aca` since TST-035), installed through ForgePilot's own
+Bootstrap, since `execution authorize` and a real `run` accept only a
+Bootstrap-managed install. The rehearsal runs through `execution plan`; the
+human runs `execution authorize`, then `run --dry-run` is required and a real
+`run`, which needs a Codex runtime, may be recorded as blocked.
 
 **Falsified if:** ForgePilot stops accepting the Goal Plan shape in
 `specs/features/batch-review/schemas/goal-plan/`, or `run --goal`

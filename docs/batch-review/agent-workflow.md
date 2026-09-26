@@ -193,9 +193,9 @@
   `declaration.json`、`manifest.json`、`coverage-review.json` 寫進 `goal-plan/<plan.id>/`；
   產物不含授權、不是 handoff、不宣稱任何工作已完成，且指令從不執行 ForgePilot。
 
-## 3. 交接 ForgePilot（R-008，修訂，TST-034）
+## 3. 交接 ForgePilot（R-008，修訂，TST-034、TST-035）
 
-目的：把 `review goal-plan` 產生的 Goal Plan 產物，透過 ForgePilot `32b7a68` 的公開 CLI 交接成一個 Goal 與其
+目的：把 `review goal-plan` 產生的 Goal Plan 產物，透過 ForgePilot `3a76aca` 的公開 CLI 交接成一個 Goal 與其
 Work Item，並如實回報執行結果。本節只透過公開 CLI（一律帶 `--json`）操作 ForgePilot；不讀寫 `.forgepilot`，
 不解析人類可讀輸出，也不從 PraxisBound 產物或 Agent 記憶推定授權存在（contract §11，ADR-016，ADR-017）。
 
@@ -205,11 +205,12 @@ Work Item，並如實回報執行結果。本節只透過公開 CLI（一律帶 
 
 - `review goal-plan` 寫出的 `specs/batches/<BATCH-ID>/goal-plan/<plan.id>/`
   （`declaration.json`、`manifest.json`、`coverage-review.json`）與該次使用的 Semantic Report。
-- ForgePilot `32b7a68ebf96d74b55acec8f1cd9408f2ba70dab`，一律以乾淨的絕對路徑呼叫；不使用 PATH 上版本不明的
-  執行檔（相對路徑啟動會被 ForgePilot 拒絕：`process image is not an absolute clean path`）。第一段可用該
-  commit 的乾淨副本建置的執行檔；第二段（`execution authorize`、不帶 `--dry-run` 的 `run`）只接受由
-  ForgePilot Bootstrap 管理的安裝（`~/.local/share/forgepilot/versions/<commit>/bin/forgepilot`），從原始碼
-  建置的執行檔會被拒絕（`outside the managed Bootstrap root`，TST-033 實測）。
+- ForgePilot `3a76acaa5da206bef9a8d15df0db3f08f90311e2`（修訂，TST-035；原為 `32b7a68`），一律以乾淨的絕對路徑
+  呼叫；不使用 PATH 上版本不明的執行檔（相對路徑啟動會被 ForgePilot 拒絕：`process image is not an absolute clean path`）。
+  第二段（`execution authorize`、不帶 `--dry-run` 的 `run`）只接受由 ForgePilot Bootstrap 管理的安裝
+  （`~/.local/share/forgepilot/versions/<commit>/bin/forgepilot`），從原始碼另行建置的執行檔會被拒絕
+  （`outside the managed Bootstrap root`，TST-033 實測）。該安裝由人以 ForgePilot 的 `scripts/forgepilot-bootstrap
+  plan`、`install --approve <Plan ID>` 建立（TST-035 實測）；第一段也可用同一安裝的執行檔。Agent 不代為決定安裝。
 - 當前的 Execution Authorization：適用的 Story、當前人類會話或外部 control plane。
 - 只在人於當前會話明確提供時才有的值：Worker Profile（Codex 執行檔路徑、模型）、各項上限、`expiresAt`；
   Agent 不為這些欄位選預設值，也不為其中任一項填占位值。
@@ -247,14 +248,14 @@ Work Item，並如實回報執行結果。本節只透過公開 CLI（一律帶 
    仍各自先重查。
 
 3. 執行 `work list --goal <goalId> --json` 讀現況：
-   - exit 非 0：不讀、不解析 stderr（ForgePilot `32b7a68` 對未知 Goal 只在 stderr 回報 `unknown goal`，
+   - exit 非 0：不讀、不解析 stderr（ForgePilot `3a76aca` 對未知 Goal 只在 stderr 回報 `unknown goal`，
      沒有機器可讀的存在查詢，而 §11 禁止解析人類可讀輸出）；直接執行
      `goal create --id <goalId> --title <batchId> --review-policy goal --json`（不重新做步驟 2 的重查，
      見上）。它的 exit 決定結果：exit 0 表示 Goal 原本不存在並已建立；非 0（例如 Goal 其實已存在，
      `goal create` 會回報 `goal "<id>" already exists` 並拒絕）即停止（`step-failed`）——由 ForgePilot
      自己把關，Agent 不臆測原因；`work list` 的 exit 為 `null`（程序未能啟動或未觀察到 exit）不適用此例外，
      視同其他非 0 exit 一律停止（`step-failed`，contract §22，人類審閱 2026-09-24）。
-   - Goal 已存在（`work list` exit 0）：`review_policy` 必須是 `GOAL`（ForgePilot `32b7a68` 以大寫回報
+   - Goal 已存在（`work list` exit 0）：`review_policy` 必須是 `GOAL`（ForgePilot `3a76aca` 以大寫回報
      `--review-policy goal`，TST-033 實測；修訂，R-008，TST-034）；既有每個 Work Item 的 `external_ref`
      必須是本 Goal Plan 的 Story ID，其 `story_ref` 與（對應後的）`depends_on` 必須與 declaration/manifest 相符。
      任一項不符即停止（`goal-mismatch`／`work-mismatch`），不續建、不猜測。
@@ -275,7 +276,7 @@ Work Item，並如實回報執行結果。本節只透過公開 CLI（一律帶 
    `execution plan --request <path> --json`；非 0 exit 即停止（`step-failed`）；exit 0 但頂層 `diagnostics`
    既非 `null` 也非空陣列、或沒有 `approvalToken`，即停止（`execution-plan-failed`，修訂，R-008，TST-034）。
    Worker Profile、各項上限與 `expiresAt` 只取自 3.1 所述、人在當前會話明確提供的值，Agent 不選預設值。
-   （修訂，R-008，TST-034）ForgePilot `32b7a68` 對這些值的限制，Agent 據以提醒人、不自行修改：`runtime`
+   （修訂，R-008，TST-034）ForgePilot `3a76aca` 對這些值的限制，Agent 據以提醒人、不自行修改：`runtime`
    只接受 `codex`、`effort` 只接受 `medium`、`sandbox` 只接受 `workspace-write`；`executablePath` 須為不含
    symlink 的絕對路徑（ForgePilot 會解析 symlink 後記錄，3.4 步驟 8–9 以同一路徑呼叫）；八個 `caps` 皆為
    ≥ 1 的整數且 `maxWriteBytes ≤ maxRunBytes ≤ maxTotalBytes`；`expiresAt` 在未來 14 天內、RFC 3339 且秒以下
@@ -288,6 +289,9 @@ Work Item，並如實回報執行結果。本節只透過公開 CLI（一律帶 
 
    輸出的 `generation_id`、`payload_digest`；它是事實而非選擇，Agent 讀取後連同其他值交給人確認，
    絕不為它填占位值。
+   （修訂，R-008，TST-035）`execution plan` 不驗證 `model` 能否由該 Codex 的登入方式使用，不相容要到步驟 9
+   才以 `run-failed` 出現（TST-035 實測：ChatGPT 帳號登入時 `gpt-5-codex` 被拒）。Agent 據此提醒人，不自行換
+   模型；授權後要換 Worker Profile，須由人放棄舊 Goal，依 contract §10 以新的 `--attempt` 從步驟 1 重來。
 7. 把預覽與 approval token 原樣交給人，停止（`awaiting-authorization`）。到這裡為止，Agent 從不執行、
    也不建議自己執行 `execution authorize`；那一步只能由人在 ForgePilot 完成。
 
@@ -300,7 +304,7 @@ Work Item，並如實回報執行結果。本節只透過公開 CLI（一律帶 
 ### 3.4 第二段：人授權之後
 
 （修訂，R-008，TST-034，ADR-017）Agent 只在人於當前會話明確表示已執行 `execution authorize` 後才開始
-第二段；ForgePilot `32b7a68` 沒有可查詢授權的機器可讀命令，因此 Agent 無法事先在 ForgePilot 中觀察授權，
+第二段；ForgePilot `3a76aca` 沒有可查詢授權的機器可讀命令，因此 Agent 無法事先在 ForgePilot 中觀察授權，
 也不以任何檔案、對話記錄或 Agent 記憶推定授權存在。人沒有這樣表示時不開始第二段，也不為此寫觀察紀錄。
 
 8. 重做 3.3 步驟 2 的重查，再執行 `run --goal <goalId> --runtime codex --runtime-command <executablePath> --snapshot --dry-run`；
