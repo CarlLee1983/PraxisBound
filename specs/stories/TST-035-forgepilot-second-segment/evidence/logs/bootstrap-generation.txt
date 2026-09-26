@@ -1,0 +1,14 @@
+$ <HOME>/.local/bin/forgepilot-bootstrap generation-v1 current
+{"protocol_version":1,"generation_id":"3a76acaa5da206bef9a8d15df0db3f08f90311e2","payload_digest":"sha256:6b82b953957d6bf8182bb09705ab8b4f690c0b7864b87193efde82df82b8cce5","forgepilot_path":"<HOME>/.local/share/forgepilot/versions/3a76acaa5da206bef9a8d15df0db3f08f90311e2/bin/forgepilot","helper_path":"<HOME>/.local/share/forgepilot/versions/3a76acaa5da206bef9a8d15df0db3f08f90311e2/libexec/forgepilot-bootstrap"}
+exit=0
+
+# stable entrypoints
+<HOME>/.local/bin/forgepilot -> <HOME>/.local/share/forgepilot/current/bin/forgepilot
+<HOME>/.local/bin/forgepilot-bootstrap -> <HOME>/.local/share/forgepilot/current/libexec/forgepilot-bootstrap
+<HOME>/.agents/skills/forgepilot-onboarding -> <HOME>/.local/share/forgepilot/current/skills/codex/forgepilot-onboarding
+
+# sha256 of the installed CLI
+426d85e6af61383365ef38017e8a05ed6027f0302679fc42c666a235ed951a82  <HOME>/.local/share/forgepilot/versions/3a76acaa5da206bef9a8d15df0db3f08f90311e2/bin/forgepilot
+
+# supervision jobs
+none

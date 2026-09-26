@@ -287,6 +287,21 @@ test("AC-003/step-and-binding-violations: run-failed ending in run exit 0 is rej
   );
 });
 
+// TST-035 AC-007: each exit the run-failed rule excludes is load-bearing.
+for (const exit of [2, 3, 130, 143]) {
+  test(`TST-035/AC-007: run-failed ending in run exit ${exit} is rejected`, () => {
+    assertRejected(
+      observation({
+        steps: [
+          step({ command: "run-dry-run" }),
+          step({ command: "run", exit }),
+        ],
+        stoppedBecause: "run-failed",
+      }),
+    );
+  });
+}
+
 test("AC-003/step-and-binding-violations: authorization-missing with steps is rejected", () => {
   assertRejected(
     observation({

@@ -1,0 +1,34 @@
+{
+  "fixture": "<tst035>/fixture",
+  "forgepilot": "<HOME>/.local/bin/forgepilot",
+  "praxisbound": "<HOME>/Dev/CMG/ForgeFlowV2/packages/cli/dist/bin.js",
+  "manifest": "specs/batches/BR-935-rehearsal/batch.json",
+  "semanticReport": "semantic-report.json",
+  "goalPlanDir": "specs/batches/BR-935-rehearsal/goal-plan/BR-935-rehearsal-d45922f0a60f-a2",
+  "forgepilotVersion": "3a76acaa5da206bef9a8d15df0db3f08f90311e2",
+  "values": {
+    "workerProfile": {
+      "runtime": "codex",
+      "executablePath": "<HOME>/.codex/packages/standalone/releases/0.155.1-aarch64-apple-darwin/bin/codex",
+      "model": "gpt-6-astra",
+      "effort": "medium",
+      "sandbox": "workspace-write"
+    },
+    "engineGeneration": {
+      "sourceCommit": "3a76acaa5da206bef9a8d15df0db3f08f90311e2",
+      "payloadSHA256": "sha256:6b82b953957d6bf8182bb09705ab8b4f690c0b7864b87193efde82df82b8cce5"
+    },
+    "caps": {
+      "maxSteps": 500,
+      "maxTechnicalAttemptsPerNode": 5,
+      "maxRuns": 20,
+      "maxRecoveries": 2,
+      "maxHandoffBytes": 65536,
+      "maxWriteBytes": 1048576,
+      "maxRunBytes": 16777216,
+      "maxTotalBytes": 134217728
+    },
+    "expiresAt": "2026-10-01T00:00:00Z",
+    "authorizeBy": "carl"
+  }
+}
