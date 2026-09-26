@@ -1,0 +1,16 @@
+# Read-only extract from <tst035>/fixture/.forgepilot/runs/run-20260926t005904-6bfb76/wi-001-attempt-{1,2,3}/session.log, read on carl's instruction (option 1, 2026-09-26) as a recorded deviation from the Story's Out of Scope.
+## attempt 1
+model: gpt-5-codex
+warning: Model metadata for `gpt-5-codex` not found. Defaulting to fallback metadata; this can degrade performance and cause issues.
+ERROR: {"type":"error","status":400,"error":{"type":"invalid_request_error","message":"The 'gpt-5-codex' model is not supported when using Codex with a ChatGPT account."}}
+ERROR: {"type":"error","status":400,"error":{"type":"invalid_request_error","message":"The 'gpt-5-codex' model is not supported when using Codex with a ChatGPT account."}}
+## attempt 2
+model: gpt-5-codex
+warning: Model metadata for `gpt-5-codex` not found. Defaulting to fallback metadata; this can degrade performance and cause issues.
+ERROR: {"type":"error","status":400,"error":{"type":"invalid_request_error","message":"The 'gpt-5-codex' model is not supported when using Codex with a ChatGPT account."}}
+ERROR: {"type":"error","status":400,"error":{"type":"invalid_request_error","message":"The 'gpt-5-codex' model is not supported when using Codex with a ChatGPT account."}}
+## attempt 3
+model: gpt-5-codex
+warning: Model metadata for `gpt-5-codex` not found. Defaulting to fallback metadata; this can degrade performance and cause issues.
+ERROR: {"type":"error","status":400,"error":{"type":"invalid_request_error","message":"The 'gpt-5-codex' model is not supported when using Codex with a ChatGPT account."}}
+ERROR: {"type":"error","status":400,"error":{"type":"invalid_request_error","message":"The 'gpt-5-codex' model is not supported when using Codex with a ChatGPT account."}}

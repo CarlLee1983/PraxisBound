@@ -1,0 +1,36 @@
+$ forgepilot-bootstrap install --agent codex --source <FORGEPILOT_SRC> --commit 3a76acaa5da206bef9a8d15df0db3f08f90311e2 --approve sha256:5cceef76d88f31c6afe8bae3c0899af45b36e1f63d7a0bdaacfa001c76ae2dcd
+2026-09-25T10:57:56Z
+go vet ./...
+go test ./...
+ok  	github.com/CarlLee1983/ForgePilot	566.028s
+ok  	github.com/CarlLee1983/ForgePilot/cmd/forgepilot	3.092s
+ok  	github.com/CarlLee1983/ForgePilot/internal/agent	21.532s
+ok  	github.com/CarlLee1983/ForgePilot/internal/app	92.965s
+ok  	github.com/CarlLee1983/ForgePilot/internal/cli	6.392s
+ok  	github.com/CarlLee1983/ForgePilot/internal/control	2.681s
+ok  	github.com/CarlLee1983/ForgePilot/internal/process	16.409s
+ok  	github.com/CarlLee1983/ForgePilot/internal/readiness	3.993s
+ok  	github.com/CarlLee1983/ForgePilot/internal/repository	45.294s
+ok  	github.com/CarlLee1983/ForgePilot/internal/runner	65.588s
+ok  	github.com/CarlLee1983/ForgePilot/internal/storage	4.658s
+ok  	github.com/CarlLee1983/ForgePilot/internal/supervision	13.039s
+ok  	github.com/CarlLee1983/ForgePilot/internal/work	4.001s
+?   	github.com/CarlLee1983/ForgePilot/scripts/release	[no test files]
+sh scripts/release/build_trial_assets_test.sh
+unsigned maintainer trial assets: /private/tmp/forgepilot-trial-assets-test.0UbmFL/output/assets
+unsigned maintainer trial assets: /private/tmp/forgepilot-trial-assets-test.0UbmFL/output/assets
+unsigned maintainer trial assets: /private/tmp/forgepilot-trial-assets-test.0UbmFL/source/dist/trial-assets/dc30acb0949781be68e73b81468fe65fc112c31b
+build_trial_assets: test hook forced amd64 build failure
+build_trial_assets: darwin/arm64 CLI startup check failed
+build_trial_assets_test: PASS
+sh scripts/release/publish_trial_assets_workflow_test.sh
+publish_trial_assets_workflow_test: PASS
+sh scripts/onboarding/onboarding_test.sh
+onboarding_test: PASS
+sh scripts/skills/check_adapters_test.sh
+check_adapters: PASS
+sh scripts/skills/short_prompt_regression_test.sh
+short_prompt_regression: PASS
+install: approved generation 3a76acaa5da206bef9a8d15df0db3f08f90311e2 is current
+exit=0
+2026-09-25T11:08:41Z

@@ -1,0 +1,33 @@
+$ go version
+go version go1.25.5 darwin/arm64
+$ forgepilot-bootstrap plan --agent codex --source <FORGEPILOT_SRC> --commit 3a76acaa5da206bef9a8d15df0db3f08f90311e2
+forgepilot-bootstrap: managed private directory is accessible to group or world
+exit=1
+
+# Agent: chmod 700 <HOME>/.local/share/forgepilot (was 755, created 2026-09-18 by an earlier non-Bootstrap source build)
+$ forgepilot-bootstrap plan (retry)
+forgepilot-bootstrap: managed directory is missing or unsafe
+exit=1
+
+# Agent: plan refused 'managed directory is missing or unsafe': <HOME>/.local/share/forgepilot held a pre-Bootstrap layout (source-built/ only).
+# Agent: moved it to <HOME>/.local/share/forgepilot.pre-bootstrap.bak (mode restored to 755), repointed forgepilot.7207d80.bak into it.
+$ forgepilot-bootstrap plan (retry 2)
+Plan ID: sha256:5cceef76d88f31c6afe8bae3c0899af45b36e1f63d7a0bdaacfa001c76ae2dcd
+Operation: install
+Source: <FORGEPILOT_SRC>
+Commit: 3a76acaa5da206bef9a8d15df0db3f08f90311e2
+Current generation: none
+Action: inspect exact local source and installed Go bytes
+Action: check the approved Go version against committed go.mod
+Action: acquire Bootstrap exclusive lock
+Action: stage a detached checkout of the exact commit
+Action: build the staged CLI with the installed Go toolchain
+Action: run the approved source make verify
+Action: verify CLI, helper, skill, procedure, and payload digest
+Action: record the exact installation transaction
+Action: publish the verified immutable generation
+Action: publish the three stable entrypoints through current
+Action: atomically select the new current generation
+Action: publish the completed generation manifest
+Action: remove the completed installation transaction
+exit=0

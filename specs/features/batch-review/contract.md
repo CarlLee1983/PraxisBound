@@ -4,6 +4,7 @@ Contract ID：`SPEC-BATCH-REVIEW/R-001`。狀態：已接受（accepted，人類
 修訂：2026-09-18，Review Projection 以需求為主軸的呈現（§18）、manifest `preface`（§3）與 Spec 章節詞彙（§5）；已接受（人類審閱 #100）。
 修訂：2026-09-18，Review Projection 的審閱層（§19，R-004）；已接受（人類審閱 #103）。
 修訂：2026-09-23，R-008 交接改以 ForgePilot `32b7a68` 公開 CLI 與 Goal Plan 產物為準（§10、§11、§21、§22，ADR-016）；已接受（人類審閱並合併 #111）。
+修訂：2026-09-26，R-008 基準改釘 ForgePilot `3a76aca`（§10、§11、§14，TST-035）；§11 步驟不變。
 
 本文件定稿 [spec.md](spec.md) R-001 要求的產物格式、指紋、定位、命令結果與授權邊界。
 取捨與不可靜默推翻的邊界記錄於
@@ -342,7 +343,7 @@ Semantic Report 由 Agent 產生：綁定 `fingerprint`；批次內每張 Story 
 
 Schemas：[`schemas/goal-plan/`](schemas/goal-plan/)（declaration、manifest、coverage review 與共用定義）。
 這些 schema 取自 ForgePilot `32b7a68ebf96d74b55acec8f1cd9408f2ba70dab` 的 `internal/app/testdata/goal-plan-artifacts/v1/`，
-逐位元組收錄，作為 PraxisBound 擁有的 Goal Plan 格式；它取代 `@praxisbound/core` 0.3.0 以 FP-51 發布的 Goal Plan 形狀。
+逐位元組收錄（ForgePilot `3a76aca` 的同一目錄與 `internal/app/preflight.go` 與此相同，TST-035 以 `git diff` 確認），作為 PraxisBound 擁有的 Goal Plan 格式；它取代 `@praxisbound/core` 0.3.0 以 FP-51 發布的 Goal Plan 形狀。
 兩邊日後不一致時，以本目錄為 PraxisBound 的權威並回到修訂，不在實作中擇一沿用。
 
 （修訂性澄清，TST-029，人類審閱 2026-09-23）規格等於 ForgePilot `32b7a68` `internal/app/preflight.go` 實際接受的範圍，
@@ -385,10 +386,12 @@ Goal Plan 產物不含授權、不是 `protocol/handoff.md` 的 handoff、不含
 
 ## 11. ForgePilot 整合規則（Agent 工作流程，修訂，R-008）
 
-基準：ForgePilot `32b7a68ebf96d74b55acec8f1cd9408f2ba70dab`；不使用 PATH 上版本不明的執行檔，一律以乾淨的絕對路徑呼叫（相對路徑啟動會被 ForgePilot 拒絕：`process image is not an absolute clean path`）。
-（修訂，R-008，TST-034）第一段可用該 commit 的乾淨副本建置的執行檔；第二段（`execution authorize`、不帶 `--dry-run` 的 `run`）
-只接受由 ForgePilot Bootstrap 管理的安裝（`~/.local/share/forgepilot/versions/<commit>/bin/forgepilot`），
-從原始碼建置的執行檔會被拒絕（`outside the managed Bootstrap root`，TST-033 實測）。
+基準：ForgePilot `3a76acaa5da206bef9a8d15df0db3f08f90311e2`（修訂，R-008，TST-035；原為 `32b7a68`，§11 使用的公開 CLI 與 `run` exit 表兩版相同）；
+不使用 PATH 上版本不明的執行檔，一律以乾淨的絕對路徑呼叫（相對路徑啟動會被 ForgePilot 拒絕：`process image is not an absolute clean path`）。
+（修訂，R-008，TST-034、TST-035）第二段（`execution authorize`、不帶 `--dry-run` 的 `run`）只接受由 ForgePilot Bootstrap 管理的安裝
+（`~/.local/share/forgepilot/versions/<commit>/bin/forgepilot`），從原始碼另行建置的執行檔會被拒絕（`outside the managed Bootstrap root`，TST-033 實測）。
+該安裝由人以 ForgePilot 自帶的 `scripts/forgepilot-bootstrap plan`、`install --approve <Plan ID>` 建立（`3a76aca` 起為受支援的原始碼建置路徑，TST-035 實測），
+第一段也可用同一安裝的執行檔。安裝與其前置條件屬人的機器設定，Agent 不代為決定。
 僅透過 ForgePilot 公開 CLI 並一律帶 `--json`；不讀寫 `.forgepilot`，不解析人類可讀輸出。
 ForgePilot 的 JSON 只在 exit 0 時保證；非 0 exit 一律停止，不嘗試解析。唯一例外是步驟 3 的 `work list`（修訂，R-008，TST-032 人類審閱 2026-09-24）。
 （修訂，R-008，TST-034）exit 0 不等於驗證通過：`goal preflight` 與 `execution plan` 在驗證失敗時仍 exit 0，
@@ -406,9 +409,9 @@ ForgePilot 的 JSON 只在 exit 0 時保證；非 0 exit 一律停止，不嘗�
 3. `work list --goal <goalId> --json`：
    - exit 非 0 → 不解析輸出，直接執行 `goal create --id <goalId> --title <batchId> --review-policy goal --json`；
      它的 exit 決定結果：exit 0 表示 Goal 原本不存在並已建立；非 0 則停止（`step-failed`）。
-     ForgePilot `32b7a68` 對未知 Goal 的 `work list` 只在 stderr 回報 `unknown goal` 並 exit 1，沒有機器可讀的存在查詢；
+     ForgePilot `3a76aca` 對未知 Goal 的 `work list` 只在 stderr 回報 `unknown goal` 並 exit 1，沒有機器可讀的存在查詢；
      `goal create` 對已存在的 ID 拒絕（`goal "<id>" already exists`），因此由 ForgePilot 自己把關，Agent 不讀 stderr 判斷原因（修訂，R-008）。
-   - Goal 已存在：`review_policy` 必須為 `GOAL`（ForgePilot `32b7a68` 以大寫回報 `--review-policy goal`，TST-033 實測；修訂，R-008，TST-034），既有每個 Work Item 的 `external_ref` 必須是本 plan 的 Story ID，
+   - Goal 已存在：`review_policy` 必須為 `GOAL`（ForgePilot `3a76aca` 以大寫回報 `--review-policy goal`，TST-033 實測；修訂，R-008，TST-034），既有每個 Work Item 的 `external_ref` 必須是本 plan 的 Story ID，
      其 `story_ref` 與 `depends_on`（對應後）必須和 plan 相符；任一不符即停止（`goal-mismatch`／`work-mismatch`），不續建。
 4. 依 declaration 的拓撲序（同層依 Story ID）對尚未存在的 Story 執行
    `work add --goal <goalId> --story <storyRef> --external-ref <Story ID> [--depends-on <WI ID> ...] --json`。
@@ -419,10 +422,12 @@ ForgePilot 的 JSON 只在 exit 0 時保證；非 0 exit 一律停止，不嘗�
 6. 寫 `goal-plan/<plan.id>/execution-request.json`（`forgepilot.execution-plan-request/v2`）並執行 `execution plan --request <path> --json`；
    非 0 exit 即停止（`step-failed`）；exit 0 但頂層 `diagnostics` 既非 `null` 也非空陣列、或沒有 `approvalToken` 即停止（`execution-plan-failed`）（修訂，R-008，TST-034）。
    Worker Profile（Codex 執行檔路徑、模型）、各項上限與 `expiresAt` 只取自人在當前會話明確提供的值，Agent 不選預設值。
-   （修訂，R-008，TST-034）ForgePilot `32b7a68` 對這些值的限制，Agent 據以提醒人、不自行修改：`runtime` 只接受 `codex`、
+   （修訂，R-008，TST-034）ForgePilot `3a76aca` 對這些值的限制，Agent 據以提醒人、不自行修改：`runtime` 只接受 `codex`、
    `effort` 只接受 `medium`、`sandbox` 只接受 `workspace-write`；`executablePath` 須為不含 symlink 的絕對路徑（ForgePilot 會解析 symlink 後記錄，
    步驟 8–9 以同一路徑呼叫）；八個 `caps` 皆為 ≥ 1 的整數且 `maxWriteBytes ≤ maxRunBytes ≤ maxTotalBytes`；
    `expiresAt` 在未來 14 天內，RFC 3339 且秒以下不帶尾端 0（`2026-10-01T00:00:00Z` 可、`…00.000Z` 不可）。
+   （修訂，R-008，TST-035）`execution plan` 不驗證 `model` 能否由該 Codex 的登入方式使用；不相容要到步驟 9 才以 `run-failed` 出現
+   （TST-035 實測：ChatGPT 帳號登入時 `gpt-5-codex` 被拒）。Agent 據此提醒人，不自行換模型；授權後要換 Worker Profile 須由人放棄舊 Goal，依步驟 1 以新的 `--attempt` 重來。
    `engineGeneration`（`sourceCommit`、`payloadSHA256`）是 Bootstrap 安裝的世代，取自 `forgepilot-bootstrap generation-v1 current`
    輸出的 `generation_id`、`payload_digest`；它是事實而非選擇，Agent 讀取後連同其他值交給人確認，不填占位值。
 7. 把預覽與 approval token 交給人，停止（`awaiting-authorization`）。Agent 從不執行 `execution authorize`。
@@ -430,7 +435,7 @@ ForgePilot 的 JSON 只在 exit 0 時保證；非 0 exit 一律停止，不嘗�
 **第二段：人授權之後**
 
 （修訂，R-008，TST-034，ADR-017）Agent 只在人於當前會話明確表示已執行 `execution authorize` 後才開始第二段；
-ForgePilot `32b7a68` 沒有可查詢授權的機器可讀命令，因此 Agent 無法事先在 ForgePilot 中觀察授權，也不以任何檔案或 Agent 記憶推定授權存在。
+ForgePilot `3a76aca` 沒有可查詢授權的機器可讀命令，因此 Agent 無法事先在 ForgePilot 中觀察授權，也不以任何檔案或 Agent 記憶推定授權存在。
 人沒有這樣表示時不開始第二段，也不為此寫觀察紀錄。
 
 8. 重做步驟 2，再執行 `run --goal <goalId> --runtime codex --runtime-command <executablePath> --snapshot --dry-run`；exit 非 0 即停止（`step-failed`）。
@@ -524,6 +529,8 @@ ForgePilot 輸出是觀察而非輸入：每個 stdout／stderr 保存前 1 MiB�
   Readiness Sidecar 納入指紋屬 **Additive**，但已有 Sidecar 的批次指紋會改變、既有確認不再適用。
 - （修訂，R-008，TST-034）§11／§22 依 TST-033 演練結果修正，外部整合觀察新增 `execution-plan-failed`、`goal-preflight-failed` 與它綁定最後一步。
   `review goal-plan`、`review observe` 與 Agent 工作流程皆尚未發布，屬 **Corrective**：修正未發布契約中與 ForgePilot `32b7a68` 實際行為不符之處。
+- （修訂，R-008，TST-035）基準改釘 ForgePilot `3a76aca`，並說明第二段的 Bootstrap 安裝方式；§11 步驟、停止理由與 schema 不變。
+  相關命令與 Agent 工作流程尚未發布，屬 **Corrective**。
 
 ## 15. 安全：Trust Boundary Fields
 
