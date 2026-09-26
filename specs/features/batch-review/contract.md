@@ -5,6 +5,7 @@ Contract ID：`SPEC-BATCH-REVIEW/R-001`。狀態：已接受（accepted，人類
 修訂：2026-09-18，Review Projection 的審閱層（§19，R-004）；已接受（人類審閱 #103）。
 修訂：2026-09-23，R-008 交接改以 ForgePilot `32b7a68` 公開 CLI 與 Goal Plan 產物為準（§10、§11、§21、§22，ADR-016）；已接受（人類審閱並合併 #111）。
 修訂：2026-09-26，R-008 基準改釘 ForgePilot `3a76aca`（§10、§11、§14，TST-035）；§11 步驟不變。
+修訂：2026-09-26，§11 步驟 7 加入 Worker 環境揭露（§11、§14，TST-036）；步驟、停止理由與 schema 不變。
 
 本文件定稿 [spec.md](spec.md) R-001 要求的產物格式、指紋、定位、命令結果與授權邊界。
 取捨與不可靜默推翻的邊界記錄於
@@ -431,6 +432,14 @@ ForgePilot 的 JSON 只在 exit 0 時保證；非 0 exit 一律停止，不嘗�
    `engineGeneration`（`sourceCommit`、`payloadSHA256`）是 Bootstrap 安裝的世代，取自 `forgepilot-bootstrap generation-v1 current`
    輸出的 `generation_id`、`payload_digest`；它是事實而非選擇，Agent 讀取後連同其他值交給人確認，不填占位值。
 7. 把預覽與 approval token 交給人，停止（`awaiting-authorization`）。Agent 從不執行 `execution authorize`。
+   （修訂，R-008，TST-036）同時交給人一份 Worker 環境揭露：ForgePilot 的授權只綁定 Worker Profile（執行檔、模型、effort、sandbox），
+   但 Codex Worker 會繼承人的 Codex 設定（TST-035 實測：全域 hook 在工作區寫入未經要求的檔案）。揭露列出 Agent 檢視過的
+   Codex 設定目錄、各 hook 的事件名稱與其指令的執行檔、各 MCP server 名稱、全域 `AGENTS.md` 是否存在、工作區是否有 `.codex/`，
+   並以一句話說明：此清單只來自 Agent 能讀到的內容，可能不完整。
+   - 只列名稱與是否存在；不抄錄任何值——環境變數、參數、token、header、URL 一律不出現在揭露或任何紀錄中。
+   - 讀不到或未檢視的位置標為「未檢視」，不寫成「無」；揭露從不宣稱 Worker 環境安全或完整，清單為空時也保留上述說明。
+   - 揭露不是授權、不阻擋交接，也不要求人另行確認；人的 `execution authorize` 仍是唯一的授權。揭露不寫入任何 PraxisBound 紀錄。
+   ForgePilot 提供隔離或宣告 Worker 環境的機制後（ForgePilot#64），以該機制取代本揭露。
 
 **第二段：人授權之後**
 
@@ -531,6 +540,8 @@ ForgePilot 輸出是觀察而非輸入：每個 stdout／stderr 保存前 1 MiB�
   `review goal-plan`、`review observe` 與 Agent 工作流程皆尚未發布，屬 **Corrective**：修正未發布契約中與 ForgePilot `32b7a68` 實際行為不符之處。
 - （修訂，R-008，TST-035）基準改釘 ForgePilot `3a76aca`，並說明第二段的 Bootstrap 安裝方式；§11 步驟、停止理由與 schema 不變。
   相關命令與 Agent 工作流程尚未發布，屬 **Corrective**。
+- （修訂，R-008，TST-036）§11 步驟 7 要求 Worker 環境揭露；它只是交給人的資訊，不改變任何步驟、停止理由、schema 或觀察紀錄。
+  Agent 工作流程尚未發布，屬 **Corrective**。
 
 ## 15. 安全：Trust Boundary Fields
 

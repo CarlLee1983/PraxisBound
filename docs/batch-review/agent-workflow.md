@@ -193,7 +193,7 @@
   `declaration.json`、`manifest.json`、`coverage-review.json` 寫進 `goal-plan/<plan.id>/`；
   產物不含授權、不是 handoff、不宣稱任何工作已完成，且指令從不執行 ForgePilot。
 
-## 3. 交接 ForgePilot（R-008，修訂，TST-034、TST-035）
+## 3. 交接 ForgePilot（R-008，修訂，TST-034、TST-035、TST-036）
 
 目的：把 `review goal-plan` 產生的 Goal Plan 產物，透過 ForgePilot `3a76aca` 的公開 CLI 交接成一個 Goal 與其
 Work Item，並如實回報執行結果。本節只透過公開 CLI（一律帶 `--json`）操作 ForgePilot；不讀寫 `.forgepilot`，
@@ -294,6 +294,17 @@ Work Item，並如實回報執行結果。本節只透過公開 CLI（一律帶 
    模型；授權後要換 Worker Profile，須由人放棄舊 Goal，依 contract §10 以新的 `--attempt` 從步驟 1 重來。
 7. 把預覽與 approval token 原樣交給人，停止（`awaiting-authorization`）。到這裡為止，Agent 從不執行、
    也不建議自己執行 `execution authorize`；那一步只能由人在 ForgePilot 完成。
+   （修訂，R-008，TST-036）同時交給人一份 Worker 環境揭露。授權只綁定 Worker Profile，Codex Worker 卻會繼承
+   人的 Codex 設定（TST-035 實測）。依序檢視並列出：
+   - 檢視的 Codex 設定目錄（預設 `~/.codex/`）；
+   - `config.toml` 的 `[mcp_servers.<name>]`：只列 server 名稱；
+   - `hooks.json`：每個 hook 的事件名稱與其指令的執行檔路徑，不含參數；
+   - 全域 `AGENTS.md` 是否存在；工作區是否有 `.codex/` 目錄；
+   - 結尾固定一句：「此清單只來自 Agent 能讀到的內容，可能不完整。」
+
+   只列名稱與是否存在，不抄錄環境變數、參數、token、header、URL 等任何值。讀不到或沒檢視的位置寫「未檢視」，
+   不寫「無」；不宣稱環境安全或完整。揭露不是授權、不阻擋交接、不要求人另行確認，也不寫入任何紀錄；
+   人的 `execution authorize` 仍是唯一的授權。ForgePilot 提供 Worker 隔離（ForgePilot#64）後改用該機制。
 
 停止後，第一段結束：依 3.6 以 `review observe` 寫一份觀察紀錄，`stoppedBecause` 為
 `authorization-missing`、`preflight-not-ready`、`goal-mismatch`、`work-mismatch`、
