@@ -11,12 +11,12 @@
 
 | AC | Method | Evidence | Fixture / precondition | Expected observation |
 | --- | --- | --- | --- | --- |
-| `AC-001` | test | `packages/cli/test/review-batch-security.test.mjs` | hostile source and feedback in isolated E2E fixture | projection has inert content |
-| `AC-002` | test | `packages/cli/test/review-batch-security.test.mjs` | approval and instruction claims | no confirmation or authorization |
-| `AC-003` | test | `packages/cli/test/review-batch-security.test.mjs` | traversal and outside symlinks | rejected; outside data unchanged |
-| `AC-004` | test | `packages/cli/test/review-batch-security.test.mjs` | output write fault | no partial output or source mutation |
-| `AC-005` | test | `packages/cli/test/review-batch-security.test.mjs` | recorded repeated handoff | accepted with `created: false` |
-| `AC-006` | command | `make verify` | current tree | PASS |
+| `AC-001` | test | `packages/cli/test/review-batch-security.test.mjs` | `hostile source and feedback in isolated E2E fixture` | `projection has inert content` |
+| `AC-002` | test | `packages/cli/test/review-batch-security.test.mjs` | `approval and instruction claims` | `no confirmation or authorization` |
+| `AC-003` | test | `packages/cli/test/review-batch-security.test.mjs` | `traversal and outside symlinks` | `rejected; outside data unchanged` |
+| `AC-004` | test | `packages/cli/test/review-batch-security.test.mjs` | `output write fault` | `no partial output or source mutation` |
+| `AC-005` | test | `packages/cli/test/review-batch-security.test.mjs` | `recorded repeated handoff` | `accepted with created false` |
+| `AC-006` | command | `make verify` | `current tree` | `PASS` |
 
 ## Security Fixture Matrix
 
