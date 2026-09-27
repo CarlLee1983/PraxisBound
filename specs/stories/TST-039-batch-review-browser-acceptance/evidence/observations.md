@@ -33,3 +33,21 @@ The browser drawer is intentionally hidden by existing print CSS. Thus the `rest
 Playwright returned `page.pdf: PDF generation is only supported for Headless Chromium` in WebKit. A headed WebKit `window.print()` was invoked through Playwright MCP, but the macOS print dialog could not be captured by the available computer-use service (`SCStreamErrorDomain -3811` on two attempts). **WebKit A4 pagination and page-break behavior are unverified.** Its print-media CSS at A4 width was observed; that is a narrower claim.
 
 Chrome `153.0.8010.54` has observed desktop, narrow, and paginated A4 output for these fixture states. WebKit `26.6` has observed desktop, narrow, and continuous print-media rendering only. Other browser engines and versions, device-specific behavior, and WebKit paginated A4 output are **未驗證**. No pixel parity or general browser-support guarantee follows from this single fixture.
+
+## Follow-up: native Safari A4 pagination
+
+Observed 2026-09-27 16:49–16:54 UTC on this repository's `185b163` source, using the same `fixture()` builder in temporary repositories. Safari's application bundle reports version `26.5` (build `21624.2.5.11.4`) on macOS `26.5.1`. This is a separate WebKit-based browser from the Playwright WebKit `26.6` build above. The earlier Playwright MCP screen and print-media observations still stand; macOS Safari was operated through the native computer-use UI for its actual print dialog because Playwright cannot produce a WebKit PDF. No repository browser dependency was added.
+
+The native Safari print dialog showed **A4, portrait, 100% scale, all pages** for each state. Its PDF control saved these paginated outputs under `evidence/webkit/`:
+
+| State | PDF | Pages | Setup and visible result |
+| --- | --- | ---: | --- |
+| Initial | `safari-26.5-initial-a4.pdf` | 12 | Fresh `review index` and `review render`; original source and fingerprint print. |
+| Restored | `safari-26.5-restored-a4.pdf` | 12 | Opened that initial projection, selected the existing exported `revision-sheet.md`, and applied it; the page displayed one restored, exported opinion before printing. The annotation drawer and its draft opinion are hidden by print CSS. |
+| Revised | `safari-26.5-revised-a4.pdf` | 13 | In a fresh temporary fixture, confirmed the original fingerprint through the existing injected terminal adapter, imported the sheet, changed Alpha, and rendered again. The CLI returned `REVIEW_SOURCE_CHANGED`; the page and PDF showed the new fingerprint, changed source, and `需複審`. The synthetic fixture confirmation is not approval of real work. |
+| Storage disabled | `safari-26.5-storage-disabled-a4.pdf` | 12 | In Safari Web Inspector, made `Storage.prototype.setItem` throw for this disposable page, then added an opinion. The page showed `瀏覽器無法暫存，請記得匯出` and `未匯出 1` before printing. That warning and the draft are hidden by print CSS. |
+| Imported opinion, additional | `safari-26.5-imported-a4.pdf` | 12 | `review import` and re-render made the long opinion printable historical evidence. |
+
+`pdfinfo` reports Safari as Creator and `595 × 842 pt` (A4) for all five PDFs. `pdftotext -layout` finds the original Alpha sentence and original fingerprint in the initial/restored/storage-disabled output; it finds the new fingerprint, clarified Alpha sentence, and `需複審` in the revised output; and it finds all 120 unbroken `A` characters plus the opinion rationale in the imported output. Visual inspection of the revised first page and imported opinion page 7 found the fingerprint wrapping within the page and the full opinion wrapping across three lines, with no cut right edge or missing end. The PDFs retain Safari's default header and footer, including the temporary local file path.
+
+This establishes paginated A4 output for **Safari 26.5** on this fixture. It does not establish paginated output for **Playwright WebKit 26.6**: that build still has only continuous print-media screenshots. Those two version-specific claims must stay separate in user-facing support wording. Other versions, devices, and browsers remain **未驗證**.
