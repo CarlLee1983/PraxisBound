@@ -55,3 +55,13 @@ backticked observation fields. The record formatting was corrected and the
 result-file validation rerun; no product code or acceptance criterion changed.
 The post-review gate was interrupted before completion to correct this record
 format and restarted afterward; the interrupted run is not counted as PASS.
+
+## Final canonical observation
+
+At 2026-09-27 14:58 UTC, `make verify` completed with exit 0 on clean committed
+checkpoint `d8870623aa357f570e4cfdea9a6a7cd9c1c49808`, which includes both
+review fixes. The TypeScript suite reported 1009 tests: 1008 passed, 0 failed,
+and the one pre-existing opt-in performance smoke skipped. The two-Spec,
+four-Story R-009/AC-001 case passed in that run. All other composed gates
+completed successfully. This subsequent edit records that observation only;
+product source and tests are unchanged from the verified checkpoint.
