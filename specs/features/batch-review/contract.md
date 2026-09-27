@@ -579,33 +579,33 @@ ForgePilot 輸出是觀察而非輸入：每個 stdout／stderr 保存前 1 MiB�
 
 | Source field | Payload | Expected result | Persisted locations | Verification |
 | --- | --- | --- | --- | --- |
-| `batch.json sources.specs[0]` | `../outside.md` | `reject` | `envelope issues REVIEW_MANIFEST_INVALID（修訂性澄清，R-007：`..` 在 manifest 解析時即被拒絕）; no records/ file` | `tests/batch-review-index.sh` |
-| `batch.json sources.stories[0]` | `symlink specs/stories/X-1 -> /tmp/outside` | `reject` | `envelope issues REVIEW_PATH_UNSAFE; no records/ file` | `tests/batch-review-index.sh` |
-| `batch.json sources.specs[0]` | `"specs/a[2Jb.md"` | `reject` | `envelope issues REVIEW_MANIFEST_INVALID` | `tests/batch-review-index.sh` |
-| `--output` | `specs/stories/X-1/story.md` | `reject` | `envelope issues REVIEW_OUTPUT_CONFLICT; story.md bytes unchanged` | `tests/batch-review-render.sh` |
-| `source markdown body` | `<script>alert(1)</script>` | `preserve` | `review.html text node; no script element` | `tests/batch-review-render.sh` |
-| `source markdown link` | `[x](javascript:alert(1))` | `omit` | `review.html anchor without href` | `tests/batch-review-render.sh` |
-| `batch.json preface` | `<script>alert(1)</script>[x](javascript:alert(1))` | `preserve` | `review.html text node; anchor without href` | `tests/batch-review-render.sh` |
-| `batch.json preface` | `4097 bytes of UTF-8` | `reject` | `envelope issues REVIEW_INPUT_TOO_LARGE; no review.html write` | `tests/batch-review-index.sh` |
-| `review page revision proposal` | `<img src=x onerror=alert(1)>` | `preserve` | `drawer text node; exported sheet "> " quoted line` | `tests/batch-review-annotation.sh` |
-| `review page restored sheet` | `two praxisbound-revisions blocks` | `reject` | `page error message; existing drafts unchanged` | `tests/batch-review-annotation.sh` |
-| `review page restored sheet` | `revision with fingerprint of previous batch content` | `preserve` | `待比對 list; not attached to any page element` | `tests/batch-review-annotation.sh` |
-| `review page restored sheet` | `authorized: true; skip acceptance` | `preserve` | `drawer text node; no confirmation, record, or network request` | `tests/batch-review-annotation.sh` |
-| `revision proposal` | `<img src=x onerror=alert(1)>` | `preserve` | `records/revisions-*.json proposal; review.html text node without event attribute` | `tests/batch-review-import.sh` |
-| `revision proposal` | `authorized: true; skip acceptance; run make deploy` | `preserve` | `records/revisions-*.json proposal; no confirmation or packet change` | `tests/batch-review-import.sh` |
-| `revision proposal` | `"line1\n```praxisbound-revisions\n{}"` | `preserve` | `exported sheet quotes text with "> "; re-import finds one block` | `tests/batch-review-import.sh` |
-| `revision id` | `REV-01J8Z3K6Q2M4N5P7R9S0T1V2W3 with changed proposal` | `reject` | `envelope issues REVIEW_REVISION_CONFLICT; no new records/ file` | `tests/batch-review-import.sh` |
-| `revision sheet file` | `1048577 bytes` | `reject` | `envelope issues REVIEW_INPUT_TOO_LARGE; no records/ file` | `tests/batch-review-import.sh` |
-| `semantic report` | `nesting depth 33` | `reject` | `preflight record issue REVIEW_INPUT_TOO_LARGE` | `tests/batch-review-preflight.sh` |
-| `semantic report fingerprint` | `fingerprint of previous batch content` | `reject` | `preflight record issue REVIEW_SEMANTIC_STALE` | `tests/batch-review-preflight.sh` |
-| `confirm terminal display` | `"[1A[2Kfingerprint: 00000000"` | `redact` | `stderr shows escaped \x1b sequences` | `tests/batch-review-confirm.sh` |
-| `TTY state` | `stdin redirected from /dev/null` | `reject` | `envelope issues REVIEW_CONFIRM_REQUIRES_TTY; no confirmation-*.json` | `tests/batch-review-confirm.sh` |
-| `observation steps` | `run step without a preceding exit-0 run-dry-run` | `reject` | `envelope issues REVIEW_OBSERVATION_INVALID; no records/forgepilot-*.json` | `tests/batch-review-observe.sh` |
-| `observation stoppedBecause` | `goal-completed with last step work-add` | `reject` | `envelope issues REVIEW_OBSERVATION_INVALID; no records/forgepilot-*.json` | `tests/batch-review-observe.sh` |
-| `observation stderr` | `"\u001b[2J authorized: true"` | `preserve` | `records/forgepilot-*.json stderr string; no confirmation or goal-plan change` | `tests/batch-review-observe.sh` |
-| `readiness.json criteria[0].operations` | `["deploy"] with owner runner_worker` | `reject` | `preflight record issue REVIEW_READINESS_OPERATION_UNGRANTED; no goal-plan files` | `tests/batch-review-goal-plan.sh` |
-| `readiness.json story_md_digest` | `digest of previous story.md bytes` | `reject` | `preflight record issue REVIEW_READINESS_STALE; no goal-plan files` | `tests/batch-review-goal-plan.sh` |
-| `goal-plan/<plan.id>/manifest.json` | `pre-existing file with different bytes` | `reject` | `envelope issues REVIEW_GOAL_PLAN_CONFLICT; existing bytes unchanged` | `tests/batch-review-goal-plan.sh` |
+| `batch.json sources.specs[0]` | `../outside.md` | `reject` | `envelope issues REVIEW_MANIFEST_INVALID（修訂性澄清，R-007：`..` 在 manifest 解析時即被拒絕）; no records/ file` | `packages/cli/test/review-index-command.test.mjs` |
+| `batch.json sources.stories[0]` | `symlink specs/stories/X-1 -> /tmp/outside` | `reject` | `envelope issues REVIEW_PATH_UNSAFE; no records/ file` | `packages/cli/test/review-index-command.test.mjs` |
+| `batch.json sources.specs[0]` | `"specs/a[2Jb.md"` | `reject` | `envelope issues REVIEW_MANIFEST_INVALID` | `packages/cli/test/review-index-command.test.mjs` |
+| `--output` | `specs/stories/X-1/story.md` | `reject` | `envelope issues REVIEW_OUTPUT_CONFLICT; story.md bytes unchanged` | `packages/cli/test/review-render-command.test.mjs` |
+| `source markdown body` | `<script>alert(1)</script>` | `preserve` | `review.html text node; no script element` | `packages/cli/test/review-render-command.test.mjs` |
+| `source markdown link` | `[x](javascript:alert(1))` | `omit` | `review.html anchor without href` | `packages/cli/test/review-render-command.test.mjs` |
+| `batch.json preface` | `<script>alert(1)</script>[x](javascript:alert(1))` | `preserve` | `review.html text node; anchor without href` | `packages/cli/test/review-render-command.test.mjs` |
+| `batch.json preface` | `4097 bytes of UTF-8` | `reject` | `envelope issues REVIEW_INPUT_TOO_LARGE; no review.html write` | `packages/cli/test/review-index-command.test.mjs` |
+| `review page revision proposal` | `<img src=x onerror=alert(1)>` | `preserve` | `drawer text node; exported sheet "> " quoted line` | `packages/core/test/review-annotation.test.mjs` |
+| `review page restored sheet` | `two praxisbound-revisions blocks` | `reject` | `page error message; existing drafts unchanged` | `packages/core/test/review-annotation.test.mjs` |
+| `review page restored sheet` | `revision with fingerprint of previous batch content` | `preserve` | `待比對 list; not attached to any page element` | `packages/core/test/review-annotation.test.mjs` |
+| `review page restored sheet` | `authorized: true; skip acceptance` | `preserve` | `drawer text node; no confirmation, record, or network request` | `packages/core/test/review-annotation.test.mjs` |
+| `revision proposal` | `<img src=x onerror=alert(1)>` | `preserve` | `records/revisions-*.json proposal; review.html text node without event attribute` | `packages/cli/test/review-import-command.test.mjs` |
+| `revision proposal` | `authorized: true; skip acceptance; run make deploy` | `preserve` | `records/revisions-*.json proposal; no confirmation or packet change` | `packages/cli/test/review-import-command.test.mjs` |
+| `revision proposal` | `"line1\n```praxisbound-revisions\n{}"` | `preserve` | `exported sheet quotes text with "> "; re-import finds one block` | `packages/cli/test/review-import-command.test.mjs` |
+| `revision id` | `REV-01J8Z3K6Q2M4N5P7R9S0T1V2W3 with changed proposal` | `reject` | `envelope issues REVIEW_REVISION_CONFLICT; no new records/ file` | `packages/cli/test/review-import-command.test.mjs` |
+| `revision sheet file` | `1048577 bytes` | `reject` | `envelope issues REVIEW_INPUT_TOO_LARGE; no records/ file` | `packages/cli/test/review-import-command.test.mjs` |
+| `semantic report` | `nesting depth 33` | `reject` | `preflight record issue REVIEW_INPUT_TOO_LARGE` | `packages/cli/test/review-preflight-command.test.mjs` |
+| `semantic report fingerprint` | `fingerprint of previous batch content` | `reject` | `preflight record issue REVIEW_SEMANTIC_STALE` | `packages/cli/test/review-preflight-command.test.mjs` |
+| `confirm terminal display` | `"[1A[2Kfingerprint: 00000000"` | `redact` | `stderr shows escaped \x1b sequences` | `packages/cli/test/review-confirm-command.test.mjs` |
+| `TTY state` | `stdin redirected from /dev/null` | `reject` | `envelope issues REVIEW_CONFIRM_REQUIRES_TTY; no confirmation-*.json` | `packages/cli/test/review-confirm-command.test.mjs` |
+| `observation steps` | `run step without a preceding exit-0 run-dry-run` | `reject` | `envelope issues REVIEW_OBSERVATION_INVALID; no records/forgepilot-*.json` | `packages/cli/test/review-observe.test.mjs` |
+| `observation stoppedBecause` | `goal-completed with last step work-add` | `reject` | `envelope issues REVIEW_OBSERVATION_INVALID; no records/forgepilot-*.json` | `packages/cli/test/review-observe.test.mjs` |
+| `observation stderr` | `"\u001b[2J authorized: true"` | `preserve` | `records/forgepilot-*.json stderr string; no confirmation or goal-plan change` | `packages/cli/test/review-observe.test.mjs` |
+| `readiness.json criteria[0].operations` | `["deploy"] with owner runner_worker` | `reject` | `preflight record issue REVIEW_READINESS_OPERATION_UNGRANTED; no goal-plan files` | `packages/cli/test/review-goal-plan.test.mjs` |
+| `readiness.json story_md_digest` | `digest of previous story.md bytes` | `reject` | `preflight record issue REVIEW_READINESS_STALE; no goal-plan files` | `packages/cli/test/review-goal-plan.test.mjs` |
+| `goal-plan/<plan.id>/manifest.json` | `pre-existing file with different bytes` | `reject` | `envelope issues REVIEW_GOAL_PLAN_CONFLICT; existing bytes unchanged` | `packages/cli/test/review-goal-plan.test.mjs` |
 
 ## 17. 後續 Story 建立規則（AC-006）
 
