@@ -87,7 +87,8 @@ product source and tests were unchanged at the time of that historical record.
 
 At 2026-09-27 15:22 UTC, `make verify` completed with exit 0 on checkpoint
 `09ea62e1ae31ffb39bb33c36ac200c5c35b46aa8`. All nine independent
-`R-009/AC-003` return-path cases passed through the built CLI. They assert the
+`R-009/AC-003` return-path cases passed through built review commands;
+confirmation used the injected terminal adapter. The cases assert the
 outcome, exit code, applicable issue code, and absence of forbidden output;
 the stale-feedback and unauthorized-run records correctly remain successful
 evidence imports with advisory or `run-failed` details. The TypeScript suite
