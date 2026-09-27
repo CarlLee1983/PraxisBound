@@ -541,6 +541,51 @@ test("R-009/AC-004: recorded handoff retry keeps the first Goal and four Work It
     const goalPlanPath = `${planned.data.goalPlanDirectory}/manifest.json`;
     const goalPlanBytes = await readFile(join(fx.root, goalPlanPath));
     const plan = JSON.parse(goalPlanBytes);
+    const originalFirst = JSON.parse(await readFile(recordedFirst, "utf8"));
+    const originalRetry = JSON.parse(await readFile(recordedRetry, "utf8"));
+    assert.equal(originalFirst.goalId, originalRetry.goalId);
+    assert.equal(
+      originalFirst.steps.filter((step) => step.command === "goal-create")
+        .length,
+      1,
+    );
+    assert.equal(
+      originalRetry.steps.filter((step) => step.command === "goal-create")
+        .length,
+      0,
+    );
+    const originalFirstAdds = originalFirst.steps.filter(
+      (step) => step.command === "work-add",
+    );
+    const originalRetryAdds = originalRetry.steps.filter(
+      (step) => step.command === "work-add",
+    );
+    assert.equal(originalFirstAdds.length, 3);
+    assert.equal(originalRetryAdds.length, 3);
+    for (let index = 0; index < originalRetryAdds.length; index += 1) {
+      const initial = originalFirstAdds[index];
+      const retry = originalRetryAdds[index];
+      const initialOutput = JSON.parse(initial.stdout);
+      const retryOutput = JSON.parse(retry.stdout);
+      assert.equal(initial.created, true);
+      assert.equal(initialOutput.created, true);
+      assert.equal(retry.created, false);
+      assert.equal(retryOutput.created, false);
+      assert.equal(retry.story, initial.story);
+      assert.equal(retry.workItemId, initial.workItemId);
+      for (const field of [
+        "id",
+        "goal_id",
+        "story_ref",
+        "external_ref",
+        "depends_on",
+      ]) {
+        assert.deepEqual(
+          retryOutput.work_item[field],
+          initialOutput.work_item[field],
+        );
+      }
+    }
     async function observeRecorded(path, name, created) {
       const recorded = JSON.parse(await readFile(path, "utf8"));
       const steps = recorded.steps.map((step) => ({ ...step }));
@@ -553,6 +598,7 @@ test("R-009/AC-004: recorded handoff retry keeps the first Goal and four Work It
       const insertion = steps.findIndex(
         (step) => step.command === "goal-preflight",
       );
+      // The fourth node is synthetic: TST-035 recorded only three Work Items.
       steps.splice(
         insertion,
         0,
