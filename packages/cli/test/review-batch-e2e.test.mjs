@@ -90,16 +90,31 @@ async function replay(fx, planExecution, overrides = {}) {
   const goalPlanPath = `${planExecution.result.data.goalPlanDirectory}/manifest.json`;
   const bytes = await readFile(join(fx.root, goalPlanPath));
   const plan = JSON.parse(bytes);
-  const recordedAdds = recorded.steps.filter(
-    (step) => step.command === "work-add",
-  );
   const steps = recorded.steps.map((step) => ({ ...step }));
+  const recordedAdds = steps.filter((step) => step.command === "work-add");
+  assert.equal(
+    recordedAdds.length,
+    3,
+    "the provenance record must have three work-add outputs",
+  );
+  const insertion = steps.findIndex(
+    (step) => step.command === "goal-preflight",
+  );
+  steps.splice(
+    insertion,
+    0,
+    { ...recorded.steps.find((step) => step.command === "preflight") },
+    { ...recordedAdds.at(-1) },
+  );
   let added = 0;
   for (const step of steps) {
     if (step.command !== "work-add") continue;
     const node = plan.nodes[added];
     const payload = JSON.parse(step.stdout);
-    payload.work_item.id = `WI-00${added + 1}`;
+    const workItemId = `WI-00${added + 1}`;
+    step.story = node.nodeRef;
+    step.workItemId = workItemId;
+    payload.work_item.id = workItemId;
     payload.work_item.goal_id = plan.plan.id;
     payload.work_item.story_ref = node.storyRef;
     payload.work_item.external_ref = node.nodeRef;
@@ -109,28 +124,7 @@ async function replay(fx, planExecution, overrides = {}) {
     step.stdout = JSON.stringify(payload);
     added += 1;
   }
-  assert.equal(
-    added,
-    3,
-    "the provenance record must have three work-add outputs",
-  );
-  const fourth = { ...recordedAdds.at(-1) };
-  const payload = JSON.parse(fourth.stdout);
-  payload.work_item.id = "WI-004";
-  payload.work_item.goal_id = plan.plan.id;
-  payload.work_item.story_ref = plan.nodes[3].storyRef;
-  payload.work_item.external_ref = plan.nodes[3].nodeRef;
-  payload.work_item.depends_on = ["WI-002", "WI-003"];
-  fourth.stdout = JSON.stringify(payload);
-  const insertion = steps.findIndex(
-    (step) => step.command === "goal-preflight",
-  );
-  steps.splice(
-    insertion,
-    0,
-    { ...recorded.steps.find((step) => step.command === "preflight") },
-    fourth,
-  );
+  assert.equal(added, 4);
   const observation = {
     ...recorded,
     batchId: BATCH_ID,
@@ -166,6 +160,20 @@ test("R-009/AC-001 TST-038/AC-001..005: two-Spec four-Story review to accepted r
     const firstHtml = await readFile(join(fx.root, "review.html"), "utf8");
     assert.match(firstHtml, /Alpha/);
     assert.match(firstHtml, /Beta/);
+    const originalConfirmation = await confirm(
+      fx,
+      first.result.data.fingerprint,
+    );
+    expectOutcome(originalConfirmation.execution, "success");
+    assert.equal(
+      (
+        await readJson(
+          fx.root,
+          originalConfirmation.execution.result.data.record,
+        )
+      ).fingerprint,
+      first.result.data.fingerprint,
+    );
 
     const specPath = "specs/features/alpha/spec.md";
     const locator = first.result.data.specs[0].entries.find(
@@ -222,9 +230,26 @@ test("R-009/AC-001 TST-038/AC-001..005: two-Spec four-Story review to accepted r
       cli(fx, "respond", [fx.manifestPath, "response.json"]),
       "success",
     );
-    expectOutcome(await render(fx), "success");
+    const revisedRender = render(fx);
+    expectOutcome(revisedRender, "success");
+    assert.ok(
+      revisedRender.result.issues.some(
+        (issue) =>
+          issue.code === "REVIEW_SOURCE_CHANGED" && issue.path === specPath,
+      ),
+    );
     const secondHtml = await readFile(join(fx.root, "review.html"), "utf8");
     assert.match(secondHtml, /Alpha clarified/);
+    assert.match(secondHtml, /需複審/);
+    assert.match(secondHtml, /沒有確認紀錄綁定目前指紋/);
+    assert.match(
+      secondHtml,
+      /內容變動：<span class="doc-path">specs\/features\/alpha\/spec\.md<\/span>/,
+    );
+    assert.match(
+      secondHtml,
+      new RegExp(`data-pb-fingerprint="${revised.result.data.fingerprint}"`),
+    );
     assert.notEqual(secondHtml, firstHtml);
 
     const confirmed = await confirm(fx, revised.result.data.fingerprint);
@@ -240,6 +265,14 @@ test("R-009/AC-001 TST-038/AC-001..005: two-Spec four-Story review to accepted r
     );
     assert.equal(confirmation.claim, "explicit-terminal-confirmation");
     assert.equal(confirmation.fingerprint, revised.result.data.fingerprint);
+    assert.notEqual(
+      confirmed.execution.result.data.record,
+      originalConfirmation.execution.result.data.record,
+    );
+    expectOutcome(render(fx), "success");
+    const finalHtml = await readFile(join(fx.root, "review.html"), "utf8");
+    assert.match(finalHtml, /有一份確認紀錄綁定目前指紋/);
+    assert.doesNotMatch(finalHtml, /需複審/);
     await semanticReport(fx.root, revised.result.data.fingerprint);
     expectOutcome(await preflight(fx), "REVIEW_READY");
     expectOutcome(cli(fx, "readiness-digests", [fx.manifestPath]), "success");
@@ -270,6 +303,9 @@ test("R-009/AC-001 TST-038/AC-001..005: two-Spec four-Story review to accepted r
     assert.equal(workAdds.length, 4);
     for (const [position, step] of workAdds.entries()) {
       const work = JSON.parse(step.stdout).work_item;
+      assert.equal(step.story, STORY_IDS[position]);
+      assert.equal(step.workItemId, `WI-00${position + 1}`);
+      assert.equal(work.id, step.workItemId);
       assert.equal(work.external_ref, STORY_IDS[position]);
       assert.equal(work.story_ref, plan.nodes[position].storyRef);
       assert.equal(work.goal_id, plan.plan.id);
