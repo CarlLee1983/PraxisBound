@@ -116,6 +116,13 @@ time of the effect; never read from a file. Starting a Goal's run is authorized
 only by the human in the control plane, never by an Agent.
 _Avoid_: approved flag, authorized field
 
+**Worker Environment Disclosure**:
+The Agent's list, given to the human before Execution Authorization, of the
+configuration a Worker inherits beyond its authorized profile (hooks, tool
+servers, global instructions), by name and existence only and stated as
+possibly incomplete; information for the human, never an authorization.
+_Avoid_: environment approval, safety check, worker attestation
+
 **Semantic Report**:
 An Agent's self-reported judgment of a Review Batch at one Requirement
 Fingerprint, covering missing splits, contradictions, insufficient acceptance,
