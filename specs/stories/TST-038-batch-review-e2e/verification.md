@@ -26,6 +26,10 @@
 
 `review observe` validates observation shape and binding but treats ForgePilot stdout and stderr as opaque evidence. The replay proves the review CLI path and four-node mapping; it does not prove ForgePilot executed the new plan.
 
+Story prose can mention a dependency outside the batch without declaring it in
+the manifest. That undeclared dependency produces no diagnostic; only manifest
+dependencies are checked for out-of-batch Story IDs.
+
 ## Checks
 
 * lint: pass — `make verify at 27eef70; review-fix pnpm run lint also passed.`
