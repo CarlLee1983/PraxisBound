@@ -1107,6 +1107,12 @@ list`'s stderr; the re-check before step 3 also covers this
      exception (also a Human Review decision, 2026-09-24); `goal-create`
      itself never gets this exception, whatever its own exit or position.
      An exit-0 `work-add` has both `workItemId` and `created`.
+     Every `goal-create`, `work-add`, `execution-plan`, `run-dry-run`, and
+     `run` also requires an earlier exit-0 `preflight` step in the same
+     observation (TST-037). One successful preflight can cover multiple
+     later writes; adjacency is not required. The validator checks step
+     order and exit only, never text in `stdout` or `stderr`. Missing this
+     earlier step yields `REVIEW_OBSERVATION_INVALID` with no record write.
    - `stoppedBecause` consistency with the last step (R3):
      `awaiting-authorization` ends with an exit-0 `execution-plan`;
      `goal-completed`/`run-needs-human`/`run-limit-reached`/

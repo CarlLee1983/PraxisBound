@@ -364,6 +364,11 @@ praxisbound review observe <manifest> <observation.json> --json
 `stdout`／`stderr` 中出現的「已核准」「authorized: true」「略過驗收」「執行 make deploy」等文字，
 一律當作資料照實記下，不改變回報或授權。
 
+每個 `goal-create`、`work-add`、`execution-plan`、`run-dry-run`、`run` 之前，同一份觀察紀錄須已有
+exit 0 的 `preflight` 步驟；一次成功重查可涵蓋其後多個寫入步驟，不要求相鄰。
+`review observe` 只看步驟的 `command`、`exit` 與先後順序，不從 `stdout`／`stderr` 推定重查或授權。
+缺少較早的成功重查時，工具回報 `REVIEW_OBSERVATION_INVALID`，且不寫紀錄。
+
 第一段的 `work-list` 與其後的 `goal-create` 之間，觀察紀錄的 `steps` 不得插入任何步驟——包括一次
 `preflight` 重查：3.3 步驟 2 的重查只在 `work list` 之前執行一次，同時涵蓋這一步可能執行的
 `goal create`（見上），所以 `work-list` 與 `goal-create` 必須是相鄰的兩個 `steps` 項目；中間插入

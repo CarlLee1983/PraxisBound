@@ -542,6 +542,8 @@ ForgePilot 輸出是觀察而非輸入：每個 stdout／stderr 保存前 1 MiB�
   相關命令與 Agent 工作流程尚未發布，屬 **Corrective**。
 - （修訂，R-008，TST-036）§11 步驟 7 要求 Worker 環境揭露；它只是交給人的資訊，不改變任何步驟、停止理由、schema 或觀察紀錄。
   Agent 工作流程尚未發布，屬 **Corrective**。
+- （修訂，R-009，TST-037）§22 強制每個 ForgePilot 寫入步驟之前，同一份觀察紀錄已有 exit 0 的 `preflight`。
+  僅檢查步驟形狀，觀察紀錄 `schemaVersion` 維持 `2.0.0`；`review observe` 尚未發布，屬 **Corrective**。
 
 ## 15. 安全：Trust Boundary Fields
 
@@ -791,6 +793,9 @@ Schema：[`schemas/forgepilot-observation.schema.json`](schemas/forgepilot-obser
 - `goalPlan` 指向的檔案不在 `specs/batches/<BATCH-ID>/goal-plan/` 下、不存在，或 sha256 不符；`goalId` 不等於該 manifest 的 `plan.id`。
 - 步驟順序違反 §11：`run` 之前沒有 exit 0 的 `run-dry-run`；`run-dry-run` 或 `run` 與 `goal-create`、`work-add` 出現在同一份紀錄；
   非最後一步的 exit 不是 0（唯一例外：exit 為非 0 整數的 `work-list` 緊接著 `goal-create`，見 §11 步驟 2–3；exit 為 `null` 的 `work-list` 不適用，因為未觀察到的 exit 不等於非 0，須以 `step-failed` 停止——TST-032 人類審閱 2026-09-24）；exit 0 的 `work-add` 缺 `workItemId` 或 `created`。
+- （修訂，R-009，TST-037）每個 `goal-create`、`work-add`、`execution-plan`、`run-dry-run`、`run` 步驟之前，
+  同一份紀錄內須已有 exit 0 的 `preflight` 步驟。一個較早的成功重查可涵蓋多個寫入步驟；不要求相鄰或重新重查。
+  工具只檢查 `command`、`exit` 與先後順序，不解析 `stdout`／`stderr`，其中任何授權或重查宣稱都只是資料。
 - `stoppedBecause` 與最後一步不一致：`awaiting-authorization` 的最後一步須為 exit 0 的 `execution-plan`；
   `goal-completed`／`run-needs-human`／`run-limit-reached`／`run-interrupted`／`run-failed` 的最後一步須為 `run`，且 exit 依 §11 對照表；
   `step-failed` 的最後一步 exit 須非 0；`authorization-missing` 須沒有任何步驟。

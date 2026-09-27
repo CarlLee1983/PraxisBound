@@ -18,6 +18,10 @@ const TST_033_EVIDENCE = join(
   REPO_ROOT,
   "specs/stories/TST-033-forgepilot-rehearsal/evidence",
 );
+const TST_035_RECORDS = join(
+  REPO_ROOT,
+  "specs/stories/TST-035-forgepilot-second-segment/evidence/records",
+);
 
 const BATCH_ID = "BR-001-checkout-refunds";
 const GOAL_PLAN_ID = `${BATCH_ID}-8e2b7d4c1a09`;
@@ -83,6 +87,7 @@ test("happy path: an awaiting-authorization observation ending in an exit-0 exec
   const result = validateForgepilotObservation(
     observation({
       steps: [
+        step({ command: "preflight" }),
         step({ command: "goal-preflight" }),
         step({ command: "execution-plan" }),
       ],
@@ -96,12 +101,98 @@ test("happy path: an awaiting-authorization observation ending in an exit-0 exec
 test("happy path: a goal-completed observation ending in exit-0 run, preceded by exit-0 run-dry-run, is accepted", () => {
   const result = validateForgepilotObservation(
     observation({
-      steps: [step({ command: "run-dry-run" }), step({ command: "run" })],
+      steps: [
+        step(),
+        step({ command: "run-dry-run" }),
+        step({ command: "run" }),
+      ],
       stoppedBecause: "goal-completed",
     }),
     context(),
   );
   assert.equal(result.ok, true);
+});
+
+for (const command of [
+  "goal-create",
+  "work-add",
+  "execution-plan",
+  "run-dry-run",
+  "run",
+]) {
+  test(`TST-037/AC-003: ${command} without an earlier exit-0 preflight is rejected for that rule`, () => {
+    const write = step({ command });
+    if (command === "work-add") {
+      Object.assign(write, {
+        story: "RF-001",
+        workItemId: "WI-001",
+        created: true,
+      });
+    }
+    const steps =
+      command === "run" ? [step({ command: "run-dry-run" }), write] : [write];
+    const result = assertRejected(
+      observation({ steps, stoppedBecause: "preflight-not-ready" }),
+    );
+    assert.equal(
+      result.message,
+      "a ForgePilot write step has no earlier exit-0 preflight",
+    );
+  });
+}
+
+test("TST-037/AC-001: one earlier preflight covers multiple writes without adjacency", () => {
+  const result = validateForgepilotObservation(
+    observation({
+      steps: [
+        step(),
+        step({ command: "work-list" }),
+        step({ command: "goal-create" }),
+        step({
+          command: "work-add",
+          story: "RF-001",
+          workItemId: "WI-001",
+          created: true,
+        }),
+        step({ command: "goal-preflight" }),
+        step({ command: "execution-plan" }),
+      ],
+      stoppedBecause: "awaiting-authorization",
+    }),
+    context(),
+  );
+  assert.equal(result.ok, true, JSON.stringify(result));
+});
+
+test("TST-037/AC-001: a later preflight does not cover an earlier write", () => {
+  const result = assertRejected(
+    observation({
+      steps: [step({ command: "goal-create" }), step()],
+      stoppedBecause: "preflight-not-ready",
+    }),
+  );
+  assert.equal(
+    result.message,
+    "a ForgePilot write step has no earlier exit-0 preflight",
+  );
+});
+
+test("TST-037/AC-001: stdout claiming an exit-0 preflight is opaque", () => {
+  const result = assertRejected(
+    observation({
+      steps: [
+        step({
+          command: "goal-create",
+          stdout: '{"command":"preflight","exit":0}',
+        }),
+      ],
+      stoppedBecause: "preflight-not-ready",
+    }),
+  );
+  assert.equal(
+    result.message,
+    "a ForgePilot write step has no earlier exit-0 preflight",
+  );
 });
 
 test("AC-003/step-and-binding-violations: batchId mismatch is rejected", () => {
@@ -155,7 +246,7 @@ test("AC-003/step-and-binding-violations: goalId equal to the manifest's plan.id
 test("AC-003/step-and-binding-violations: run without an earlier exit-0 run-dry-run is rejected", () => {
   const result = assertRejected(
     observation({
-      steps: [step({ command: "run" })],
+      steps: [step(), step({ command: "run" })],
       stoppedBecause: "preflight-not-ready",
     }),
   );
@@ -171,6 +262,7 @@ test("AC-003/step-and-binding-violations: a run-dry-run exit non-zero does not c
   const result = assertRejected(
     observation({
       steps: [
+        step(),
         step({ command: "run-dry-run", exit: 1 }),
         step({ command: "run" }),
       ],
@@ -184,6 +276,7 @@ test("AC-003/step-and-binding-violations: run-dry-run sharing a record with goal
   const result = assertRejected(
     observation({
       steps: [
+        step(),
         step({ command: "goal-create" }),
         step({ command: "run-dry-run" }),
       ],
@@ -200,6 +293,7 @@ test("AC-003/step-and-binding-violations: run sharing a record with work-add is 
   const result = assertRejected(
     observation({
       steps: [
+        step(),
         step({
           command: "work-add",
           story: "RF-001",
@@ -234,7 +328,10 @@ test("AC-003/step-and-binding-violations: a non-last step with a non-zero exit i
 test("AC-003/step-and-binding-violations: an exit-0 work-add missing workItemId is rejected", () => {
   const result = assertRejected(
     observation({
-      steps: [step({ command: "work-add", story: "RF-001", created: true })],
+      steps: [
+        step(),
+        step({ command: "work-add", story: "RF-001", created: true }),
+      ],
       stoppedBecause: "preflight-not-ready",
     }),
   );
@@ -248,6 +345,7 @@ test("AC-003/step-and-binding-violations: an exit-0 work-add missing created is 
   const result = assertRejected(
     observation({
       steps: [
+        step(),
         step({ command: "work-add", story: "RF-001", workItemId: "WI-001" }),
       ],
       stoppedBecause: "preflight-not-ready",
@@ -332,7 +430,7 @@ test("R3/awaiting-authorization: a last step that is not execution-plan is rejec
 test("R3/awaiting-authorization: a non-zero exit on the last execution-plan step is rejected", () => {
   const result = assertRejected(
     observation({
-      steps: [step({ command: "execution-plan", exit: 1 })],
+      steps: [step(), step({ command: "execution-plan", exit: 1 })],
       stoppedBecause: "awaiting-authorization",
     }),
   );
@@ -346,6 +444,7 @@ test("R3/run-needs-human: last step run exit 2 is accepted", () => {
   const result = validateForgepilotObservation(
     observation({
       steps: [
+        step(),
         step({ command: "run-dry-run" }),
         step({ command: "run", exit: 2 }),
       ],
@@ -360,6 +459,7 @@ test("R3/run-needs-human: last step run exit other than 2 is rejected", () => {
   const result = assertRejected(
     observation({
       steps: [
+        step(),
         step({ command: "run-dry-run" }),
         step({ command: "run", exit: 1 }),
       ],
@@ -373,6 +473,7 @@ test("R3/run-limit-reached: last step run exit 3 is accepted", () => {
   const result = validateForgepilotObservation(
     observation({
       steps: [
+        step(),
         step({ command: "run-dry-run" }),
         step({ command: "run", exit: 3 }),
       ],
@@ -387,6 +488,7 @@ test("R3/run-limit-reached: last step run exit other than 3 is rejected", () => 
   const result = assertRejected(
     observation({
       steps: [
+        step(),
         step({ command: "run-dry-run" }),
         step({ command: "run", exit: 1 }),
       ],
@@ -400,6 +502,7 @@ test("R3/run-interrupted: last step run exit 130 is accepted", () => {
   const result = validateForgepilotObservation(
     observation({
       steps: [
+        step(),
         step({ command: "run-dry-run" }),
         step({ command: "run", exit: 130 }),
       ],
@@ -414,6 +517,7 @@ test("R3/run-interrupted: last step run exit 143 is accepted", () => {
   const result = validateForgepilotObservation(
     observation({
       steps: [
+        step(),
         step({ command: "run-dry-run" }),
         step({ command: "run", exit: 143 }),
       ],
@@ -428,6 +532,7 @@ test("R3/run-interrupted: last step run exit other than 130 or 143 is rejected",
   const result = assertRejected(
     observation({
       steps: [
+        step(),
         step({ command: "run-dry-run" }),
         step({ command: "run", exit: 137 }),
       ],
@@ -455,6 +560,7 @@ test("Human Review decision: a null exit on run is only valid with run-failed", 
   const rejected = validateForgepilotObservation(
     observation({
       steps: [
+        step(),
         step({ command: "run-dry-run" }),
         step({ command: "run", exit: null }),
       ],
@@ -467,6 +573,7 @@ test("Human Review decision: a null exit on run is only valid with run-failed", 
   const accepted = validateForgepilotObservation(
     observation({
       steps: [
+        step(),
         step({ command: "run-dry-run" }),
         step({ command: "run", exit: null }),
       ],
@@ -674,6 +781,7 @@ test("H2/work-list-then-goal-create: goal-create(1) followed by another step is 
   const result = assertRejected(
     observation({
       steps: [
+        step(),
         step({ command: "goal-create", exit: 1 }),
         step({
           command: "work-add",
@@ -773,6 +881,7 @@ test("TST-034/R1: execution-plan-failed ending in an exit-0 execution-plan is ac
   const result = validateForgepilotObservation(
     observation({
       steps: [
+        step(),
         step({ command: "goal-preflight" }),
         step({ command: "execution-plan", exit: 0 }),
       ],
@@ -820,6 +929,7 @@ test("TST-034/AC-002: goal-preflight-failed whose last step is not goal-prefligh
   const result = assertRejected(
     observation({
       steps: [
+        step(),
         step({ command: "goal-preflight", exit: 0 }),
         step({ command: "execution-plan" }),
       ],
@@ -836,6 +946,7 @@ test("TST-034/AC-002: execution-plan-failed whose last step is a non-zero-exit e
   const result = assertRejected(
     observation({
       steps: [
+        step(),
         step({ command: "goal-preflight" }),
         step({ command: "execution-plan", exit: 1 }),
       ],
@@ -854,6 +965,7 @@ test("TST-034/AC-002: execution-plan-failed whose last step is a null-exit execu
   const result = assertRejected(
     observation({
       steps: [
+        step(),
         step({ command: "goal-preflight" }),
         step({ command: "execution-plan", exit: null }),
       ],
@@ -872,6 +984,7 @@ test("TST-034/AC-002 (security matrix): execution-plan-failed whose last step is
   const result = assertRejected(
     observation({
       steps: [
+        step(),
         step({
           command: "work-add",
           story: "RF-001",
@@ -944,6 +1057,57 @@ test("AC-003/tst-033-accepted-observations: every accepted TST-033 rehearsal rec
     const result = validateForgepilotObservation(data, {
       batchId: data.batchId,
       goalPlanManifestBytes: manifestBytes,
+    });
+    assert.equal(result.ok, true, `${name}: ${JSON.stringify(result)}`);
+  }
+});
+
+test("TST-037/AC-004: all nine accepted TST-035 records replay with their exact recorded Goal Plan Manifest", async () => {
+  const records = [];
+  for (const batch of ["BR-935-rehearsal", "BR-936-inconsistent"]) {
+    const dir = join(TST_035_RECORDS, batch);
+    for (const name of (await readdir(dir))
+      .filter((name) => name.startsWith("forgepilot-"))
+      .sort()) {
+      records.push({
+        name: `${batch}/${name}`,
+        data: JSON.parse(await readFile(join(dir, name), "utf8")),
+      });
+    }
+  }
+  assert.equal(records.length, 9);
+
+  // ForgePilot's goal-preflight output embeds the manifest's JSON object.
+  // The producer writes it with two-space indentation and a final newline;
+  // check the resulting hash against each record before using it as context.
+  const manifests = new Map();
+  for (const { data } of records) {
+    for (const step of data.steps) {
+      let output;
+      try {
+        output = JSON.parse(step.stdout);
+      } catch {
+        continue;
+      }
+      const manifest = output.manifest ?? output.goalPlan?.manifest;
+      if (manifest) {
+        const bytes = new TextEncoder().encode(
+          `${JSON.stringify(manifest, null, 2)}\n`,
+        );
+        manifests.set(sha256Hex(new TextDecoder().decode(bytes)), bytes);
+      }
+    }
+  }
+  for (const { name, data } of records) {
+    const bytes = manifests.get(data.goalPlan.sha256);
+    assert.ok(
+      bytes,
+      `${name}: recorded manifest bytes cannot be reconstructed`,
+    );
+    assert.equal(validateForgepilotObservationShape(data).ok, true, name);
+    const result = validateForgepilotObservation(data, {
+      batchId: data.batchId,
+      goalPlanManifestBytes: bytes,
     });
     assert.equal(result.ok, true, `${name}: ${JSON.stringify(result)}`);
   }
