@@ -47,6 +47,34 @@ const preflight = (fx, report = "semantic-report.json") =>
 const goalPlan = (fx, report = "semantic-report.json") =>
   cli(fx, "goal-plan", [fx.manifestPath, "--semantic-report", report]);
 const codes = (execution) => execution.result.issues.map((issue) => issue.code);
+const batchDirectory = (fx) => join(fx.root, "specs/batches", BATCH_ID);
+
+function expectResult(execution, outcome, exit, code) {
+  expectOutcome(execution, outcome);
+  assert.equal(execution.result.exit, exit, JSON.stringify(execution.result));
+  if (code !== undefined)
+    assert.ok(
+      codes(execution).includes(code),
+      JSON.stringify(execution.result),
+    );
+}
+
+async function recordsNamed(fx, prefix) {
+  try {
+    return (await readdir(join(batchDirectory(fx), "records"))).filter((name) =>
+      name.startsWith(prefix),
+    );
+  } catch (error) {
+    if (error.code === "ENOENT") return [];
+    throw error;
+  }
+}
+
+async function expectNoGoalPlan(fx) {
+  await assert.rejects(readdir(join(batchDirectory(fx), "goal-plan")), {
+    code: "ENOENT",
+  });
+}
 
 async function confirm(fixture, fingerprint, answers = []) {
   const tty = terminal([...answers, fingerprint.slice(0, 8)]);
@@ -352,48 +380,57 @@ for (const [name, change, code] of [
     "REVIEW_DEPENDENCY_CYCLE",
   ],
 ]) {
-  test(`TST-038/AC-006: ${name} blocks preflight on the four-Story batch`, async () => {
+  test(`R-009/AC-003 TST-038/AC-006: ${name} blocks the four-Story batch`, async () => {
     const fx = await fixture();
     try {
       await mutateManifest(fx, change);
       const result = await preflight(fx);
-      expectOutcome(result, "REVIEW_BLOCKED");
-      assert.ok(codes(result).includes(code), JSON.stringify(result.result));
+      expectResult(result, "REVIEW_BLOCKED", 1, code);
+      expectResult(await goalPlan(fx), "REVIEW_BLOCKED", 1, code);
+      await expectNoGoalPlan(fx);
+      assert.deepEqual(await recordsNamed(fx, "confirmation-"), []);
     } finally {
       await fx.cleanup();
     }
   });
 }
 
-test("TST-038/AC-006: a source edit after confirmation returns stale and prevents a Goal Plan", async () => {
+test("R-009/AC-003 TST-038/AC-006: a source edit after confirmation returns stale and prevents a Goal Plan", async () => {
   const fx = await setupConfirmed();
   try {
+    const confirmations = await recordsNamed(fx, "confirmation-");
     const path = join(fx.root, "specs/features/alpha/spec.md");
     await writeFile(
       path,
       `${await readFile(path, "utf8")}\n<!-- changed -->\n`,
     );
     const result = await preflight(fx);
-    expectOutcome(result, "REVIEW_STALE");
-    assert.ok(codes(result).includes("REVIEW_CONFIRMATION_STALE"));
-    expectOutcome(await goalPlan(fx), "REVIEW_STALE");
+    expectResult(result, "REVIEW_STALE", 1, "REVIEW_CONFIRMATION_STALE");
+    expectResult(
+      await goalPlan(fx),
+      "REVIEW_STALE",
+      1,
+      "REVIEW_CONFIRMATION_STALE",
+    );
+    await expectNoGoalPlan(fx);
+    assert.deepEqual(await recordsNamed(fx, "confirmation-"), confirmations);
   } finally {
     await fx.cleanup();
   }
 });
 
-test("TST-038/AC-006: missing Semantic Report prevents Goal Plan", async () => {
+test("R-009/AC-003 TST-038/AC-006: missing Semantic Report prevents Goal Plan", async () => {
   const fx = await setupConfirmed();
   try {
     const result = await goalPlan(fx, "missing-report.json");
-    expectOutcome(result, "REVIEW_INCOMPLETE");
-    assert.ok(codes(result).includes("REVIEW_SEMANTIC_MISSING"));
+    expectResult(result, "REVIEW_INCOMPLETE", 1, "REVIEW_SEMANTIC_MISSING");
+    await expectNoGoalPlan(fx);
   } finally {
     await fx.cleanup();
   }
 });
 
-test("TST-038/AC-006: stale Revision Sheet is retained as historical feedback", async () => {
+test("R-009/AC-003 TST-038/AC-006: stale Revision Sheet is retained as historical feedback", async () => {
   await withFixture(async (fx) => {
     const first = await index(fx);
     const locator = first.result.data.specs[0].entries.find(
@@ -419,13 +456,20 @@ test("TST-038/AC-006: stale Revision Sheet is retained as historical feedback", 
       sheetText(BATCH_ID, first.result.data.fingerprint, [request]),
     );
     const result = cli(fx, "import", [fx.manifestPath, "stale-sheet.md"]);
-    expectOutcome(result, "success");
-    assert.ok(codes(result).includes("REVIEW_REVISION_STALE_TARGET"));
+    expectResult(result, "success", 0, "REVIEW_REVISION_STALE_TARGET");
     assert.equal(result.result.data.revisions[0].status, "new");
+    assert.equal(typeof result.result.data.sheet.record, "string");
+    assert.equal(
+      (await readJson(fx.root, result.result.data.sheet.record)).revisions[0]
+        .id,
+      request.id,
+    );
+    assert.deepEqual(await recordsNamed(fx, "confirmation-"), []);
+    await expectNoGoalPlan(fx);
   });
 });
 
-test("TST-038/AC-006: an unresolved blocking request prevents confirmation", async () => {
+test("R-009/AC-003 TST-038/AC-006: an unresolved blocking request prevents confirmation", async () => {
   await withFixture(async (fx) => {
     const first = await index(fx);
     const locator = first.result.data.specs[0].entries.find(
@@ -451,18 +495,23 @@ test("TST-038/AC-006: an unresolved blocking request prevents confirmation", asy
       "success",
     );
     const confirmed = await confirm(fx, first.result.data.fingerprint);
-    expectOutcome(confirmed.execution, "failure");
-    assert.ok(
-      codes(confirmed.execution).includes("REVIEW_UNRESOLVED_BLOCKING"),
+    expectResult(
+      confirmed.execution,
+      "failure",
+      1,
+      "REVIEW_UNRESOLVED_BLOCKING",
     );
+    assert.deepEqual(await recordsNamed(fx, "confirmation-"), []);
+    await expectNoGoalPlan(fx);
   });
 });
 
-test("TST-038/AC-006: recorded unauthorized run is accepted only as run-failed evidence", async () => {
+test("R-009/AC-003 TST-038/AC-006: recorded unauthorized run is accepted only as run-failed evidence", async () => {
   const fx = await setupConfirmed();
   try {
     const plan = await goalPlan(fx);
     expectOutcome(plan, "REVIEW_READY");
+    const confirmations = await recordsNamed(fx, "confirmation-");
     const recorded = JSON.parse(
       await readFile(
         fileURLToPath(
@@ -478,17 +527,28 @@ test("TST-038/AC-006: recorded unauthorized run is accepted only as run-failed e
       steps: recorded.steps,
       stoppedBecause: recorded.stoppedBecause,
     });
-    expectOutcome(result, "success");
+    expectResult(result, "success", 0);
     const written = await readJson(fx.root, result.result.data.record);
     assert.equal(written.stoppedBecause, "run-failed");
     assert.equal(written.steps.at(-1).command, "run");
-    assert.notEqual(written.steps.at(-1).exit, 0);
+    assert.equal(written.steps.at(-1).exit, 1);
+    assert.match(
+      written.steps.at(-1).stderr,
+      /no current execution authorization/,
+    );
+    assert.deepEqual(await recordsNamed(fx, "confirmation-"), confirmations);
+    assert.deepEqual(await recordsNamed(fx, "forgepilot-"), [
+      result.result.data.record.split("/").at(-1),
+    ]);
+    await assert.rejects(readdir(join(fx.root, ".forgepilot")), {
+      code: "ENOENT",
+    });
   } finally {
     await fx.cleanup();
   }
 });
 
-test("TST-038/AC-006: observation with no earlier successful preflight is rejected without a record", async () => {
+test("R-009/AC-003 TST-038/AC-006: observation with no earlier successful preflight is rejected without a record", async () => {
   const fx = await setupConfirmed();
   try {
     const plan = await goalPlan(fx);
@@ -496,8 +556,7 @@ test("TST-038/AC-006: observation with no earlier successful preflight is reject
     const recorded = JSON.parse(await readFile(recordedPath, "utf8"));
     const steps = recorded.steps.filter((step) => step.command !== "preflight");
     const result = await replay(fx, plan, { steps });
-    expectOutcome(result, "failure");
-    assert.ok(codes(result).includes("REVIEW_OBSERVATION_INVALID"));
+    expectResult(result, "failure", 1, "REVIEW_OBSERVATION_INVALID");
     assert.equal(result.result.data?.record, undefined);
     const records = await readdir(
       join(fx.root, "specs/batches", BATCH_ID, "records"),

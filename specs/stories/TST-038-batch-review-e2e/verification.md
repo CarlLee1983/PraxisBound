@@ -26,6 +26,10 @@
 
 `review observe` validates observation shape and binding but treats ForgePilot stdout and stderr as opaque evidence. The replay proves the review CLI path and four-node mapping; it does not prove ForgePilot executed the new plan.
 
+Story prose can mention a dependency outside the batch without declaring it in
+the manifest. That undeclared dependency produces no diagnostic; only manifest
+dependencies are checked for out-of-batch Story IDs.
+
 ## Checks
 
 * lint: pass — `make verify at 27eef70; review-fix pnpm run lint also passed.`
@@ -77,4 +81,19 @@ review fixes. The TypeScript suite reported 1009 tests: 1008 passed, 0 failed,
 and the one pre-existing opt-in performance smoke skipped. The two-Spec,
 four-Story R-009/AC-001 case passed in that run. All other composed gates
 completed successfully. This subsequent edit records that observation only;
-product source and tests are unchanged from the verified checkpoint.
+product source and tests were unchanged at the time of that historical record.
+
+## Issue #128 follow-up observation
+
+At 2026-09-27 15:22 UTC, `make verify` completed with exit 0 on checkpoint
+`09ea62e1ae31ffb39bb33c36ac200c5c35b46aa8`. All nine independent
+`R-009/AC-003` return-path cases passed through built review commands;
+confirmation used the injected terminal adapter. The cases assert the
+outcome, exit code, applicable issue code, and absence of forbidden output;
+the stale-feedback and unauthorized-run records correctly remain successful
+evidence imports with advisory or `run-failed` details. The TypeScript suite
+reported 1009 tests: 1008 passed, 0 failed, and the pre-existing opt-in
+performance smoke skipped. The contract test paths already pointed to real
+test files in the merged #127 baseline. The Standards and Spec reviews of
+`915f218...09ea62e` found only the stale checkpoint wording corrected above;
+neither found a material test or contract defect.
