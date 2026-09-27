@@ -58,6 +58,10 @@ state, next action, review state, verification-current state, and completion
 state. ForgePilot is one example, not a dependency: Story checks, Doctor,
 bootstrap, and `make verify` work without it.
 
+For a human-led review of several Specs and Stories, see the
+[Traditional Chinese batch review guide](docs/batch-review/user-guide.md).
+It covers the offline review path and the optional ForgePilot handoff.
+
 ## Optional engineering guidance
 
 PraxisBound may provide lightweight repository-readable engineering guidance that
