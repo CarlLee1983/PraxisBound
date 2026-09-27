@@ -264,6 +264,7 @@ function stepOrderProblem(
   steps: readonly ForgepilotObservationStep[],
 ): string | undefined {
   let sawDryRunExitZero = false;
+  let sawPreflightExitZero = false;
   const lifecycleCommands = new Set(["run-dry-run", "run"]);
   const creationCommands = new Set(["goal-create", "work-add"]);
   const hasLifecycle = steps.some((step) =>
@@ -275,6 +276,17 @@ function stepOrderProblem(
 
   for (let index = 0; index < steps.length; index += 1) {
     const step = steps[index] as ForgepilotObservationStep;
+    // One earlier successful preflight covers subsequent writes in this
+    // observation; outputs remain opaque and no adjacency is required.
+    if (
+      (creationCommands.has(step.command) ||
+        lifecycleCommands.has(step.command) ||
+        step.command === "execution-plan") &&
+      !sawPreflightExitZero
+    )
+      return "a ForgePilot write step has no earlier exit-0 preflight";
+    if (step.command === "preflight" && step.exit === 0)
+      sawPreflightExitZero = true;
     if (step.command === "run" && !sawDryRunExitZero)
       return "run without an earlier exit-0 run-dry-run";
     if (step.command === "run-dry-run" && step.exit === 0)
