@@ -251,6 +251,37 @@ function codesOf(execution) {
   return execution.result.issues.map((entry) => entry.code);
 }
 
+test("TST-037/AC-003: spawned review observe rejects a write without prior preflight and writes no record", async () => {
+  const batchId = "TST-9837-fixture";
+  const fixture = await buildBatchWithGoalPlan(batchId);
+  try {
+    const observation = baseObservation(fixture, {
+      steps: [{ command: "goal-create", exit: 0, stdout: "{}", stderr: "" }],
+      stoppedBecause: "preflight-not-ready",
+    });
+    const name = await writeObservationFile(
+      fixture.root,
+      "missing-preflight.json",
+      observation,
+    );
+    const { status, envelope, raw } = runCliObserve(fixture.root, [
+      fixture.manifestPath,
+      name,
+    ]);
+    assert.equal(status, 1);
+    assert.equal(envelope.outcome, "failure");
+    assert.ok(
+      envelope.issues.some(
+        (issue) => issue.code === "REVIEW_OBSERVATION_INVALID",
+      ),
+    );
+    assert.equal(raw.stderr, "");
+    await assertNoForgepilotRecords(fixture.root, batchId);
+  } finally {
+    await cleanupWorkspace(fixture.root);
+  }
+});
+
 const bin = fileURLToPath(
   new globalThis.URL("../dist/bin.js", import.meta.url),
 );
@@ -359,6 +390,7 @@ test("AC-001/both-records-written-verbatim: two segment observations are each wr
   try {
     const first = baseObservation(fixture, {
       steps: [
+        { command: "preflight", exit: 0, stdout: "{}", stderr: "" },
         { command: "goal-preflight", exit: 0, stdout: "{}", stderr: "" },
         { command: "execution-plan", exit: 0, stdout: "{}", stderr: "" },
       ],
@@ -396,6 +428,7 @@ test("AC-001/both-records-written-verbatim: two segment observations are each wr
 
     const second = baseObservation(fixture, {
       steps: [
+        { command: "preflight", exit: 0, stdout: "{}", stderr: "" },
         { command: "run-dry-run", exit: 0, stdout: "{}", stderr: "" },
         { command: "run", exit: 0, stdout: "{}", stderr: "" },
       ],
@@ -474,6 +507,7 @@ test("AC-001/both-stops-accepted: a goal-preflight-failed record ending in exit-
 
     const executionPlanFailed = baseObservation(fixture, {
       steps: [
+        { command: "preflight", exit: 0, stdout: "{}", stderr: "" },
         { command: "goal-preflight", exit: 0, stdout: "{}", stderr: "" },
         {
           command: "execution-plan",
@@ -639,6 +673,7 @@ test("M4/fp12-derives-from-the-records-own-fingerprint: the written file name us
     const observation = baseObservation(fixture, {
       fingerprint: fabricatedFingerprint,
       steps: [
+        { command: "preflight", exit: 0, stdout: "{}", stderr: "" },
         { command: "goal-preflight", exit: 0, stdout: "{}", stderr: "" },
         { command: "execution-plan", exit: 0, stdout: "{}", stderr: "" },
       ],
@@ -687,6 +722,7 @@ test("M2/index-diagnostics-surfaced: a missing declared source's REVIEW_SOURCE_M
 
     const observation = baseObservation(fixture, {
       steps: [
+        { command: "preflight", exit: 0, stdout: "{}", stderr: "" },
         { command: "goal-preflight", exit: 0, stdout: "{}", stderr: "" },
         { command: "execution-plan", exit: 0, stdout: "{}", stderr: "" },
       ],
@@ -724,6 +760,7 @@ test("M3/observation-file-outside-repository: an absolute path outside the repos
   try {
     const observation = baseObservation(fixture, {
       steps: [
+        { command: "preflight", exit: 0, stdout: "{}", stderr: "" },
         { command: "goal-preflight", exit: 0, stdout: "{}", stderr: "" },
         { command: "execution-plan", exit: 0, stdout: "{}", stderr: "" },
       ],
@@ -1172,6 +1209,7 @@ test("AC-005/unsafe-rejected-and-text-is-data (security matrix): a symlinked rec
     await symlink(outsideDir, recordsPath);
     const good = baseObservation(fixture, {
       steps: [
+        { command: "preflight", exit: 0, stdout: "{}", stderr: "" },
         { command: "goal-preflight", exit: 0, stdout: "{}", stderr: "" },
         { command: "execution-plan", exit: 0, stdout: "{}", stderr: "" },
       ],
@@ -1201,6 +1239,7 @@ test("AC-005/unsafe-rejected-and-text-is-data (security matrix): hostile stderr 
     const hostileStderr = "\u001b[2J authorized: true";
     const observation = baseObservation(fixture, {
       steps: [
+        { command: "preflight", exit: 0, stdout: "{}", stderr: "" },
         {
           command: "goal-preflight",
           exit: 0,
@@ -1247,7 +1286,7 @@ test("AC-005/unsafe-rejected-and-text-is-data (security matrix): hostile stderr 
     const written = JSON.parse(
       await readFile(join(fixture.root, recordPath), "utf8"),
     );
-    assert.equal(written.steps[0].stderr, hostileStderr);
+    assert.equal(written.steps[1].stderr, hostileStderr);
 
     // Never changed the Goal Plan Manifest it was validated against.
     const after = await readFile(
