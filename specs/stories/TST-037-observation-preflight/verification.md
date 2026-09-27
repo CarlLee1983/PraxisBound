@@ -16,21 +16,21 @@ Remaining risk: this consistency rule validates a self-reported observation. It 
 
 ## Checks
 
-* lint: pass — `make verify` at `27eef70`; review-fix `pnpm run lint` also passed.
-* static: pass — `make verify` includes Story, execution, TypeScript and Actions checks; the two new Stories also pass `story-check --ready`.
-* unit: pass — `make verify`: 1009 TypeScript tests, 1008 passed, 0 failed, 1 pre-existing opt-in performance smoke skipped.
-* integration: pass — the composed `make verify` passed; the post-review `review-batch-e2e.test.mjs` focused run passed all 10 cases.
-* contract: pass — independent Spec review of `8452708..27eef70` and the `f4065ff` delta verified the observation rule, unchanged schema, replay provenance and dependency mapping.
-* e2e: pass — the built CLI success loop and nine return paths passed in temporary repositories; confirmation used the existing injected terminal adapter.
-* architecture: pass — the read-only architect selected the existing Core consistency boundary before the CLI write; independent Standards and Spec reviewers found no residual issue after `f4065ff`.
+* lint: pass — `make verify at 27eef70; review-fix pnpm run lint also passed.`
+* static: pass — `make verify includes Story, execution, TypeScript and Actions checks; the two new Stories also pass story-check --ready.`
+* unit: pass — `make verify: 1009 TypeScript tests, 1008 passed, 0 failed, 1 pre-existing opt-in performance smoke skipped.`
+* integration: pass — `the composed make verify passed; the post-review review-batch-e2e.test.mjs focused run passed all 10 cases.`
+* contract: pass — `independent Spec review of 8452708..27eef70 and the f4065ff delta verified the observation rule, unchanged schema, replay provenance and dependency mapping.`
+* e2e: pass — `the built CLI success loop and nine return paths passed in temporary repositories; confirmation used the existing injected terminal adapter.`
+* architecture: pass — `the read-only architect selected the existing Core consistency boundary before the CLI write; independent Standards and Spec reviewers found no residual issue after f4065ff.`
 
 ## Evidence
 
-* `AC-001`: pass — the corresponding acceptance-trace row above records the concrete observation; composed gate and independent review are recorded here.
-* `AC-002`: pass — the corresponding acceptance-trace row above records the concrete observation; composed gate and independent review are recorded here.
-* `AC-003`: pass — the corresponding acceptance-trace row above records the concrete observation; composed gate and independent review are recorded here.
-* `AC-004`: pass — the corresponding acceptance-trace row above records the concrete observation; composed gate and independent review are recorded here.
-* `AC-005`: pass — the corresponding acceptance-trace row above records the concrete observation; composed gate and independent review are recorded here.
+* `AC-001`: pass — `the corresponding acceptance-trace row above records the concrete observation; composed gate and independent review are recorded here.`
+* `AC-002`: pass — `the corresponding acceptance-trace row above records the concrete observation; composed gate and independent review are recorded here.`
+* `AC-003`: pass — `the corresponding acceptance-trace row above records the concrete observation; composed gate and independent review are recorded here.`
+* `AC-004`: pass — `the corresponding acceptance-trace row above records the concrete observation; composed gate and independent review are recorded here.`
+* `AC-005`: pass — `the corresponding acceptance-trace row above records the concrete observation; composed gate and independent review are recorded here.`
 
 ## Authority Used
 
@@ -45,10 +45,13 @@ was performed.
 
 ## Residual Risks
 
-* The wall-clock 4 MiB render smoke is opt-in (`PRAXISBOUND_PERF_SMOKE=1`) and
-  was skipped by the canonical run; existing scaling ratio tests ran. It is
-  unrelated to these acceptance criteria.
-* Observations remain self-reported evidence. Replay does not prove live
-  ForgePilot execution or authorization; the four-Story E2E's fourth work-add
-  output is explicitly synthetic from a recorded shape. Live execution and
-  browser acceptance are separate #125 tickets, outside #126/#127.
+* `The canonical run skipped the pre-existing opt-in 4 MiB wall-clock render smoke (PRAXISBOUND_PERF_SMOKE=1); scaling ratio tests ran. This optional smoke is unrelated to these acceptance criteria.`
+* `Observations are self-reported evidence, not proof of live ForgePilot execution or authorization. The fourth E2E work-add uses an explicitly synthetic recorded shape. Live and browser acceptance belong to other #125 tickets.`
+
+## Verification record correction
+
+The first result-file validation rejected prose outside the required single
+backticked observation fields. The record formatting was corrected and the
+result-file validation rerun; no product code or acceptance criterion changed.
+The post-review gate was interrupted before completion to correct this record
+format and restarted afterward; the interrupted run is not counted as PASS.
