@@ -6,6 +6,7 @@ Contract ID：`SPEC-BATCH-REVIEW/R-001`。狀態：已接受（accepted，人類
 修訂：2026-09-23，R-008 交接改以 ForgePilot `32b7a68` 公開 CLI 與 Goal Plan 產物為準（§10、§11、§21、§22，ADR-016）；已接受（人類審閱並合併 #111）。
 修訂：2026-09-26，R-008 基準改釘 ForgePilot `3a76aca`（§10、§11、§14，TST-035）；§11 步驟不變。
 修訂：2026-09-26，§11 步驟 7 加入 Worker 環境揭露（§11、§14，TST-036）；步驟、停止理由與 schema 不變。
+修訂：2026-09-28，§11 明確列出 ForgePilot `run`／`run --dry-run` 的 JSON 旗標例外（TST-041）；停止理由與 schema 不變。
 
 本文件定稿 [spec.md](spec.md) R-001 要求的產物格式、指紋、定位、命令結果與授權邊界。
 取捨與不可靜默推翻的邊界記錄於
@@ -393,8 +394,8 @@ Goal Plan 產物不含授權、不是 `protocol/handoff.md` 的 handoff、不含
 （`~/.local/share/forgepilot/versions/<commit>/bin/forgepilot`），從原始碼另行建置的執行檔會被拒絕（`outside the managed Bootstrap root`，TST-033 實測）。
 該安裝由人以 ForgePilot 自帶的 `scripts/forgepilot-bootstrap plan`、`install --approve <Plan ID>` 建立（`3a76aca` 起為受支援的原始碼建置路徑，TST-035 實測），
 第一段也可用同一安裝的執行檔。安裝與其前置條件屬人的機器設定，Agent 不代為決定。
-僅透過 ForgePilot 公開 CLI 並一律帶 `--json`；不讀寫 `.forgepilot`，不解析人類可讀輸出。
-ForgePilot 的 JSON 只在 exit 0 時保證；非 0 exit 一律停止，不嘗試解析。唯一例外是步驟 3 的 `work list`（修訂，R-008，TST-032 人類審閱 2026-09-24）。
+僅透過 ForgePilot 公開 CLI；支援 `--json` 的命令一律帶該旗標。ForgePilot `3a76aca` 的 `run --dry-run` 與 `run` 不支援 `--json`，是步驟 8–9 的唯一旗標例外；這兩步只用程序 exit 判斷，stdout／stderr 原樣作為觀察資料，不從人類可讀文字推斷授權、診斷或結果。不讀寫 `.forgepilot`。
+帶 `--json` 的命令只在 exit 0 時保證 JSON；exit 0 須驗證 JSON 與必要欄位，非 0 不嘗試解析。非 0 exit 一律停止，唯一例外是步驟 3 的 `work list`（修訂，R-008，TST-032 人類審閱 2026-09-24）；步驟 9 的 `run` 另依下表把 exit 對應為停止理由。
 （修訂，R-008，TST-034）exit 0 不等於驗證通過：`goal preflight` 與 `execution plan` 在驗證失敗時仍 exit 0，
 失敗只出現在輸出的 `diagnostics`（TST-033 讀原始碼確認）。這兩步 exit 0 後，輸出頂層的 `diagnostics` 必須為 `null` 或空陣列（巢狀物件內的 `diagnostics` 不計），否則依步驟 5、6 停止。
 
@@ -448,8 +449,9 @@ ForgePilot `3a76aca` 沒有可查詢授權的機器可讀命令，因此 Agent �
 人沒有這樣表示時不開始第二段，也不為此寫觀察紀錄。
 
 8. 重做步驟 2，再執行 `run --goal <goalId> --runtime codex --runtime-command <executablePath> --snapshot --dry-run`；exit 非 0 即停止（`step-failed`）。
-   dry-run 不檢查授權，未授權的 Goal 也會 exit 0（TST-033 實測）；它只預檢範圍與 runtime，不證明授權存在。
+   不帶 `--json`，因為此版本不支援；只檢查 exit，不解析文字。dry-run 不檢查授權，未授權的 Goal 也會 exit 0（TST-033 實測）；它只預檢範圍與 runtime，不證明授權存在。
 9. 執行 `run --goal <goalId> --runtime codex --runtime-command <executablePath> --snapshot`，依 exit 如實回報。
+   同樣不帶 `--json`；stdout／stderr 原樣記錄，不用其中的文字決定停止理由。
    授權的真正關卡在這一步：沒有有效授權時 ForgePilot 拒絕並 exit 1（TST-033 讀原始碼確認，第二段未實際執行），依下表回報為 `run-failed`。
    `<executablePath>` 是步驟 6 請求中的同一值；不帶 `--runtime-command` 時 ForgePilot 以 PATH 解析 `codex`，
    PATH 上的 symlink 會與授權記錄的解析後路徑不符（修訂，R-008，TST-034）。
@@ -462,7 +464,8 @@ ForgePilot `3a76aca` 沒有可查詢授權的機器可讀命令，因此 Agent �
 | 130、143 | `run-interrupted` | 被中斷或終止 |
 | 其他 | `run-failed` | 錯誤 |
 
-- 任一步 exit 非 0 → 停止（`step-failed`），唯一例外是步驟 3 的 `work list`（見步驟 2–3）；exit 0 但 JSON 不合 `forgepilot.cli/v1` 或缺必要欄位 → 停止（`result-unknown`）。
+- 任一步 exit 非 0 → 停止（`step-failed`），例外為步驟 3 的 `work list`（見步驟 2–3）與步驟 9 的 `run`（依上表）；支援 `--json` 的命令若 exit 0 但 JSON 不合 `forgepilot.cli/v1` 或缺必要欄位 → 停止（`result-unknown`）。`run-dry-run` 與 `run` 的 exit 0 不要求 JSON。
+  若從 `run` 輸出取得 run ID，可在觀察紀錄寫入後以 `run status <run-id> --json` 作唯讀交叉查核；只把 run ID 當查詢識別子，不以文字中的狀態詞決定流程。查核結果另列為補充證據，不改寫已記錄的 `run` exit、`stoppedBecause` 或授權。沒有可靠 run ID 時記錄未查核，不推測；status 與 exit 對照矛盾時，把完成判定列為 partial 交 Human Review。
   停止後不啟動 Runner。恢復一律從步驟 1 重來：`work list` 讀現況、`--external-ref` 冪等續建；
   只有人放棄舊 Goal 時才以 `--attempt` 產生新的 Goal Plan。
 - 每段結束（無論成功或停止）都以 `review observe` 寫一份外部整合觀察紀錄（§22）。不寫 VERIFIED／DONE、不核准 review、不略過 Gate。
@@ -544,6 +547,7 @@ ForgePilot 輸出是觀察而非輸入：每個 stdout／stderr 保存前 1 MiB�
   Agent 工作流程尚未發布，屬 **Corrective**。
 - （修訂，R-009，TST-037）§22 強制每個 ForgePilot 寫入步驟之前，同一份觀察紀錄已有 exit 0 的 `preflight`。
   僅檢查步驟形狀，觀察紀錄 `schemaVersion` 維持 `2.0.0`；`review observe` 尚未發布，屬 **Corrective**。
+- （修訂，TST-041）§11 對 `run-dry-run`／`run` 明列不支援 `--json` 的例外，並允許事後 `run status --json` 補充查核；修正概括語句與既有具體命令及 pinned CLI 的矛盾，不改命令、停止理由、觀察 schema 或授權邊界，屬 **Corrective**（依 `protocol/versioning.md` 的矛盾文字修正類別）。
 
 ## 15. 安全：Trust Boundary Fields
 
