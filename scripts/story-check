@@ -1016,6 +1016,42 @@ praxisbound_risk_bullet() {
   esac
 }
 
+praxisbound_scope_bullet() {
+  if ! praxisbound_gov_split "$1"; then
+    praxisbound_story_fail "verification scope entry is not a declaration: $1"
+    return 0
+  fi
+
+  case "$praxisbound_gov_label" in
+    Scope)
+      praxisbound_scope_count=$((praxisbound_scope_count + 1))
+      praxisbound_scope=$praxisbound_gov_value
+      ;;
+    Surface)
+      praxisbound_surface_count=$((praxisbound_surface_count + 1))
+      praxisbound_surface=$praxisbound_gov_value
+      ;;
+    *)
+      case " $praxisbound_scope_layers " in
+        *" $praxisbound_gov_label "*) ;;
+        *)
+          praxisbound_story_fail "verification scope declares an unknown check: $praxisbound_gov_label"
+          return 0
+          ;;
+      esac
+      case " $praxisbound_scope_seen " in
+        *" $praxisbound_gov_label "*)
+          praxisbound_story_fail "verification scope declares $praxisbound_gov_label more than once"
+          return 0
+          ;;
+      esac
+      praxisbound_scope_seen="$praxisbound_scope_seen $praxisbound_gov_label"
+      praxisbound_is_exact_literal "$praxisbound_gov_value" ||
+        praxisbound_story_fail "verification scope $praxisbound_gov_label must name one exact backticked command"
+      ;;
+  esac
+}
+
 praxisbound_risk_contract_bullet() {
   if ! praxisbound_gov_split "$1"; then
     praxisbound_story_fail "$praxisbound_risk_contract_name entry is not a declaration: $1"
@@ -1384,6 +1420,12 @@ praxisbound_check_governance() {
   praxisbound_reasons=
   praxisbound_reason_count=0
   praxisbound_risk_signals=' '
+  praxisbound_scope=full
+  praxisbound_scope_count=0
+  praxisbound_surface=
+  praxisbound_surface_count=0
+  praxisbound_scope_seen=' '
+  praxisbound_scope_layers='lint static unit integration contract e2e architecture documentation'
 
   praxisbound_scan_section "$praxisbound_story_file" '## Classification' \
     praxisbound_task_mode_bullet
@@ -1551,6 +1593,67 @@ praxisbound_check_governance() {
   fi
 
   praxisbound_check_risk_contracts
+
+  praxisbound_scan_section "$praxisbound_story_file" '## Verification Scope' \
+    praxisbound_scope_bullet
+  if [ "$praxisbound_section_count" -gt 1 ] ||
+    { [ "$praxisbound_section_count" -eq 1 ] && [ "$praxisbound_scope_count" -ne 1 ]; }; then
+    praxisbound_story_fail 'Story must declare one Scope in at most one ## Verification Scope section'
+  fi
+  if [ "$praxisbound_scope_count" -gt 1 ]; then
+    praxisbound_story_fail 'verification Scope is declared more than once'
+  fi
+  if [ "$praxisbound_surface_count" -gt 1 ]; then
+    praxisbound_story_fail 'verification Surface is declared more than once'
+  fi
+
+  case "$praxisbound_scope" in
+    full)
+      if [ "$praxisbound_surface_count" -ne 0 ] || [ "$praxisbound_scope_seen" != ' ' ]; then
+        praxisbound_story_fail 'full verification scope must not declare Surface or focused commands'
+      fi
+      ;;
+    focused)
+      if [ "$praxisbound_surface_count" -ne 1 ]; then
+        praxisbound_story_fail 'focused verification scope must declare one Surface'
+      fi
+      case "$praxisbound_surface" in
+        executable)
+          case "$praxisbound_risk_level" in
+            low) praxisbound_scope_required='lint static unit' ;;
+            medium) praxisbound_scope_required='lint static unit integration' ;;
+            high) praxisbound_scope_required='lint static unit integration contract e2e' ;;
+          esac
+          case "$praxisbound_impact" in
+            medium|high) praxisbound_scope_required="$praxisbound_scope_required architecture" ;;
+          esac
+          ;;
+        documentation)
+          if [ "$praxisbound_risk_level" != low ] || [ "$praxisbound_impact" != low ]; then
+            praxisbound_story_fail 'focused documentation requires low risk and low architecture impact'
+          fi
+          praxisbound_scope_required=documentation
+          ;;
+        *)
+          praxisbound_story_fail 'focused verification Surface must be executable or documentation'
+          praxisbound_scope_required=
+          ;;
+      esac
+      for praxisbound_scope_check in $praxisbound_scope_required; do
+        case " $praxisbound_scope_seen " in
+          *" $praxisbound_scope_check "*) ;;
+          *) praxisbound_story_fail "focused verification check is not declared: $praxisbound_scope_check" ;;
+        esac
+      done
+      for praxisbound_scope_check in $praxisbound_scope_seen; do
+        case " $praxisbound_scope_required " in
+          *" $praxisbound_scope_check "*) ;;
+          *) praxisbound_story_fail "focused verification declares an unrequired check: $praxisbound_scope_check" ;;
+        esac
+      done
+      ;;
+    *) praxisbound_story_fail 'verification Scope must be full or focused' ;;
+  esac
 }
 
 # One Story ID grammar, shared with scripts/handoff-check: hyphen-separated

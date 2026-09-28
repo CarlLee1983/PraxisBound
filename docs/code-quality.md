@@ -45,8 +45,9 @@ language, architecture, and maintenance context.
 
 ## CI and merge enforcement
 
-Local development and CI should invoke the same `make verify`; the repository's
-merge policy supplies the final automated enforcement point. Merely committing
+Local development may use approved focused checks for a bounded change. CI at
+the integration boundary should invoke the same full `make verify` gate; the
+repository's merge policy supplies the final automated enforcement point. Merely committing
 a CI workflow does not configure GitHub to reject merges that bypass a failed
 check. A repository administrator must separately configure the relevant
 required status check or ruleset.
@@ -55,5 +56,6 @@ Automated PASS only makes the change eligible for Human Review. It does not
 approve product intent or replace design and architecture judgment.
 The contextual dimensions and outcomes are defined in
 [Human Review](human-review.md). Any requested implementation change must pass
-the complete `make verify` again before returning to review; an LLM score or
+the required checks again, including complete `make verify` when required,
+before returning to review; an LLM score or
 automated approval cannot substitute for human acceptance.

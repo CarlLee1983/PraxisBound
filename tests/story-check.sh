@@ -1079,11 +1079,13 @@ acceptance_evidence_guidance_is_complete() {
     fail 'release notes omit the migration guidance link'
 }
 
-full_gate_is_the_acceptance_evidence_command() {
+default_full_gate_remains_available() {
   grep -Eq '^verify:' "$forgeflow_repo/Makefile" ||
     fail 'Makefile omits the canonical verify target'
-  grep -Fq 'Run `make verify`' "$forgeflow_repo/templates/AGENTS.md" ||
-    fail 'agent template omits the canonical verify command'
+  grep -Fq 'default is full `make verify`' "$forgeflow_repo/templates/AGENTS.md" ||
+    fail 'agent template omits the default full gate'
+  grep -Fq '## Verification Scope' "$forgeflow_repo/templates/AGENTS.md" ||
+    fail 'agent template omits the opt-in focused scope'
 }
 
 optional_guidance_preserves_story_contract_compatibility() {
@@ -1542,7 +1544,7 @@ run_case 'FF222-AC-001' acceptance_evidence_rejects_invalid_maps
 run_case 'FF222-AC-002' acceptance_evidence_accepts_declared_methods
 run_case 'FF222-AC-003' acceptance_evidence_preserves_portability
 run_case 'FF222-AC-004' acceptance_evidence_guidance_is_complete
-run_case 'FF222-AC-005' full_gate_is_the_acceptance_evidence_command
+run_case 'FF222-AC-005' default_full_gate_remains_available
 run_case 'FF223-AC-005' optional_guidance_preserves_story_contract_compatibility
 
 run_case 'P0002-AC-001' risk_signals_are_opt_in

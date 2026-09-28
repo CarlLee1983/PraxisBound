@@ -31,7 +31,7 @@ REVIEW ────────┘
 | DRAFT | Human intent is still being written or discussed. | Goal, scope, rules, and acceptance criteria are approved. |
 | READY | The Story is approved and implementable. | An agent or engineer begins the bounded change. |
 | IMPLEMENTING | Code, tests, and related repository artifacts are changing. | The implementation is ready for canonical verification, or a specification blocker is proven. |
-| VERIFYING | The repository is executing `make verify`. | PASS advances to REVIEW; FAIL returns to IMPLEMENTING. |
+| VERIFYING | The repository is executing the Story's required full or focused checks. | PASS advances to REVIEW; FAIL returns to IMPLEMENTING. |
 | REVIEW | Automated verification passed and a human reviews product intent, design, and architecture. | The human accepts the work, requests implementation changes, or identifies a specification blocker. |
 | DONE | Human review is complete and the repository's merge policy has been satisfied. | Terminal for this Story. |
 | SPEC_BLOCKED | A missing or conflicting human decision prevents safe implementation. | The human resolves the blocker and approves the revised Story as READY. |
@@ -42,14 +42,14 @@ REVIEW ────────┘
 - **READY → IMPLEMENTING** — implementation begins.
 - **IMPLEMENTING → VERIFYING** — the coherent change and tests are ready for the
   canonical gate.
-- **VERIFYING → IMPLEMENTING** — `make verify` fails; diagnose and
+- **VERIFYING → IMPLEMENTING** — a required check fails; diagnose and
   repair without weakening requirements.
-- **VERIFYING → REVIEW** — `make verify` passes.
+- **VERIFYING → REVIEW** — the required checks pass.
 - **REVIEW → DONE** — only a human may accept the verified work, after the
   repository merge policy is satisfied.
 - **REVIEW → IMPLEMENTING** — Human Review requests an implementation, test,
-  readability, or architecture change. The changed work must complete full
-  `make verify` again before a new PASS returns it to REVIEW.
+  readability, or architecture change. The changed work must run the required
+  checks again before a new PASS returns it to REVIEW.
 - **REVIEW → SPEC_BLOCKED** — Human Review identifies a missing or conflicting
   product, policy, or architecture decision.
 - **IMPLEMENTING → SPEC_BLOCKED** — a genuine intent decision is required.
@@ -68,7 +68,7 @@ has passing evidence recorded against it. A required check that was skipped,
 blocked, or unsupported, or a criterion with no observation, leaves the work
 partial: it returns to IMPLEMENTING, or to SPEC_BLOCKED when the gap is a
 missing human decision. This adds no state and changes no transition; it states
-what `make verify` passing has to mean before REVIEW begins. See
+what passing required verification has to mean before REVIEW begins. See
 [Completion](verification.md#completion).
 
 ## Handing work over

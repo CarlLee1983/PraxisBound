@@ -10,6 +10,28 @@ this file; it never runs a command recorded here.
 One entry per verification layer that ran. The status is `pass`, `fail`,
 `skipped`, `blocked`, or `unsupported`, followed by the exact command or reason.
 A layer the repository does not have is `unsupported`, never `pass`.
+For a focused Story, a passing command must exactly match the command declared
+in `story.md`. A low-risk focused documentation Story records `documentation`.
+If the full gate was intentionally not run, record `full: skipped` and a residual
+risk. A focused result that omits it remains partial. An explicit `Scope: full`
+records `full: pass` with command `make verify`; an unrun required gate remains partial.
+
+For a focused documentation Story, the recorded result looks like:
+
+```markdown
+## Checks
+
+* documentation: pass — `./check-docs`
+* full: skipped — `approved focused documentation scope`
+
+## Evidence
+
+* `AC-001`: pass — `document review observation`
+
+## Residual Risks
+
+* `full repository gate intentionally not run`
+```
 
 * lint: pass — `make verify`
 * static: pass — `make verify`

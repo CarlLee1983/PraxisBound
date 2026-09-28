@@ -32,12 +32,14 @@ what must be proven, and when the work is finished.
 ## The mental model in one paragraph
 
 A Story declares its task mode, the authority it grants, the architecture it is
-answerable to, and its risk. Risk selects a verification profile — the layers
-this change owes. `make verify` runs the repository's actual checks. A recorded
+answerable to, and its risk. Risk and architecture select verification layers
+for executable work. A low-risk, low-impact documentation-only Story may declare
+focused documentation validation; otherwise the default is full `make verify`.
+A focused executable Story names one exact command per required layer. A recorded
 result maps each layer to what happened and each acceptance criterion to the
-observation that proves it. The Story is complete only when the required layers
-passed, every criterion has a passing observation, and no authority conflict
-remains. Anything less is partial, and partial is not Done.
+observation that proves it. Repository integration, release, or surface policy
+can require the full gate despite a focused declaration; Human Review checks
+that condition. Anything less is partial, and partial is not Done.
 
 ## Progressive disclosure
 

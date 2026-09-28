@@ -45,8 +45,11 @@ human or external control plane.
 7. Implement within the Story boundary. Add or update tests at the lowest useful
    boundary for changed behavior, including stable regression coverage for
    repaired defects.
-8. Run useful focused checks while developing, then run `make verify`
-   from the repository root.
+8. Run the approved Story's required checks. The default and any repository
+   full-gate boundary require `make verify` from the repository root; a valid
+   focused scope may name exact commands for a bounded change when policy
+   permits. Record a full gate that was intentionally not run as unrun, never
+   as PASS.
 9. When the Story keeps a `verification.md`, record what each check did, trace
    every acceptance criterion to the observation that proves it, and retain
    every skipped, blocked, or unsupported check as a residual risk. Confirm the
@@ -67,11 +70,12 @@ Check Classification truthfulness against the actual trust boundaries and
 baseline behavior, including the required conditional evidence. Confirm
 verification freshness: the complete PASS must cover the implementation under
 review. A source, test, configuration, or other behavior-affecting change after
-PASS requires a new full `make verify`.
+PASS requires the required checks again, including full `make verify` when
+required.
 
 This report supports review without self-approval. Only a human may accept
 REVIEW and advance the Story to DONE. When review requests implementation
-changes, return to implementation and run full `make verify` again before
+changes, return to implementation and rerun the required checks before
 REVIEW. When feedback changes or exposes missing requirements, enter
 SPEC_BLOCKED so a human can revise and reapprove the Story instead of changing
 its intent during review.
@@ -85,7 +89,7 @@ the loop.
 
 Stop only when:
 
-- `make verify` exits successfully; or
+- the required checks exit successfully; or
 - a genuine specification blocker requires human intent before safe progress is
   possible.
 

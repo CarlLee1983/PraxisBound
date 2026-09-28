@@ -6,14 +6,16 @@ PraxisBound repositories expose one canonical command at the repository root:
 make verify
 ```
 
-This command is the deterministic authority on whether implementation is ready
-for human review.
+This command is the canonical full-repository gate and the deterministic
+authority on the checks it runs. The approved Story and repository policy
+determine when it is required for human review.
 
 ## Repository responsibility
 
-Each repository owns the contents of `make verify`. It must execute
-every automated check the repository requires for review readiness, in a
-repeatable and non-interactive way. Depending on the technology and risk, those
+Each repository owns the contents of `make verify`. At an integration, release,
+or repository-defined full-gate boundary, it must execute every automated check
+the repository requires for review readiness, in a repeatable and
+non-interactive way. Depending on the technology and risk, those
 checks can include:
 
 - formatting checks
@@ -34,8 +36,11 @@ not the tools behind it. It does not require a language, framework, formatter,
 linter, type checker, architecture checker, test runner, CI provider, or an
 additional Make target. Project-specific commands and setup remain in
 repository tooling and documentation rather than in the PraxisBound protocol.
-`make verify` remains the one canonical verification command and the
-deterministic authority for its point-in-time PASS or FAIL result.
+`make verify` remains the one canonical full-repository command and the
+deterministic authority for its point-in-time PASS or FAIL result. An approved
+Story may instead require focused checks for a bounded change where repository
+policy permits. Focused commands exercise the changed surface; they do not
+redefine the full gate's PASS.
 
 ## Optional Doctor invocation
 
@@ -55,9 +60,10 @@ services, or use the network.
   failing check well enough to begin diagnosis.
 
 PASS does not approve the product intent, waive human review, or merge the
-change. It is evidence for the implementation that the complete command
+change. It is evidence for the implementation that the recorded command
 checked. A later source, test, configuration, or other behavior-affecting
-change invalidates that PASS for review and requires another complete
+change invalidates that PASS for review and requires the required checks again.
+When the Story or repository requires the full gate, that means another complete
 `make verify`. FAIL cannot be reclassified by an agent.
 
 This result is evidence, not persisted current state. When a control plane is
@@ -93,6 +99,27 @@ a pass.
 
 The default profile for a Story that declares no risk is `low`, so an existing
 Story keeps the surface it already had.
+
+### Focused scope
+
+An optional [Story declaration](execution.md#verification-scope) may select
+focused verification. An executable Story retains every risk and architecture
+layer in the table above and names one exact command for each. A low-risk,
+low-impact documentation-only Story instead requires the `documentation` layer
+and a command that validates the edited documents. Higher-risk or
+higher-impact documentation requires the full gate.
+
+No declaration means full `make verify`, preserving old Story and result
+verdicts. An explicit `Scope: full` also requires a `full: pass` record naming
+`make verify`. A focused record lists the full gate as `skipped` with a reason
+and residual risk, or as `pass` with the exact `make verify` command.
+`verification-check --result` compares each passing focused check's command
+with the declaration and still requires passing acceptance evidence. It cannot
+prove the command ran, that it exercised the changed files, or that a
+repository's integration, release, or surface policy permits focused scope.
+Human Review checks those facts. Never mark an unrun required gate PASS. A
+skipped, blocked, unsupported, or absent required check leaves the result
+partial, and a failed check remains failed.
 
 ## Verification result
 
@@ -186,8 +213,9 @@ record the result and the evidence per acceptance criterion
 PASS · PARTIAL · FAIL
 ```
 
-`make verify` remains the canonical gate and the only authority on whether the
-checks themselves passed. The result record adds what an exit status cannot
+`make verify` remains the canonical full-repository gate. The required full or
+focused commands supply the automated evidence for their declared scope. The
+result record adds what an exit status cannot
 carry: which layer each check belonged to, which criterion each observation
 proves, which authority was used, and what risk survived.
 
@@ -211,11 +239,12 @@ On FAIL, the implementing agent:
 1. reads the failing check and diagnoses its root cause;
 2. returns to implementation and repairs the code or tests;
 3. preserves the approved Story and acceptance criteria;
-4. runs `make verify` again.
+4. reruns the required checks, including complete `make verify` when required.
 
 The loop ends only with PASS or a genuine specification blocker that requires a
 human decision. Story-specific verification notes may describe setup or useful
-focused checks, but they do not replace the canonical command.
+focused checks when an approved scope permits them. They never redefine the
+canonical full-repository command.
 
 ## Continuous integration
 
