@@ -1,0 +1,472 @@
+{
+  "schemaVersion": "tst041-sanitized-step-ledger/v1",
+  "batchId": "BR-941-live",
+  "fingerprint": "ffad64ff3208f284a4316456a71d7a5099abf31dcf2c584e29284153fac47321",
+  "goalPlanManifestSha256": "609b9b2fb493034634cdf790f19a88346ddc636359ecae26ab32977dbfd4975a",
+  "note": "Accepted observation order and exit data; stdout/stderr retained as hashes to avoid persisting approval token or inherited values. Driver control flow stops on a failed preflight or manifest digest match before any following write. The executableAlias names the SHA-256-pinned executables in provenance.md; argv is the exact argument vector from the exercised driver and Goal Plan.",
+  "segments": [
+    {
+      "driverSha256": "4a7fb32e160c2c0e9fa49f4c395513f16344ac7bdb28ed730965e8d4388d21f3",
+      "acceptedRecord": "specs/batches/BR-941-live/records/forgepilot-ffad64ff3208-1.json",
+      "acceptedRecordSha256": "4973d401e419702b1dc6bb05076d4aa98ba8d2c5c8a4d8b5a126ba9138888989",
+      "observedAt": "2026-09-28T03:49:20Z",
+      "goalId": "BR-941-live-ffad64ff3208",
+      "stoppedBecause": "awaiting-authorization",
+      "steps": [
+        {
+          "ordinal": 1,
+          "command": "preflight",
+          "exit": 0,
+          "stdoutBytes": 2984,
+          "stdoutSha256": "1d0f4afa12861abd0da6fa85f04082a24c81778f0d2693388defcd48be9537d6",
+          "stderrBytes": 0,
+          "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "preflight": {
+            "status": "pass",
+            "outcome": "REVIEW_READY",
+            "fingerprint": "ffad64ff3208f284a4316456a71d7a5099abf31dcf2c584e29284153fac47321"
+          },
+          "executableAlias": "praxisbound",
+          "argv": [
+            "review",
+            "preflight",
+            "specs/batches/BR-941-live/batch.json",
+            "--semantic-report",
+            "specs/batches/BR-941-live/semantic-report.json",
+            "--expect-fingerprint",
+            "ffad64ff3208f284a4316456a71d7a5099abf31dcf2c584e29284153fac47321",
+            "--json"
+          ]
+        },
+        {
+          "ordinal": 2,
+          "command": "work-list",
+          "exit": 1,
+          "stdoutBytes": 0,
+          "stdoutSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "stderrBytes": 52,
+          "stderrSha256": "1ed1754241db8d07d8387d8071fd351ea9142c8b044ca5d94be489d63a198e16",
+          "executableAlias": "forgepilot",
+          "argv": [
+            "work",
+            "list",
+            "--goal",
+            "BR-941-live-ffad64ff3208",
+            "--json"
+          ]
+        },
+        {
+          "ordinal": 3,
+          "command": "goal-create",
+          "exit": 0,
+          "stdoutBytes": 191,
+          "stdoutSha256": "8031cfacc56e31fd93b2964538cd265dad755d63d886f23b5ce0e6448842131f",
+          "stderrBytes": 0,
+          "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "executableAlias": "forgepilot",
+          "argv": [
+            "goal",
+            "create",
+            "--id",
+            "BR-941-live-ffad64ff3208",
+            "--title",
+            "BR-941-live",
+            "--review-policy",
+            "goal",
+            "--json"
+          ]
+        },
+        {
+          "ordinal": 4,
+          "command": "preflight",
+          "exit": 0,
+          "stdoutBytes": 2984,
+          "stdoutSha256": "1d0f4afa12861abd0da6fa85f04082a24c81778f0d2693388defcd48be9537d6",
+          "stderrBytes": 0,
+          "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "preflight": {
+            "status": "pass",
+            "outcome": "REVIEW_READY",
+            "fingerprint": "ffad64ff3208f284a4316456a71d7a5099abf31dcf2c584e29284153fac47321"
+          },
+          "executableAlias": "praxisbound",
+          "argv": [
+            "review",
+            "preflight",
+            "specs/batches/BR-941-live/batch.json",
+            "--semantic-report",
+            "specs/batches/BR-941-live/semantic-report.json",
+            "--expect-fingerprint",
+            "ffad64ff3208f284a4316456a71d7a5099abf31dcf2c584e29284153fac47321",
+            "--json"
+          ]
+        },
+        {
+          "ordinal": 5,
+          "command": "work-add",
+          "exit": 0,
+          "stdoutBytes": 226,
+          "stdoutSha256": "583437231d59a211f4ec4fb78a701b04c7f25d6dc6b7aa185b9a0cce0f53507a",
+          "stderrBytes": 0,
+          "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "story": "FX-001",
+          "workItemId": "WI-001",
+          "created": true,
+          "executableAlias": "forgepilot",
+          "argv": [
+            "work",
+            "add",
+            "--goal",
+            "BR-941-live-ffad64ff3208",
+            "--story",
+            "specs/stories/FX-001-greet-function",
+            "--external-ref",
+            "FX-001",
+            "--json"
+          ]
+        },
+        {
+          "ordinal": 6,
+          "command": "preflight",
+          "exit": 0,
+          "stdoutBytes": 2984,
+          "stdoutSha256": "1d0f4afa12861abd0da6fa85f04082a24c81778f0d2693388defcd48be9537d6",
+          "stderrBytes": 0,
+          "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "preflight": {
+            "status": "pass",
+            "outcome": "REVIEW_READY",
+            "fingerprint": "ffad64ff3208f284a4316456a71d7a5099abf31dcf2c584e29284153fac47321"
+          },
+          "executableAlias": "praxisbound",
+          "argv": [
+            "review",
+            "preflight",
+            "specs/batches/BR-941-live/batch.json",
+            "--semantic-report",
+            "specs/batches/BR-941-live/semantic-report.json",
+            "--expect-fingerprint",
+            "ffad64ff3208f284a4316456a71d7a5099abf31dcf2c584e29284153fac47321",
+            "--json"
+          ]
+        },
+        {
+          "ordinal": 7,
+          "command": "work-add",
+          "exit": 0,
+          "stdoutBytes": 229,
+          "stdoutSha256": "8fae4dc1a34c9c69d5cd6f341d4a5ad6912630297e49d2784aab2580a9e9ad8e",
+          "stderrBytes": 0,
+          "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "story": "FX-003",
+          "workItemId": "WI-002",
+          "created": true,
+          "executableAlias": "forgepilot",
+          "argv": [
+            "work",
+            "add",
+            "--goal",
+            "BR-941-live-ffad64ff3208",
+            "--story",
+            "specs/stories/FX-003-farewell-function",
+            "--external-ref",
+            "FX-003",
+            "--json"
+          ]
+        },
+        {
+          "ordinal": 8,
+          "command": "preflight",
+          "exit": 0,
+          "stdoutBytes": 2984,
+          "stdoutSha256": "1d0f4afa12861abd0da6fa85f04082a24c81778f0d2693388defcd48be9537d6",
+          "stderrBytes": 0,
+          "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "preflight": {
+            "status": "pass",
+            "outcome": "REVIEW_READY",
+            "fingerprint": "ffad64ff3208f284a4316456a71d7a5099abf31dcf2c584e29284153fac47321"
+          },
+          "executableAlias": "praxisbound",
+          "argv": [
+            "review",
+            "preflight",
+            "specs/batches/BR-941-live/batch.json",
+            "--semantic-report",
+            "specs/batches/BR-941-live/semantic-report.json",
+            "--expect-fingerprint",
+            "ffad64ff3208f284a4316456a71d7a5099abf31dcf2c584e29284153fac47321",
+            "--json"
+          ]
+        },
+        {
+          "ordinal": 9,
+          "command": "work-add",
+          "exit": 0,
+          "stdoutBytes": 232,
+          "stdoutSha256": "d654c88ca3d4c87f79f730ab04754301d0c83e1cd03a2d7ef02992ac11c7e90e",
+          "stderrBytes": 0,
+          "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "story": "FX-002",
+          "workItemId": "WI-003",
+          "created": true,
+          "executableAlias": "forgepilot",
+          "argv": [
+            "work",
+            "add",
+            "--goal",
+            "BR-941-live-ffad64ff3208",
+            "--story",
+            "specs/stories/FX-002-greet-test",
+            "--external-ref",
+            "FX-002",
+            "--depends-on",
+            "WI-001",
+            "--json"
+          ]
+        },
+        {
+          "ordinal": 10,
+          "command": "preflight",
+          "exit": 0,
+          "stdoutBytes": 2984,
+          "stdoutSha256": "1d0f4afa12861abd0da6fa85f04082a24c81778f0d2693388defcd48be9537d6",
+          "stderrBytes": 0,
+          "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "preflight": {
+            "status": "pass",
+            "outcome": "REVIEW_READY",
+            "fingerprint": "ffad64ff3208f284a4316456a71d7a5099abf31dcf2c584e29284153fac47321"
+          },
+          "executableAlias": "praxisbound",
+          "argv": [
+            "review",
+            "preflight",
+            "specs/batches/BR-941-live/batch.json",
+            "--semantic-report",
+            "specs/batches/BR-941-live/semantic-report.json",
+            "--expect-fingerprint",
+            "ffad64ff3208f284a4316456a71d7a5099abf31dcf2c584e29284153fac47321",
+            "--json"
+          ]
+        },
+        {
+          "ordinal": 11,
+          "command": "work-add",
+          "exit": 0,
+          "stdoutBytes": 243,
+          "stdoutSha256": "6e51f927c002348f3b48cecb845bde469db91a28912af69046de62a054111f4d",
+          "stderrBytes": 0,
+          "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "story": "FX-004",
+          "workItemId": "WI-004",
+          "created": true,
+          "executableAlias": "forgepilot",
+          "argv": [
+            "work",
+            "add",
+            "--goal",
+            "BR-941-live-ffad64ff3208",
+            "--story",
+            "specs/stories/FX-004-usage-readme",
+            "--external-ref",
+            "FX-004",
+            "--depends-on",
+            "WI-003",
+            "--depends-on",
+            "WI-002",
+            "--json"
+          ]
+        },
+        {
+          "ordinal": 12,
+          "command": "preflight",
+          "exit": 0,
+          "stdoutBytes": 2984,
+          "stdoutSha256": "1d0f4afa12861abd0da6fa85f04082a24c81778f0d2693388defcd48be9537d6",
+          "stderrBytes": 0,
+          "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "preflight": {
+            "status": "pass",
+            "outcome": "REVIEW_READY",
+            "fingerprint": "ffad64ff3208f284a4316456a71d7a5099abf31dcf2c584e29284153fac47321"
+          },
+          "executableAlias": "praxisbound",
+          "argv": [
+            "review",
+            "preflight",
+            "specs/batches/BR-941-live/batch.json",
+            "--semantic-report",
+            "specs/batches/BR-941-live/semantic-report.json",
+            "--expect-fingerprint",
+            "ffad64ff3208f284a4316456a71d7a5099abf31dcf2c584e29284153fac47321",
+            "--json"
+          ]
+        },
+        {
+          "ordinal": 13,
+          "command": "goal-preflight",
+          "exit": 0,
+          "stdoutBytes": 12275,
+          "stdoutSha256": "0ec201b2a3b80e3876dce9e2c37d2bfed29e2c4dd0a9c08833d9f5f4631acf65",
+          "stderrBytes": 0,
+          "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "topLevelDiagnostics": null,
+          "executableAlias": "forgepilot",
+          "argv": [
+            "goal",
+            "preflight",
+            "--request",
+            "specs/batches/BR-941-live/goal-plan/BR-941-live-ffad64ff3208/preflight-request.json",
+            "--json"
+          ]
+        },
+        {
+          "ordinal": 14,
+          "command": "preflight",
+          "exit": 0,
+          "stdoutBytes": 2984,
+          "stdoutSha256": "1d0f4afa12861abd0da6fa85f04082a24c81778f0d2693388defcd48be9537d6",
+          "stderrBytes": 0,
+          "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "preflight": {
+            "status": "pass",
+            "outcome": "REVIEW_READY",
+            "fingerprint": "ffad64ff3208f284a4316456a71d7a5099abf31dcf2c584e29284153fac47321"
+          },
+          "executableAlias": "praxisbound",
+          "argv": [
+            "review",
+            "preflight",
+            "specs/batches/BR-941-live/batch.json",
+            "--semantic-report",
+            "specs/batches/BR-941-live/semantic-report.json",
+            "--expect-fingerprint",
+            "ffad64ff3208f284a4316456a71d7a5099abf31dcf2c584e29284153fac47321",
+            "--json"
+          ]
+        },
+        {
+          "ordinal": 15,
+          "command": "execution-plan",
+          "exit": 0,
+          "stdoutBytes": 16640,
+          "stdoutSha256": "2958dab82d6fcab6e67709ebdd63c48239b004115e5c289fec1185befef00115",
+          "stderrBytes": 0,
+          "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "topLevelDiagnostics": [],
+          "requestSha256": "sha256:0552645805d40adc0f1eca98f262647f185782283f97c091a581f46fe212bbef",
+          "executableAlias": "forgepilot",
+          "argv": [
+            "execution",
+            "plan",
+            "--request",
+            "specs/batches/BR-941-live/goal-plan/BR-941-live-ffad64ff3208/execution-request.json",
+            "--json"
+          ]
+        }
+      ]
+    },
+    {
+      "driverSha256": "f9becc3ae28781b430f1f68ed1b140443e4542ebbcaaad47f12017157ab0b4e2",
+      "acceptedRecord": "specs/batches/BR-941-live/records/forgepilot-ffad64ff3208-2.json",
+      "acceptedRecordSha256": "dd6e478c0c383c0ed4ecc62b2b888062510336128c0a25d2f1c86cee07cd799f",
+      "observedAt": "2026-09-28T03:55:10Z",
+      "goalId": "BR-941-live-ffad64ff3208",
+      "stoppedBecause": "goal-completed",
+      "steps": [
+        {
+          "ordinal": 1,
+          "command": "preflight",
+          "exit": 0,
+          "stdoutBytes": 2984,
+          "stdoutSha256": "1d0f4afa12861abd0da6fa85f04082a24c81778f0d2693388defcd48be9537d6",
+          "stderrBytes": 0,
+          "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "preflight": {
+            "status": "pass",
+            "outcome": "REVIEW_READY",
+            "fingerprint": "ffad64ff3208f284a4316456a71d7a5099abf31dcf2c584e29284153fac47321"
+          },
+          "executableAlias": "praxisbound",
+          "argv": [
+            "review",
+            "preflight",
+            "specs/batches/BR-941-live/batch.json",
+            "--semantic-report",
+            "specs/batches/BR-941-live/semantic-report.json",
+            "--expect-fingerprint",
+            "ffad64ff3208f284a4316456a71d7a5099abf31dcf2c584e29284153fac47321",
+            "--json"
+          ]
+        },
+        {
+          "ordinal": 2,
+          "command": "run-dry-run",
+          "exit": 0,
+          "stdoutBytes": 460,
+          "stdoutSha256": "4bc243d837696480f6badb5950b7b86ce47b84e3c5e3f7dcf7473c39d9f8eb6b",
+          "stderrBytes": 0,
+          "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "executableAlias": "forgepilot",
+          "argv": [
+            "run",
+            "--goal",
+            "BR-941-live-ffad64ff3208",
+            "--runtime",
+            "codex",
+            "--runtime-command",
+            "/Users/carl/.codex/packages/standalone/releases/0.157.1-aarch64-apple-darwin/bin/codex",
+            "--snapshot",
+            "--dry-run"
+          ]
+        },
+        {
+          "ordinal": 3,
+          "command": "preflight",
+          "exit": 0,
+          "stdoutBytes": 2984,
+          "stdoutSha256": "1d0f4afa12861abd0da6fa85f04082a24c81778f0d2693388defcd48be9537d6",
+          "stderrBytes": 0,
+          "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "preflight": {
+            "status": "pass",
+            "outcome": "REVIEW_READY",
+            "fingerprint": "ffad64ff3208f284a4316456a71d7a5099abf31dcf2c584e29284153fac47321"
+          },
+          "executableAlias": "praxisbound",
+          "argv": [
+            "review",
+            "preflight",
+            "specs/batches/BR-941-live/batch.json",
+            "--semantic-report",
+            "specs/batches/BR-941-live/semantic-report.json",
+            "--expect-fingerprint",
+            "ffad64ff3208f284a4316456a71d7a5099abf31dcf2c584e29284153fac47321",
+            "--json"
+          ]
+        },
+        {
+          "ordinal": 4,
+          "command": "run",
+          "exit": 0,
+          "stdoutBytes": 4173,
+          "stdoutSha256": "1705b634263d48484bcf8b29c2441a7e3458e6fb5c80bd385ef5103bf49c607c",
+          "stderrBytes": 0,
+          "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "executableAlias": "forgepilot",
+          "argv": [
+            "run",
+            "--goal",
+            "BR-941-live-ffad64ff3208",
+            "--runtime",
+            "codex",
+            "--runtime-command",
+            "/Users/carl/.codex/packages/standalone/releases/0.157.1-aarch64-apple-darwin/bin/codex",
+            "--snapshot"
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -196,8 +196,9 @@
 ## 3. 交接 ForgePilot（R-008，修訂，TST-034、TST-035、TST-036）
 
 目的：把 `review goal-plan` 產生的 Goal Plan 產物，透過 ForgePilot `3a76aca` 的公開 CLI 交接成一個 Goal 與其
-Work Item，並如實回報執行結果。本節只透過公開 CLI（一律帶 `--json`）操作 ForgePilot；不讀寫 `.forgepilot`，
-不解析人類可讀輸出，也不從 PraxisBound 產物或 Agent 記憶推定授權存在（contract §11，ADR-016，ADR-017）。
+Work Item，並如實回報執行結果。本節只透過 ForgePilot 公開 CLI 操作；支援 `--json` 的命令一律帶該旗標，
+只有 `run --dry-run` 與 `run` 因 pinned CLI 不支援而例外。兩者只用程序 exit 決定流程，文字輸出原樣記錄、不解讀為授權或結果。
+不讀寫 `.forgepilot`，也不從 PraxisBound 產物或 Agent 記憶推定授權存在（contract §11，ADR-016，ADR-017）。
 
 一次交接分成兩段，由人在 ForgePilot 執行 `execution authorize` 隔開；Agent 從不執行 `execution authorize`。
 
@@ -319,10 +320,10 @@ Work Item，並如實回報執行結果。本節只透過公開 CLI（一律帶 
 也不以任何檔案、對話記錄或 Agent 記憶推定授權存在。人沒有這樣表示時不開始第二段，也不為此寫觀察紀錄。
 
 8. 重做 3.3 步驟 2 的重查，再執行 `run --goal <goalId> --runtime codex --runtime-command <executablePath> --snapshot --dry-run`；
-   exit 非 0 即停止（`step-failed`）。dry-run 不檢查授權，未授權的 Goal 也會 exit 0（TST-033 實測）；
+   此命令不支援 `--json`；只檢查 exit，非 0 即停止（`step-failed`）。dry-run 不檢查授權，未授權的 Goal 也會 exit 0（TST-033 實測）；
    它只預檢範圍與 runtime，不是授權已存在的證明。
 9. 執行 `run --goal <goalId> --runtime codex --runtime-command <executablePath> --snapshot`，依 exit 如實
-   回報，不加油添醋、不省略。授權的真正關卡在這一步：沒有有效授權時 ForgePilot 拒絕並 exit 1（TST-033 讀原始碼
+   回報，不加油添醋、不省略。此命令也不支援 `--json`；stdout／stderr 只作觀察資料，不用文字中的狀態詞決定結果。授權的真正關卡在這一步：沒有有效授權時 ForgePilot 拒絕並 exit 1（TST-033 讀原始碼
    確認，第二段未實際執行），依下表回報為 `run-failed`。`<executablePath>` 是步驟 6 請求中的同一值；不帶 `--runtime-command` 時 ForgePilot 以
    PATH 解析 `codex`，PATH 上的 symlink 會與授權記錄的解析後路徑不符（修訂，R-008，TST-034）。
 
@@ -334,8 +335,11 @@ Work Item，並如實回報執行結果。本節只透過公開 CLI（一律帶 
    | 130、143 | `run-interrupted`   | 被中斷或終止                                                                   |
    | 其他     | `run-failed`        | 錯誤                                                                           |
 
-   任一步 exit 非 0 即停止（`step-failed`，第一段步驟 3 的 `work list` 例外——見上）；exit 0 但 JSON 不合
+   `run` 的 exit 依上表對應；`run-dry-run` 非 0 為 `step-failed`。支援 `--json` 的命令若 exit 0 但 JSON 不合
    `forgepilot.cli/v1` 或缺必要欄位，停止（`result-unknown`）。停止後不啟動 Runner。
+   觀察紀錄寫入後，若從 `run` 的文字輸出取得確切 run ID，可另以 `run status <run-id> --json` 唯讀交叉查核；
+   抄錄 ID 只為查詢證據，不以文字決定流程。status 結果不加入 `review observe.steps`，不作授權證明，也不覆蓋
+   exit 對照表。無可靠 ID 時註明未查核；若 status 與 exit 對照矛盾，將完成判定列為 partial 交 Human Review。
 
 ### 3.5 恢復與續建
 
@@ -388,8 +392,8 @@ exit 0 的 `preflight` 步驟；一次成功重查可涵蓋其後多個寫入步
   TST-034）。
 - `execution plan` exit 0 但頂層 `diagnostics` 既非 `null` 也非空陣列、或沒有 `approvalToken`
   （`execution-plan-failed`，修訂，R-008，TST-034）。
-- 任一步 exit 非 0（`step-failed`，第一段步驟 3 的 `work list` 例外——見 3.3），或 exit 0 但 JSON 不合
-  `forgepilot.cli/v1`（`result-unknown`）。
+- 非 `run` 步驟 exit 非 0（`step-failed`，第一段步驟 3 的 `work list` 例外——見 3.3），或支援 `--json` 的步驟
+  exit 0 但 JSON 不合 `forgepilot.cli/v1`（`result-unknown`）。`run` 依 3.4 的 exit 表停止。
 - `review observe` 拒絕這份觀察（`REVIEW_OBSERVATION_INVALID`、`REVIEW_INPUT_TOO_LARGE`、
   `REVIEW_PATH_UNSAFE`）：修正觀察檔案內容或路徑後重送，不猜測、不略過。
 
@@ -399,6 +403,6 @@ exit 0 的 `preflight` 步驟；一次成功重查可涵蓋其後多個寫入步
   Goal／Work Item；停在 `awaiting-authorization` 時交給人的預覽與 approval token；一份
   `records/forgepilot-*.json` 觀察紀錄。
 - 第二段（人授權之後）：`run --dry-run` 與 `run` 的結果；另一份 `records/forgepilot-*.json` 觀察紀錄。
-- 對人的回報：這一段實際執行到哪一步、`stoppedBecause`、ForgePilot 回報的 exit 與 JSON 摘要（不逐字貼
-  `stdout`／`stderr` 全文以外的臆測）。`goal-completed`（exit 0）只代表 ForgePilot 的技術完成，如實陳述
+- 對人的回報：這一段實際執行到哪一步、`stoppedBecause`、ForgePilot 回報的 exit；有 JSON 的步驟摘要其
+  機器結果，`run` 只摘要 exit 與另行查到的 `run status --json`，不從 stdout／stderr 臆測。`goal-completed`（exit 0）只代表 ForgePilot 的技術完成，如實陳述
   它不是 Human Review 接受、不是 `protocol/handoff.md` 的 DONE，也不授權 merge、deploy 或關閉任何 Gate。
