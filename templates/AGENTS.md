@@ -17,7 +17,9 @@ For implementation work:
 4. Inspect relevant existing code.
 5. Implement the smallest coherent change.
 6. Add or update tests.
-7. Run `make verify`.
+7. Run the checks declared by the approved Story and repository policy. The
+   default is full `make verify`; focused checks are sufficient only for a valid
+   `## Verification Scope` declaration that policy permits.
 8. Repair failures until verification passes.
 9. When the Story keeps a `verification.md`, record what each check did and
    trace every acceptance criterion to the observation that proves it. Retain
@@ -38,7 +40,7 @@ operation is not authorization to perform it.
 
 ## Review Preparation
 
-After PASS, prepare Human Review with:
+After the required checks pass, prepare Human Review with:
 
 * a Story and acceptance criteria mapping summary
 * the acceptance-evidence row used for each criterion
@@ -49,13 +51,14 @@ After PASS, prepare Human Review with:
 Check Classification truthfulness against the actual trust boundaries and
 baseline behavior, including the required conditional evidence. Confirm
 verification freshness: the complete PASS must cover the current
-implementation. A source, test, configuration, or other behavior-affecting
-change after PASS requires a new full `make verify`. A handoff evidence edit is
-also a repository change; the human judges whether it affects behavior.
+implementation and its declared scope. A source, test, configuration, or other
+behavior-affecting change after PASS requires the required checks again; when
+the full gate is required, run full `make verify` again. A handoff evidence edit
+is also a repository change; the human judges whether it affects behavior.
 
 This report supports review without self-approval. Only a human may accept
 REVIEW and advance the Story to DONE. If review requests an implementation
-change, return to implementation and run full `make verify` again before
+change, return to implementation and rerun the required checks before
 REVIEW. If feedback changes or exposes missing requirements, move the Story to
 SPEC_BLOCKED for human revision and approval instead of changing Story intent.
 
@@ -65,18 +68,20 @@ SPEC_BLOCKED for human revision and approval instead of changing Story intent.
   settings.
 * Do not disable, bypass, or weaken existing rules merely to obtain PASS.
 * Keep new code consistent with neighboring code and the existing architecture.
-* Treat `make verify` as the authority for every automated judgment.
+* Treat `make verify` as the canonical full-repository gate. Focused commands
+  provide evidence only for the approved Story scope.
 * Leave design judgments that cannot be automated to Human Review.
 
 ## Completion
 
-A task is not complete until:
+A task is not complete until its required checks pass. By default, and whenever
+the Story or repository policy requires the full gate, run:
 
 ```sh
 make verify
 ```
 
-passes successfully, the required verification profile passed, and every
+successfully. The required verification profile must pass, and every
 required acceptance criterion has a passing observation. A skipped, blocked, or
 unsupported required check, or an untraced criterion, leaves the work partial.
 Partial work is reported as partial.

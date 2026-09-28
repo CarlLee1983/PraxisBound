@@ -358,6 +358,45 @@ praxisbound_risk_bullet() {
   esac
 }
 
+praxisbound_scope_bullet() {
+  praxisbound_split_bullet "$1" || {
+    praxisbound_plan_fail "verification scope entry is not a declaration: $1"
+    return 0
+  }
+
+  case "$praxisbound_bullet_label" in
+    Scope)
+      praxisbound_scope_count=$((praxisbound_scope_count + 1))
+      praxisbound_scope=$praxisbound_bullet_value
+      ;;
+    Surface)
+      praxisbound_surface_count=$((praxisbound_surface_count + 1))
+      praxisbound_surface=$praxisbound_bullet_value
+      ;;
+    *)
+      case " $praxisbound_check_layers " in
+        *" $praxisbound_bullet_label "*) ;;
+        *)
+          praxisbound_plan_fail "verification scope declares an unknown check: $praxisbound_bullet_label"
+          return 0
+          ;;
+      esac
+      case " $praxisbound_scope_seen " in
+        *" $praxisbound_bullet_label "*)
+          praxisbound_plan_fail "verification scope declares $praxisbound_bullet_label more than once"
+          return 0
+          ;;
+      esac
+      praxisbound_scope_seen="$praxisbound_scope_seen $praxisbound_bullet_label"
+      if ! praxisbound_is_exact_literal "$praxisbound_bullet_value"; then
+        praxisbound_plan_fail "verification scope $praxisbound_bullet_label must name one exact backticked command"
+        return 0
+      fi
+      praxisbound_scope_commands="$praxisbound_scope_commands$praxisbound_unit_separator$praxisbound_bullet_label=$praxisbound_bullet_value$praxisbound_unit_separator"
+      ;;
+  esac
+}
+
 praxisbound_resolve_story() {
   praxisbound_task_mode=execution
   praxisbound_task_mode_count=0
@@ -370,6 +409,12 @@ praxisbound_resolve_story() {
   praxisbound_reason_count=0
   praxisbound_risk_signals=
   praxisbound_authority_seen=
+  praxisbound_scope=full
+  praxisbound_scope_count=0
+  praxisbound_surface=
+  praxisbound_surface_count=0
+  praxisbound_scope_seen=' '
+  praxisbound_scope_commands=
 
   praxisbound_scan_section "$praxisbound_story_file" '## Classification' \
     praxisbound_classification_bullet
@@ -462,6 +507,58 @@ praxisbound_resolve_story() {
       praxisbound_required_checks="$praxisbound_required_checks architecture"
       ;;
   esac
+
+  praxisbound_scan_section "$praxisbound_story_file" '## Verification Scope' \
+    praxisbound_scope_bullet
+  praxisbound_scope_declared=$praxisbound_section_count
+  if [ "$praxisbound_section_count" -gt 1 ] ||
+    { [ "$praxisbound_section_count" -eq 1 ] && [ "$praxisbound_scope_count" -ne 1 ]; }; then
+    praxisbound_plan_fail 'Story must declare one Scope in at most one ## Verification Scope section'
+  fi
+  if [ "$praxisbound_scope_count" -gt 1 ]; then
+    praxisbound_plan_fail 'verification Scope is declared more than once'
+  fi
+  if [ "$praxisbound_surface_count" -gt 1 ]; then
+    praxisbound_plan_fail 'verification Surface is declared more than once'
+  fi
+  case "$praxisbound_scope" in
+    full)
+      if [ "$praxisbound_surface_count" -ne 0 ] || [ -n "$praxisbound_scope_commands" ]; then
+        praxisbound_plan_fail 'full verification scope must not declare Surface or focused commands'
+      fi
+      if [ "$praxisbound_scope_count" -eq 1 ]; then
+        praxisbound_required_checks="$praxisbound_required_checks full"
+      fi
+      ;;
+    focused)
+      if [ "$praxisbound_surface_count" -ne 1 ]; then
+        praxisbound_plan_fail 'focused verification scope must declare one Surface'
+      fi
+      case "$praxisbound_surface" in
+        executable) ;;
+        documentation)
+          if [ "$praxisbound_risk_level" != low ] || [ "$praxisbound_impact" != low ]; then
+            praxisbound_plan_fail 'focused documentation requires low risk and low architecture impact'
+          fi
+          praxisbound_required_checks=documentation
+          ;;
+        *) praxisbound_plan_fail 'focused verification Surface must be executable or documentation' ;;
+      esac
+      for praxisbound_scope_check in $praxisbound_required_checks; do
+        case " $praxisbound_scope_seen " in
+          *" $praxisbound_scope_check "*) ;;
+          *) praxisbound_plan_fail "focused verification check is not declared: $praxisbound_scope_check" ;;
+        esac
+      done
+      for praxisbound_scope_check in $praxisbound_scope_seen; do
+        case " $praxisbound_required_checks " in
+          *" $praxisbound_scope_check "*) ;;
+          *) praxisbound_plan_fail "focused verification declares an unrequired check: $praxisbound_scope_check" ;;
+        esac
+      done
+      ;;
+    *) praxisbound_plan_fail 'verification Scope must be full or focused' ;;
+  esac
 }
 
 praxisbound_print_plan() {
@@ -474,6 +571,9 @@ praxisbound_print_plan() {
     "$praxisbound_authority_deploy"
   printf '  Risk level: %s\n' "$praxisbound_risk_level"
   printf '  Architecture impact: %s\n' "$praxisbound_impact"
+  if [ "$praxisbound_scope_declared" -gt 0 ]; then
+    printf '  Verification scope: %s%s\n' "$praxisbound_scope" "${praxisbound_surface:+ $praxisbound_surface}"
+  fi
   printf '  Required checks: %s\n' "$praxisbound_required_checks"
 }
 
@@ -572,6 +672,19 @@ praxisbound_check_bullet() {
 
   praxisbound_is_exact_literal "$praxisbound_check_detail" ||
     praxisbound_record_fail "check $praxisbound_check_name must name one exact backticked command or reason"
+
+  if [ "$praxisbound_check_name" = full ] && [ "$praxisbound_check_status" = pass ] &&
+    [ "$praxisbound_check_detail" != '`make verify`' ]; then
+    praxisbound_record_fail 'full check PASS must name `make verify`'
+  fi
+
+  if [ "$praxisbound_scope" = focused ] && [ "$praxisbound_check_status" = pass ] &&
+    [ "$praxisbound_check_name" != full ]; then
+    case "$praxisbound_scope_commands" in
+      *"$praxisbound_unit_separator$praxisbound_check_name=$praxisbound_check_detail$praxisbound_unit_separator"*) ;;
+      *) praxisbound_record_fail "check $praxisbound_check_name does not match its declared focused command" ;;
+    esac
+  fi
 
   praxisbound_check_report="$praxisbound_check_report$praxisbound_check_name=$praxisbound_check_status "
 
@@ -744,6 +857,21 @@ praxisbound_check_result() {
     praxisbound_missing=$((praxisbound_missing + 1))
   done
 
+  if [ "$praxisbound_scope" = focused ]; then
+    case "$praxisbound_check_report" in
+      *'full=skipped '*)
+        if [ "$praxisbound_residual_count" -eq 0 ]; then
+          praxisbound_record_fail 'skipped full gate must retain a residual risk'
+        fi
+        ;;
+      *'full=pass '*) ;;
+      *)
+        praxisbound_report 'WARN' 'focused result must record the full gate as skipped or passed'
+        praxisbound_missing=$((praxisbound_missing + 1))
+        ;;
+    esac
+  fi
+
   for praxisbound_required_ac in $praxisbound_ac_ids
   do
     case "$praxisbound_evidence_passed" in
@@ -819,7 +947,8 @@ praxisbound_check_story() {
 praxisbound_cr=$(printf '\r')
 praxisbound_tab=$(printf '\t')
 praxisbound_authority_keys='plan modify add_dependency migration commit push deploy'
-praxisbound_check_layers='lint static unit integration contract e2e architecture'
+praxisbound_check_layers='lint static unit integration contract e2e architecture documentation full'
+praxisbound_unit_separator=$(printf '\037')
 praxisbound_result=0
 
 if [ "${1-}" = --result ]; then

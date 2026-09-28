@@ -2,8 +2,8 @@
 
 Human Review is the required contextual judgment about product intent, design,
 and architecture. It complements automated verification; it is not another
-automated gate. A `make verify` PASS means the implementation may enter REVIEW,
-not that Human Review passed.
+automated gate. A PASS for the Story's required checks means the implementation
+may enter REVIEW, not that Human Review passed.
 
 An agent may prepare evidence, a summary, assumptions, unresolved risks, and
 suggested attention points. An agent, test, or LLM cannot approve REVIEW or
@@ -50,16 +50,23 @@ match reality. Human Review asks:
 Review also confirms that verification evidence belongs to the implementation
 currently under review:
 
-* Require a complete `make verify` PASS from the implementation under review.
+* Require a complete PASS for the approved Story scope from the implementation
+  under review. When full verification is required, require a complete
+  `make verify` PASS. A focused record never certifies the full gate.
+* Confirm the focused commands actually exercised changed behavior or edited
+  documents. Reject a focused scope when the Story or repository policy requires
+  full verification at integration, release, or for the changed surface; the
+  static checker cannot inspect phase or repository policy.
 * A change to source code, tests, configuration, or another behavior-affecting
-  file immediately invalidates the prior PASS. Run complete `make verify` again
-  before returning to REVIEW.
+  file immediately invalidates the prior PASS. Run the required checks again
+  before returning to REVIEW; run complete `make verify` when required.
 * A handoff checker validates one immutable point-in-time evidence record. It
   does not prove that PASS occurred, remains fresh, or represents current
   lifecycle state. Never attach dirty-worktree verification to an unchanged
   HEAD revision.
 * A handoff evidence edit is also a repository change. The human reviewer
-  decides whether it affects behavior and requires complete re-verification.
+  decides whether it affects behavior and requires complete re-verification for
+  the approved scope.
 
 ### Naming and readability
 
@@ -172,7 +179,8 @@ REVIEW → IMPLEMENTING → VERIFYING → REVIEW
 
 Use this path when Human Review finds an implementation, test, readability, or
 architecture issue. Any implementation change makes the prior PASS insufficient
-for review. Run the complete `make verify` again; only a new PASS returns the
+for review. Run the required checks again, including complete `make verify`
+when the Story or repository policy requires it; only a new PASS returns the
 Story to REVIEW.
 
 ### Specification blocked

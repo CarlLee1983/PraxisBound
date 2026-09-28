@@ -975,4 +975,288 @@ run_case 'FF224-AC-011' the_gate_and_the_builtin_guarantee_hold
 run_case 'FF226-AC-004' the_extension_point_assertion_pins_the_paragraph
 run_case 'FF224-AC-012' the_new_model_is_documented
 
+focused_documentation_uses_its_declared_check() {
+  new_story focused-docs
+  add_section '## Verification Scope' \
+    '* Scope: focused' '* Surface: documentation' \
+    '* documentation: `./check-docs`'
+
+  run_story_check "$forgeflow_story_dir"
+  assert_status 0
+  run_verification_check "$forgeflow_story_dir"
+  assert_status 0
+  assert_output_contains 'Verification scope: focused documentation'
+  assert_output_contains 'Required checks: documentation'
+
+  write_result <<'FORGEFLOW_RESULT'
+# Verification Result
+
+## Checks
+
+* documentation: pass — `./check-docs`
+* full: skipped — `approved focused documentation scope`
+
+## Evidence
+
+* `AC-001`: pass — `docs review one`
+* `AC-002`: pass — `docs review two`
+
+## Authority Used
+
+* modify
+
+## Residual Risks
+
+* `full repository gate intentionally not run`
+FORGEFLOW_RESULT
+  run_verification_check --result "$forgeflow_story_dir"
+  assert_status 0
+  assert_output_contains 'Result: VERIFICATION_PASS'
+
+  grep -Fv '* full: skipped' "$forgeflow_story_dir/verification.md" \
+    >"$forgeflow_story_dir/verification.new"
+  mv "$forgeflow_story_dir/verification.new" "$forgeflow_story_dir/verification.md"
+  run_verification_check --result "$forgeflow_story_dir"
+  assert_status 1
+  assert_output_contains 'focused result must record the full gate as skipped or passed'
+  assert_output_contains 'Result: VERIFICATION_PARTIAL'
+}
+
+run_case 'FF229-AC-003' focused_documentation_uses_its_declared_check
+
+focused_scope_rejects_missing_checks_and_ineligible_documents() {
+  new_story focused-missing
+  add_section '## Verification Scope' \
+    '* Scope: focused' '* Surface: documentation'
+  run_story_check "$forgeflow_story_dir"
+  assert_status 1
+  assert_output_contains 'focused verification check is not declared: documentation'
+  run_verification_check "$forgeflow_story_dir"
+  assert_status 1
+
+  new_story focused-high-risk-docs
+  add_section '## Risk' '* Level: high' '* Reason: `public-contract`'
+  add_section '## Verification Scope' \
+    '* Scope: focused' '* Surface: documentation' \
+    '* documentation: `./check-docs`'
+  run_story_check "$forgeflow_story_dir"
+  assert_status 1
+  assert_output_contains 'focused documentation requires low risk and low architecture impact'
+
+  new_story focused-high-impact-docs
+  add_section '## Architecture' '* Impact: high' '* Contract: `Public boundary stays stable`'
+  add_section '## Verification Scope' \
+    '* Scope: focused' '* Surface: documentation' \
+    '* documentation: `./check-docs`'
+  run_story_check "$forgeflow_story_dir"
+  assert_status 1
+  assert_output_contains 'focused documentation requires low risk and low architecture impact'
+}
+
+run_case 'FF229-AC-007' focused_scope_rejects_missing_checks_and_ineligible_documents
+
+focused_executable_keeps_risk_layers_and_exact_commands() {
+  new_story focused-code
+  add_section '## Architecture' '* Impact: high' '* Contract: `Boundary stays stable`'
+  add_section '## Risk' '* Level: high' '* Reason: `public-contract`'
+  add_section '## Verification Scope' \
+    '* Scope: focused' '* Surface: executable' \
+    '* lint: `make lint-changed`' '* static: `make static-changed`' \
+    '* unit: `make unit-changed`' '* integration: `make integration-changed`' \
+    '* contract: `make contract-changed`' '* e2e: `make e2e-changed`' \
+    '* architecture: `make architecture-changed`'
+  run_story_check "$forgeflow_story_dir"
+  assert_status 0
+  run_verification_check "$forgeflow_story_dir"
+  assert_status 0
+  assert_output_contains 'Verification scope: focused executable'
+  assert_output_contains 'Required checks: lint static unit integration contract e2e architecture'
+
+  write_result <<'FORGEFLOW_RESULT'
+# Verification Result
+
+## Checks
+
+* lint: pass — `make lint-changed`
+* static: pass — `make static-changed`
+* unit: pass — `make unit-changed`
+* integration: pass — `make integration-changed`
+* contract: pass — `make contract-changed`
+* e2e: pass — `make e2e-changed`
+* architecture: pass — `make architecture-changed`
+* full: skipped — `approved focused executable scope`
+
+## Evidence
+
+* `AC-001`: pass — `changed behavior one`
+* `AC-002`: pass — `changed behavior two`
+
+## Authority Used
+
+* modify
+
+## Residual Risks
+
+* `full repository gate intentionally not run`
+FORGEFLOW_RESULT
+  run_verification_check --result "$forgeflow_story_dir"
+  assert_status 0
+  assert_output_contains 'Result: VERIFICATION_PASS'
+
+  sed 's/make unit-changed/make unrelated-unit/' \
+    "$forgeflow_story_dir/verification.md" >"$forgeflow_story_dir/verification.new"
+  mv "$forgeflow_story_dir/verification.new" "$forgeflow_story_dir/verification.md"
+  run_verification_check --result "$forgeflow_story_dir"
+  assert_status 1
+  assert_output_contains 'does not match its declared focused command'
+}
+
+run_case 'FF229-AC-002' focused_executable_keeps_risk_layers_and_exact_commands
+
+full_scope_does_not_accept_only_a_documentation_check() {
+  new_story default-full
+  write_result <<'FORGEFLOW_RESULT'
+# Verification Result
+
+## Checks
+
+* documentation: pass — `./check-docs`
+
+## Evidence
+
+* `AC-001`: pass — `docs review one`
+* `AC-002`: pass — `docs review two`
+
+## Authority Used
+
+* modify
+
+## Residual Risks
+
+* `full make verify was not run`
+FORGEFLOW_RESULT
+  run_verification_check --result "$forgeflow_story_dir"
+  assert_status 1
+  assert_output_contains 'required check is not recorded: lint'
+  assert_output_contains 'Result: VERIFICATION_PARTIAL'
+}
+
+run_case 'FF229-AC-004' full_scope_does_not_accept_only_a_documentation_check
+
+explicit_full_scope_requires_gate_evidence() {
+  new_story explicit-full
+  add_section '## Verification Scope' '* Scope: full'
+  run_story_check "$forgeflow_story_dir"
+  assert_status 0
+  run_verification_check "$forgeflow_story_dir"
+  assert_status 0
+  assert_output_contains 'Required checks: lint static unit full'
+
+  write_result <<'FORGEFLOW_RESULT'
+# Verification Result
+
+## Checks
+
+* lint: pass — `make verify`
+* static: pass — `make verify`
+* unit: pass — `make verify`
+
+## Evidence
+
+* `AC-001`: pass — `case one`
+* `AC-002`: pass — `case two`
+
+## Authority Used
+
+* modify
+
+## Residual Risks
+
+* `required full gate was not run`
+FORGEFLOW_RESULT
+  run_verification_check --result "$forgeflow_story_dir"
+  assert_status 1
+  assert_output_contains 'required check is not recorded: full'
+
+  awk '/^\* unit: pass/ { print; print "* full: pass — `make verify`"; next } { print }' \
+    "$forgeflow_story_dir/verification.md" >"$forgeflow_story_dir/verification.new"
+  mv "$forgeflow_story_dir/verification.new" "$forgeflow_story_dir/verification.md"
+  run_verification_check --result "$forgeflow_story_dir"
+  assert_status 0
+  assert_output_contains 'Result: VERIFICATION_PASS'
+}
+
+run_case 'FF229-AC-004' explicit_full_scope_requires_gate_evidence
+
+focused_result_can_also_record_a_completed_full_gate() {
+  new_story focused-with-full
+  add_section '## Verification Scope' \
+    '* Scope: focused' '* Surface: documentation' \
+    '* documentation: `./check-docs`'
+  write_result <<'FORGEFLOW_RESULT'
+# Verification Result
+
+## Checks
+
+* documentation: pass — `./check-docs`
+* full: pass — `make verify`
+
+## Evidence
+
+* `AC-001`: pass — `docs review one`
+* `AC-002`: pass — `docs review two`
+
+## Authority Used
+
+* modify
+FORGEFLOW_RESULT
+  run_verification_check --result "$forgeflow_story_dir"
+  assert_status 0
+  assert_output_contains 'Result: VERIFICATION_PASS'
+}
+
+run_case 'FF229-AC-004' focused_result_can_also_record_a_completed_full_gate
+
+focused_required_failures_remain_visible() {
+  new_story focused-statuses
+  add_section '## Verification Scope' \
+    '* Scope: focused' '* Surface: documentation' \
+    '* documentation: `./check-docs`'
+  cat >"$forgeflow_story_dir/verification.base" <<'FORGEFLOW_RESULT'
+# Verification Result
+
+## Checks
+
+* documentation: STATUS — `document check did not pass`
+* full: skipped — `approved focused documentation scope`
+
+## Evidence
+
+* `AC-001`: pass — `docs review one`
+* `AC-002`: pass — `docs review two`
+
+## Authority Used
+
+* modify
+
+## Residual Risks
+
+* `document check did not pass`
+* `full repository gate intentionally not run`
+FORGEFLOW_RESULT
+  for forgeflow_check_status in skipped blocked unsupported fail; do
+    sed "s/STATUS/$forgeflow_check_status/" \
+      "$forgeflow_story_dir/verification.base" >"$forgeflow_story_dir/verification.md"
+    run_verification_check --result "$forgeflow_story_dir"
+    assert_status 1
+    if [ "$forgeflow_check_status" = fail ]; then
+      assert_output_contains 'Result: VERIFICATION_FAIL'
+    else
+      assert_output_contains 'Result: VERIFICATION_PARTIAL'
+    fi
+  done
+}
+
+run_case 'FF229-AC-007' focused_required_failures_remain_visible
+
 printf 'execution governance tests passed\n'

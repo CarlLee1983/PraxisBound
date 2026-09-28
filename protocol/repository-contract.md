@@ -15,9 +15,10 @@ specs/stories/
 ```
 
 - `AGENTS.md` tells coding agents to follow the Story, preserve scope,
-  test changed behavior, and use the canonical gate.
+  test changed behavior, and use the verification scope the approved Story and
+  repository policy require.
 - `specs/stories/` stores approved intent and acceptance criteria.
-- `make verify` runs every automated check required before human review.
+- `make verify` runs every automated check required by the full-repository gate.
 
 These entrypoints are the adoption contract. They are not an inventory of
 every file PraxisBound may install, discover, or document. Each repository owns
@@ -64,10 +65,12 @@ mandatory for existing adopters.
 
 ## Verification ownership
 
-The repository decides which checks belong behind `make verify` and
-keeps that command authoritative as the codebase evolves. Local development and
-CI call the same command. Story-specific commands may accelerate feedback, but
-cannot redefine PASS.
+The repository decides which checks belong behind `make verify` and keeps that
+full gate authoritative as the codebase evolves. Local development and CI call
+it at integration, release, or any repository-defined full-gate boundary. An
+approved Story may name focused commands for a bounded change when repository
+policy permits. Those commands provide evidence for that Story's scope, not a
+new full-repository PASS.
 
 See [the Verification Contract](verification.md) for exit status and repair-loop
 semantics.

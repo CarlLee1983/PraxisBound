@@ -151,8 +151,10 @@ happy path, business rules, failure cases, and regression requirements. Each
 criterion should have one unambiguous outcome that a test, command, or human
 review can evaluate.
 
-Story-specific setup or focused commands belong under Verification Notes, but
-they supplement rather than replace repository-level `make verify`.
+Story-specific setup belongs under Verification Notes. An approved
+[`## Verification Scope`](execution.md#verification-scope) declaration may name
+focused commands that satisfy a Story where repository policy permits; absent
+that declaration, full `make verify` remains required.
 Use [the Acceptance template](../templates/story/acceptance.md).
 
 ### Acceptance evidence

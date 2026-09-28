@@ -72,6 +72,27 @@ that the Story needs; see protocol/story.md for its exact fields.
 * Level: low
 * Reason: `signal`
 
+### Optional focused verification
+
+Optional. Omit the fenced declaration below to require full `make verify`.
+Use `Scope: full` to state that obligation explicitly. Focused scope is valid only when repository
+policy permits it. Declare every required check layer with one exact command:
+
+```markdown
+## Verification Scope
+
+* Scope: focused
+* Surface: executable
+* lint: `make lint-changed`
+* static: `make static-changed`
+* unit: `make unit-changed`
+```
+
+Executable work retains the risk and architecture layers from
+`protocol/verification.md`. For low-risk, low-impact documentation-only work,
+use `Surface: documentation` and one `documentation` command instead. A Story
+requiring the full gate must not select focused scope.
+
 ## Scope
 
 ### In Scope

@@ -406,3 +406,18 @@ TST-017 deprecation/default period on 2026-09-16. Maintainers remove the selecto
 and use the repository's supported Node runtime; rollback restores the complete
 pre-TST-018 revision. Adopting repositories gain no Node requirement and no
 Protocol file, command, or expectation changes, so `VERSION` remains `0.10.0`.
+
+## FF-229 verification scope
+
+FF-229 is **Additive**. A Story with no `## Verification Scope` section keeps
+the full `make verify` obligation, risk and architecture layers, and existing
+record verdict. An adopter may opt into exact focused commands for executable
+work, or a documentation validation command for low-risk, low-impact
+documentation-only work. A Story or repository policy that requires the full
+gate still requires it. The checkers retain their command forms and result
+names, and `make verify` retains its PASS/FAIL semantics.
+
+No migration is required for existing Stories or result records. Rollback
+removes focused declarations and records and runs full `make verify`; an older
+checker must not be used to certify a focused result. This change does not
+publish a release or change `VERSION` by itself.

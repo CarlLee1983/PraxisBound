@@ -183,6 +183,18 @@ applying the documented defaults from the
 new resolves to `execution`, `plan` and `modify` authority, low risk, low
 architecture impact, and the `lint static unit` profile.
 
+An optional `## Verification Scope` section may declare `Scope: focused`, the
+changed `Surface`, and one exact command per required layer. Both checkers
+reject missing, duplicate, unknown, or ineligible declarations. A focused
+documentation Story is limited to low risk and low architecture impact and
+requires the `documentation` layer. `verification-check --result` matches each
+passing focused command to the Story declaration, requires a full-gate
+observation (`skipped` with residual risk or `pass` with `make verify`), and
+traces every acceptance criterion. An explicit `Scope: full` requires an exact
+`make verify` PASS entry. An absent section preserves previous result verdicts.
+Neither checker runs commands or knows a repository's current integration or
+release policy; Human Review judges those facts.
+
 | Result | Exit | Meaning |
 | --- | --- | --- |
 | `VERIFICATION_PLAN_OK` | `0` | Every checked Story resolves to a valid execution contract. |

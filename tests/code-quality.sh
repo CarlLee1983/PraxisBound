@@ -74,7 +74,8 @@ agent_template_preserves_quality_rules() {
     'existing formatter, lint, type, and architecture' \
     'disable, bypass, or weaken existing rules' \
     'consistent with neighboring code and the existing architecture' \
-    '`make verify` as the authority' \
+    '`make verify` as the canonical full-repository gate' \
+    'Focused commands' \
     'cannot be automated to Human Review'
   do
     contains templates/AGENTS.md "$forgeflow_term"

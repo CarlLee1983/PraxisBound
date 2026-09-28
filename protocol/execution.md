@@ -110,6 +110,43 @@ verification profile. Instead, each Signal activates the corresponding
 The checker validates only explicitly declared Signals. It never infers one
 from words such as “queue”, “parallel”, or “database”.
 
+## Verification scope
+
+The optional `## Verification Scope` section selects how the Story's required
+checks are run. With no section, full verification applies and the repository
+must run complete `make verify`. An explicit `Scope: full` additionally requires
+a `full` result entry with status `pass` and command `make verify`, so new full declarations cannot
+be satisfied by focused layer results alone. Older records keep their verdicts.
+
+```markdown
+## Verification Scope
+
+* Scope: focused
+* Surface: executable
+* lint: `make lint-changed`
+* static: `make static-changed`
+* unit: `make unit-changed`
+```
+
+`Scope: focused` requires exactly one `Surface`: `executable` or
+`documentation`, and one exact backticked command for every required layer.
+For executable work, [risk and architecture](verification.md#verification-profiles)
+still select those layers. A low-risk, low-architecture-impact documentation-only
+Story instead declares `documentation` with one exact backticked command. Other documentation
+work requires the full gate. Unknown, duplicate, missing, or extra checks make
+the declaration incomplete. The checker matches a passing result's command to
+the Story's declared command; it does not execute it.
+
+A focused result records `full: skipped` with an exact reason and a residual
+risk when the full gate was intentionally not run, or `full: pass` with command
+`make verify` when it was run. Omitting this observation leaves the result partial.
+A Story or acceptance requirement for the full gate cannot be narrowed by a
+generic focused-work guideline. A repository may also require complete
+`make verify` at integration, release, or for a specified surface. The static
+checker has no phase or repository-policy input; Human Review must reject a
+focused result that conflicts with such a requirement. This repository requires
+the full gate for its own protocol and template changes.
+
 ## Execution invariants
 
 These hold for every PraxisBound implementation. They are contract, not guidance:

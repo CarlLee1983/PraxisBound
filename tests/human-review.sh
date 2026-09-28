@@ -37,7 +37,7 @@ human_review_keeps_automation_and_acceptance_separate() {
   for forgeflow_term in \
     'contextual judgment' \
     'automated gate' \
-    '`make verify` PASS' \
+    'PASS for the Story' \
     'may enter REVIEW' \
     'An agent may prepare' \
     'cannot approve REVIEW' \
@@ -171,7 +171,7 @@ navigation_explains_the_human_review_boundary() {
 
   for forgeflow_term in \
     'design and architecture judgment' \
-    'complete `make verify` again' \
+    'required checks again, including complete `make verify` when required' \
     'automated approval cannot substitute for human acceptance'
   do
     contains docs/code-quality.md "$forgeflow_term"

@@ -81,8 +81,9 @@ review_checks_classification_truthfulness() {
 
 review_checks_current_verification_evidence() {
   for forgeflow_term in \
-    'implementation under review' \
-    'complete `make verify` PASS' \
+    'approved Story scope from the implementation' \
+    '`make verify` PASS' \
+    'A focused record never certifies the full gate' \
     'does not prove that PASS occurred'
   do
     contains docs/human-review.md "$forgeflow_term"
@@ -93,7 +94,8 @@ behavior_changes_require_complete_reverification() {
   for forgeflow_term in \
     'source code, tests, configuration' \
     'immediately invalidates the prior PASS' \
-    'complete `make verify`' \
+    'required checks again' \
+    'complete `make verify` when required' \
     'handoff evidence edit is also a repository change' \
     'human reviewer' \
     'complete re-verification'
@@ -238,6 +240,16 @@ root_gate_keeps_all_existing_checks() {
   done
 }
 
+focused_scope_guidance_is_explicit() {
+  contains protocol/execution.md '## Verification scope'
+  contains protocol/verification.md '### Focused scope'
+  contains templates/AGENTS.md '## Verification Scope'
+  contains templates/story/story.md '### Optional focused verification'
+  contains templates/story/verification.md '* documentation: pass'
+  contains templates/story/verification.md '* full: skipped'
+  contains docs/human-review.md 'Reject a focused scope'
+}
+
 run_case 'AC-001' ff215_completion_records_agree
 run_case 'AC-002' handoff_records_release_history_not_live_state
 run_case 'AC-003' review_checks_classification_truthfulness
@@ -252,5 +264,6 @@ run_case 'FF221-AC-001' release_metadata_for_036_is_preserved
 run_case 'FF221-AC-002' versioning_records_the_corrective_patch
 run_case 'AC-011' every_acceptance_criterion_has_one_case
 run_case 'AC-012' root_gate_keeps_all_existing_checks
+run_case 'FF229-AC-006' focused_scope_guidance_is_explicit
 
 printf 'review integrity tests passed\n'
