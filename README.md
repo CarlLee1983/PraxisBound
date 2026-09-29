@@ -1,5 +1,14 @@
 # PraxisBound
 
+> **This project is retired and archived.** Its successor is
+> [Warrant](https://github.com/CarlLee1983/Warrant): the same three rules (a
+> human approves intent, the repository's own verification proves
+> completion, the agent never rewrites the standard), delivered as a Claude
+> Code skill and an `AGENTS.md` block, with no tooling. `@praxisbound/cli` and
+> `@praxisbound/core` are deprecated. To migrate, delete the PraxisBound
+> protocol files and marker, and paste the Warrant block into `AGENTS.md`.
+> Directory-style Stories stay as history.
+
 ![PraxisBound turns human intent into verified engineering work](docs/assets/praxisbound-hero.png)
 
 PraxisBound is an agent-agnostic development protocol for AI-assisted engineering.
