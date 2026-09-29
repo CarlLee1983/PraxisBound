@@ -351,6 +351,167 @@ test("R-009/AC-001 TST-038/AC-001..005: two-Spec four-Story review to accepted r
   });
 });
 
+test("R-009/AC-001 TST-042/AC-006: two source-targeted requests reach a confirmed four-Story Goal Plan", async () => {
+  await withFixture(async (fx) => {
+    const first = await index(fx);
+    expectOutcome(first, "success");
+    expectOutcome(render(fx), "success");
+    const firstHtml = await readFile(join(fx.root, "review.html"), "utf8");
+    expectOutcome(
+      (await confirm(fx, first.result.data.fingerprint)).execution,
+      "success",
+    );
+    const targets = [
+      { path: "specs/features/alpha/spec.md", anchor: "R-001" },
+      { path: "specs/features/beta/spec.md", anchor: "R-002" },
+    ];
+    const requests = targets.map(({ path, anchor }) => {
+      const spec = first.result.data.specs.find((entry) => entry.path === path);
+      const locator = spec.entries.find((entry) => entry.id === anchor).locator;
+      return revision({
+        fingerprint: first.result.data.fingerprint,
+        targets: [{ path, anchor, blockSha256: locator.blockSha256 }],
+        kind: "rewrite",
+        blocking: true,
+        proposal: `Clarify ${anchor} acceptance.`,
+      });
+    });
+    assert.notEqual(requests[0].id, requests[1].id);
+    await writeFile(
+      join(fx.root, "sheet.md"),
+      sheetText(BATCH_ID, first.result.data.fingerprint, requests),
+    );
+    const imported = cli(fx, "import", [fx.manifestPath, "sheet.md"]);
+    expectOutcome(imported, "success");
+    assert.deepEqual(
+      imported.result.data.revisions.map((item) => item.id),
+      requests.map((request) => request.id),
+    );
+
+    for (const [position, { path, anchor }] of targets.entries())
+      await writeFile(
+        join(fx.root, path),
+        `## ${anchor}：${position === 0 ? "Alpha" : "Beta"} clarified\n\n- AC-001：The clarified ${position === 0 ? "alpha" : "beta"} behavior works.\n`,
+      );
+    expectOutcome(cli(fx, "readiness-digests", [fx.manifestPath]), "success");
+    const revised = await index(fx);
+    expectOutcome(revised, "success");
+    assert.notEqual(
+      revised.result.data.fingerprint,
+      first.result.data.fingerprint,
+    );
+    const responses = targets.map(({ path, anchor }, position) => ({
+      revisionId: requests[position].id,
+      route: "spec-requirement",
+      outcome: "incorporated",
+      rationale: `Clarified ${anchor} in its source Spec.`,
+      locators: [
+        revised.result.data.specs
+          .find((entry) => entry.path === path)
+          .entries.find((entry) => entry.id === anchor).locator,
+      ],
+    }));
+    await writeFile(
+      join(fx.root, "response.json"),
+      JSON.stringify({
+        schemaVersion: "1.0.0",
+        batchId: BATCH_ID,
+        fromFingerprint: first.result.data.fingerprint,
+        toFingerprint: revised.result.data.fingerprint,
+        revisionSheets: [imported.result.data.sheet.sha256],
+        respondedAt: "2026-09-27T00:00:00Z",
+        agent: "e2e-fixture-agent",
+        responses,
+      }),
+    );
+    const responded = cli(fx, "respond", [fx.manifestPath, "response.json"]);
+    expectOutcome(responded, "success");
+    const responseRecord = await readJson(
+      fx.root,
+      responded.result.data.record,
+    );
+    assert.deepEqual(
+      responseRecord.responses.map((response) => response.revisionId),
+      requests.map((request) => request.id),
+    );
+
+    const revisedRender = render(fx);
+    expectOutcome(revisedRender, "success");
+    for (const { path } of targets)
+      assert.ok(
+        revisedRender.result.issues.some(
+          (issue) =>
+            issue.code === "REVIEW_SOURCE_CHANGED" && issue.path === path,
+        ),
+        JSON.stringify(revisedRender.result),
+      );
+    const revisedHtml = await readFile(join(fx.root, "review.html"), "utf8");
+    assert.notEqual(revisedHtml, firstHtml);
+    assert.match(revisedHtml, /Alpha clarified/);
+    assert.match(revisedHtml, /Beta clarified/);
+    assert.match(revisedHtml, /需複審/);
+    assert.match(
+      revisedHtml,
+      new RegExp(`data-pb-fingerprint="${revised.result.data.fingerprint}"`),
+    );
+
+    const confirmed = await confirm(fx, revised.result.data.fingerprint);
+    expectOutcome(confirmed.execution, "success");
+    assert.ok(
+      confirmed.tty.transcript.some((line) =>
+        line.includes(revised.result.data.fingerprint.slice(0, 8)),
+      ),
+    );
+    const confirmation = await readJson(
+      fx.root,
+      confirmed.execution.result.data.record,
+    );
+    assert.equal(confirmation.claim, "explicit-terminal-confirmation");
+    assert.equal(confirmation.fingerprint, revised.result.data.fingerprint);
+    await semanticReport(fx.root, revised.result.data.fingerprint);
+    expectOutcome(await preflight(fx), "REVIEW_READY");
+    const planExecution = await goalPlan(fx);
+    expectOutcome(planExecution, "REVIEW_READY");
+    const plan = await readJson(
+      fx.root,
+      `${planExecution.result.data.goalPlanDirectory}/manifest.json`,
+    );
+    assert.deepEqual(
+      plan.nodes.map((node) => node.nodeRef),
+      STORY_IDS,
+    );
+    for (const node of plan.nodes)
+      assert.deepEqual(
+        node.dependsOn,
+        DEPENDENCIES.find((edge) => edge.story === node.nodeRef)?.dependsOn ??
+          [],
+      );
+    const observed = await replay(
+      { ...fx, fingerprint: revised.result.data.fingerprint },
+      planExecution,
+    );
+    expectOutcome(observed, "success");
+    const record = await readJson(fx.root, observed.result.data.record);
+    assert.equal(
+      record.goalPlan.sha256,
+      sha256Hex(await readFile(join(fx.root, record.goalPlan.path))),
+    );
+    const workAdds = record.steps.filter((step) => step.command === "work-add");
+    assert.equal(workAdds.length, STORY_IDS.length);
+    for (const [position, step] of workAdds.entries()) {
+      const node = plan.nodes[position];
+      const work = JSON.parse(step.stdout).work_item;
+      assert.equal(step.story, node.nodeRef);
+      assert.equal(work.external_ref, node.nodeRef);
+      assert.equal(work.story_ref, node.storyRef);
+      assert.deepEqual(
+        work.depends_on,
+        node.dependsOn.map((id) => `WI-00${STORY_IDS.indexOf(id) + 1}`),
+      );
+    }
+  });
+});
+
 async function mutateManifest(fx, change) {
   const updated = manifest();
   change(updated);
