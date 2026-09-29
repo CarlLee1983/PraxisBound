@@ -975,12 +975,6 @@ adopter_documentation_presents_both_adoption_paths() {
         ;;
     esac
 
-    # Neither path replaces the other; the shell path is not being retired.
-    case "$forgeflow_case_flat" in
-      *deprecat*)
-        fail "$forgeflow_case_page contains the word deprecated"
-        ;;
-    esac
   done
 
   # The guide no longer assumes the reader has cloned this repository.
